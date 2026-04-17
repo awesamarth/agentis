@@ -3,9 +3,10 @@ import { privy } from '../lib/privy'
 import { createAgent, getAgentsByUser, getAgentById, updateAgent } from '../lib/db'
 import { randomBytes } from 'crypto'
 import {
-  PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL
+  Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL
 } from '@solana/web3.js'
 
+const DEVNET_RPC = 'https://api.devnet.solana.com'
 const DEVNET_CAIP2 = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
 
 const agents = new Hono<{ Variables: { userId: string } }>()
@@ -104,9 +105,14 @@ agents.post('/:id/send', async (c) => {
     return c.json({ error: 'Invalid recipient address' }, 400)
   }
 
-  // Build transfer transaction — no blockhash, Privy fills it
+  // Build transfer transaction
+  const connection = new Connection(DEVNET_RPC, 'confirmed')
   const fromPubkey = new PublicKey(agent.walletAddress)
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized')
+
   const tx = new Transaction()
+  tx.recentBlockhash = blockhash
+  tx.lastValidBlockHeight = lastValidBlockHeight
   tx.feePayer = fromPubkey
   tx.add(
     SystemProgram.transfer({

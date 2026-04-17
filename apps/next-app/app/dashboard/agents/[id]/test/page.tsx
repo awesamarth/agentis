@@ -1,7 +1,7 @@
 'use client'
 
 import { usePrivy } from '@privy-io/react-auth'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 
@@ -22,8 +22,6 @@ type Agent = {
   walletAddress: string
 }
 
-let logId = 0
-
 export default function AgentTestConsole() {
   const { ready, authenticated, getAccessToken } = usePrivy()
   const params = useParams()
@@ -40,11 +38,14 @@ export default function AgentTestConsole() {
 
   // Log
   const [logs, setLogs] = useState<LogEntry[]>([])
+  const logIdRef = useRef(0)
+  const logEndRef = useRef<HTMLDivElement>(null)
 
   function addLog(type: LogEntry['type'], message: string, detail?: string) {
     const now = new Date()
     const timestamp = now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    setLogs(prev => [{ id: logId++, type, message, detail, timestamp }, ...prev])
+    setLogs(prev => [...prev, { id: logIdRef.current++, type, message, detail, timestamp }])
+    setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
   }
 
   useEffect(() => {
@@ -109,8 +110,30 @@ export default function AgentTestConsole() {
       } else {
         addLog('success', `Transaction confirmed`, data.signature)
         setAmount('')
-        // refresh balance
-        if (agent) fetchBalance(agent.walletAddress)
+        // wait for confirmation then refresh balance
+        if (agent) {
+          const sig = data.signature
+          // poll until confirmed
+          const poll = async () => {
+            const r = await fetch('https://api.devnet.solana.com', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                jsonrpc: '2.0', id: 1,
+                method: 'getSignatureStatuses',
+                params: [[sig], { searchTransactionHistory: true }]
+              })
+            })
+            const d = await r.json()
+            const status = d.result?.value?.[0]
+            if (status?.confirmationStatus === 'confirmed' || status?.confirmationStatus === 'finalized') {
+              fetchBalance(agent.walletAddress)
+            } else {
+              setTimeout(poll, 1000)
+            }
+          }
+          poll()
+        }
       }
     } catch (e) {
       addLog('error', 'Request failed', String(e))
@@ -120,7 +143,7 @@ export default function AgentTestConsole() {
   }
 
   function fillBurnAddress() {
-    setRecipient('11111111111111111111111111111111')
+    setRecipient('5yDpyuSofQARocCtzkrHaEeRjSBTuYTPPna1aeZjqUB6')
   }
 
   const canSend = recipient.trim().length > 0 && parseFloat(amount) > 0 && !sending
@@ -253,7 +276,8 @@ export default function AgentTestConsole() {
                   <p className="font-mono text-[0.65rem] text-ink-muted/40 tracking-widest">no activity yet</p>
                 </div>
               ) : (
-                logs.map(log => (
+                <>
+              {logs.map(log => (
                   <div key={log.id} className="flex gap-3 items-start">
                     <span className="font-mono text-[0.6rem] text-ink-muted/50 shrink-0 mt-0.5">{log.timestamp}</span>
                     <div className="flex-1 min-w-0">
@@ -283,7 +307,9 @@ export default function AgentTestConsole() {
                       )}
                     </div>
                   </div>
-                ))
+                ))}
+              <div ref={logEndRef} />
+              </>
               )}
             </div>
           </div>
