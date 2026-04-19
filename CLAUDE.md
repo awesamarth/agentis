@@ -160,18 +160,34 @@ agentis/
 
 ### Dashboard (`apps/next-app`)
 - Landing page (`/`) with Privy auth (Google, GitHub, Phantom/Solana wallets)
-- Dashboard page (`/dashboard`) — lists agents, create agent modal
+  - Logged out: "get started" (login) + "explore dashboard" (guest mode)
+  - Logged in: "go to dashboard →" only. No auto-redirect on `/` anymore.
+- Dashboard page (`/dashboard`) — lists agents, create agent modal, agent cards clickable
+  - **Guest mode** — unauthenticated users can create agents stored in `localStorage` under key `agentis_guest_agents`. Agents get real devnet keypairs generated in browser via `gill`'s `generateKeyPairSigner()`. Guest banner shown with "sign in to save →" button.
+  - Guest agents show a "guest" badge on card
+- Agent detail page (`/dashboard/agents/[id]`) — wallet address + copy, SOL balance (via devnet RPC fetch), token balances (via Jupiter portfolio API), kill switch, spending limits (hourly/daily/monthly/total cap/max per tx), domain whitelist, inline name editing, save policy
+  - Authenticated: fetches from backend, saves via PATCH
+  - Guest: loads from localStorage, saves to localStorage
+- Test console (`/dashboard/agents/[id]/test`) — send SOL from agent wallet, activity log with timestamps + explorer links, polls for tx confirmation (every 1s via getSignatureStatuses) before refreshing balance, "use burn address" shortcut (hardcoded to `5yDpyuSofQARocCtzkrHaEeRjSBTuYTPPna1aeZjqUB6` for devnet testing)
 - Shared `Navbar` component (`components/Navbar.tsx`)
 - Privy configured with `toSolanaWalletConnectors()`, `walletChainType: 'solana-only'`, Solana embedded wallet created on login
 - `NEXT_PUBLIC_BACKEND_URL=http://localhost:3001` in `.env.local`
+- `solana-kite` REMOVED — had `fs/promises` incompatibility with Turbopack. Use raw fetch to devnet RPC for balance.
+- `gill` installed (`^0.14.0`) — used for guest wallet generation (`generateKeyPairSigner()`). Browser-compatible, no Node deps. `GILL.md` in project root has docs.
+- Jupiter portfolio API is mainnet-only — token balances will be empty for devnet addresses. SOL balance works fine via devnet RPC.
 
 ### Backend (`apps/backend`)
 - Hono server on port 3001
 - `GET /agents` — list agents for authenticated user
-- `POST /agents` — create agent: calls `privy.walletApi.create({ chainType: 'solana' })`, generates `agt_live_xxx` API key, stores in JSON DB
+- `POST /agents` — create agent: calls `privy.walletApi.createWallet({ chainType: 'solana' })`, generates `agt_live_xxx` API key, stores in JSON DB
+- `GET /agents/:id` — get single agent (owner-only, returns 404 for non-owners)
+- `PATCH /agents/:id` — update name + policy (owner-only, ignores sensitive fields)
+- `POST /agents/:id/send` — send SOL from agent wallet via Privy signAndSendTransaction, builds tx with @solana/web3.js, fetches blockhash from devnet with 'finalized' commitment
 - Auth middleware: verifies Privy JWT (`privy.verifyAuthToken`) to identify user
-- JSON file DB at `apps/backend/data/db.json` (temporary, for testing only)
-- Privy server-auth SDK: use `privy.walletApi.create()` NOT `privy.wallets()` (that doesn't exist in this version)
+- JSON file DB at `apps/backend/data/db.json` (gitignored, temporary)
+- Privy server-auth SDK quirks: use `privy.walletApi.createWallet()` not `.create()` (deprecated). `signAndSendTransaction` takes a `Transaction` object + `caip2` string, NOT base64.
+- `@solana/web3.js` installed for building transactions
+- Devnet CAIP2: `'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'`
 
 ### Agent data model:
 ```typescript
@@ -183,6 +199,15 @@ agentis/
   walletAddress: string // Solana pubkey
   apiKey: string      // agt_live_xxx (shown once to user)
   createdAt: string
+  policy?: {
+    hourlyLimit: number | null
+    dailyLimit: number | null
+    monthlyLimit: number | null
+    maxBudget: number | null
+    maxPerTx: number | null
+    allowedDomains: string[]
+    killSwitch: boolean
+  }
 }
 ```
 
@@ -380,19 +405,34 @@ Jupiter + Privy are perfectly compatible. Jupiter builds transactions, Privy sig
 ## What Still Needs Building (Priority Order)
 
 ### Immediate next steps:
-1. **Dashboard — agent detail page** — view wallet address, copy API key (regenerate option), policy settings, kill switch
-2. **CLI** — `agentis login` browser flow, `agentis wallet list`, `agentis agent create`
-3. **Quasar programs** — agent registry PDA, kill switch, spend counters
-4. **SDK** — `AgentisClient.create()`, `agentis.fetch()` with MPP/x402 flow
-5. **Facilitator** — Jupiter swap + earn integration
+1. **SDK** — `AgentisClient.create()`, `agentis.fetch()` with MPP/x402 flow, policy enforcement before payments
+2. **CLI** — `agentis login` browser flow, `agentis wallet list`, `agentis agent create`, `agentis facilitator bootstrap`
+3. **Quasar programs** — agent registry PDA, kill switch, spend counters, policy hash on-chain
+4. **Facilitator (Jupiter)** — token swap layer: agent holds SOL, endpoint needs USDC → swap silently via Jupiter, then pay. Jupiter Earn for idle funds.
+5. **MCP server** — expose Agentis functionality as MCP tools
+
+### Dashboard — what's left:
+- **API key display + regen** on agent detail page — currently key is shown once at creation on dashboard, never again. Need masked display + regenerate button on detail page. Backend needs `POST /agents/:id/regen-key` route.
+- **Policy enforcement** — stored in DB but not actually enforced anywhere. Will be enforced in SDK.
 
 ### Later:
-- MCP server
-- Skill (SKILL.md)
+- Skill (SKILL.md) — free once MCP exists
 - Umbra private payments integration
 - Replace JSON DB with real DB (Postgres/SQLite)
 - Hash API keys before storing (SHA-256, show plaintext once)
 - CLI session token auth in backend middleware
+- Policy enforcement actually wired up in SDK (currently only stored in DB, not enforced)
+
+### Facilitator Bootstrap Feature (CLI)
+**Discussed but not built yet.** Key idea: `agentis facilitator bootstrap` CLI command that:
+- Generates a ready-to-deploy Hono server with MPP `/verify` + `/settle` endpoints
+- User configures fee % via CLI flags (e.g. `--fee 0.08`)
+- Registers the facilitator endpoint with Agentis backend
+- Dashboard shows a public directory of all registered facilitators (endpoint, fee, uptime, volume)
+- When SDK routes payments, it can pick from registered facilitators (cheapest/fastest/user-specified)
+- This makes Agentis a facilitator network, not just a wallet tool — anyone can run a node and earn fees
+- MPP fully supports custom facilitators via `POST /verify` + `POST /settle` — no blockers
+- For MVP: Agentis runs one facilitator itself. Architecture designed for decentralization from day 1.
 
 ---
 

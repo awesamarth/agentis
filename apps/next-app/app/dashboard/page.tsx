@@ -1,5 +1,6 @@
 'use client'
 
+import { Copy, Check } from 'lucide-react'
 import { usePrivy } from '@privy-io/react-auth'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -11,22 +12,68 @@ type Agent = {
   walletAddress: string
   apiKey: string
   createdAt: string
+  _guest?: boolean
+  _secretKeyBytes?: string  // JSON array of key bytes, only for guest agents
 }
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL
+const GUEST_STORAGE_KEY = 'agentis_guest_agents'
+
+function CopyAddress({ address }: { address: string }) {
+  const [copied, setCopied] = useState(false)
+  function copy(e: React.MouseEvent) {
+    e.stopPropagation()
+    navigator.clipboard.writeText(address)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+  return (
+    <button
+      onClick={copy}
+      className="font-mono text-[0.65rem] text-ink-muted/50 hover:text-ink-muted transition-colors cursor-pointer ml-2 shrink-0 leading-none"
+      title="copy address"
+    >
+      {copied ? <Check size={12} /> : <Copy size={12} />}
+    </button>
+  )
+}
+
+function loadGuestAgents(): Agent[] {
+  try {
+    const raw = localStorage.getItem(GUEST_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+function saveGuestAgents(agents: Agent[]) {
+  localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(agents))
+}
 
 export default function Dashboard() {
-  const { ready, authenticated, getAccessToken } = usePrivy()
+  const { ready, authenticated, getAccessToken, login } = usePrivy()
   const router = useRouter()
   const [agents, setAgents] = useState<Agent[]>([])
+  const [balances, setBalances] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [agentName, setAgentName] = useState('')
   const [creating, setCreating] = useState(false)
   const [revealedKey, setRevealedKey] = useState<string | null>(null)
 
+  useEffect(() => {
+    if (!ready) return
+    if (authenticated) {
+      fetchAgents()
+    } else {
+      const guests = loadGuestAgents()
+      setAgents(guests)
+      fetchAllBalances(guests.map(a => a.walletAddress))
+    }
+  }, [ready, authenticated])
+
   async function fetchAgents() {
-    if (!authenticated) return
     setLoading(true)
     try {
       const token = await getAccessToken()
@@ -35,31 +82,72 @@ export default function Dashboard() {
       })
       const data = await res.json()
       setAgents(data)
+      fetchAllBalances(data.map((a: Agent) => a.walletAddress))
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => {
-    if (ready && authenticated) fetchAgents()
-  }, [ready, authenticated])
+  async function fetchAllBalances(addresses: string[]) {
+    const results = await Promise.all(
+      addresses.map(async (address) => {
+        try {
+          const res = await fetch('https://api.devnet.solana.com', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getBalance', params: [address, { commitment: 'confirmed' }] }),
+          })
+          const data = await res.json()
+          return [address, data.result.value / 1e9] as [string, number]
+        } catch {
+          return [address, null] as [string, null]
+        }
+      })
+    )
+    const map: Record<string, number> = {}
+    for (const [addr, bal] of results) {
+      if (bal !== null) map[addr] = bal
+    }
+    setBalances(map)
+  }
 
   async function handleCreate() {
     if (!agentName.trim()) return
     setCreating(true)
     try {
-      const token = await getAccessToken()
-      const res = await fetch(`${API}/agents`, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ name: agentName }),
-      })
-      const agent = await res.json()
-      setAgents(prev => [agent, ...prev])
-      setRevealedKey(agent.apiKey)
+      if (authenticated) {
+        const token = await getAccessToken()
+        const res = await fetch(`${API}/agents`, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${token}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ name: agentName }),
+        })
+        const agent = await res.json()
+        setAgents(prev => [agent, ...prev])
+        setRevealedKey(agent.apiKey)
+      } else {
+        // Guest mode — generate extractable wallet with gill, store keypair locally
+        const { generateExtractableKeyPairSigner, extractBytesFromKeyPairSigner } = await import('gill')
+        const signer = await generateExtractableKeyPairSigner()
+        const keyBytes = await extractBytesFromKeyPairSigner(signer)
+        // store as JSON array — reconstructed via createKeyPairSignerFromBytes
+        const secretKeyBase64 = JSON.stringify(Array.from(keyBytes))
+        const guestAgent: Agent = {
+          id: crypto.randomUUID(),
+          name: agentName.trim(),
+          walletAddress: signer.address,
+          apiKey: 'agt_guest_' + Math.random().toString(36).slice(2),
+          createdAt: new Date().toISOString(),
+          _guest: true,
+          _secretKeyBytes: secretKeyBase64,
+        }
+        const updated = [guestAgent, ...loadGuestAgents()]
+        saveGuestAgents(updated)
+        setAgents(updated)
+      }
       setAgentName('')
       setShowModal(false)
     } finally {
@@ -72,12 +160,28 @@ export default function Dashboard() {
       <Navbar showCrumb="dashboard" />
 
       <div className="max-w-5xl mx-auto px-12 py-16">
+
+        {/* Guest banner */}
+        {ready && !authenticated && (
+          <div className="border border-beige-darker bg-white p-4 mb-8 flex items-center justify-between gap-4">
+            <p className="font-mono text-[0.65rem] text-ink-muted tracking-widest">
+              you're in guest mode — agents are saved locally and won't persist across devices
+            </p>
+            <button
+              onClick={login}
+              className="font-mono text-[0.65rem] tracking-widest text-black border border-ink px-4 py-2 hover:bg-black hover:text-beige transition-colors cursor-pointer shrink-0"
+            >
+              sign in to save →
+            </button>
+          </div>
+        )}
+
         <div className="flex items-end justify-between mb-12">
           <div>
             <h1 className="font-serif font-black text-4xl text-black tracking-tight mb-1">Your Agents</h1>
             <p className="font-mono text-xs text-ink-muted tracking-widest">manage wallets, policies, and spending</p>
           </div>
-          {ready && authenticated && (
+          {ready && (
             <button
               onClick={() => setShowModal(true)}
               className="bg-black text-beige font-mono text-xs tracking-widest px-6 py-3 hover:bg-ink transition-colors cursor-pointer"
@@ -106,10 +210,6 @@ export default function Dashboard() {
         {/* Agent list */}
         {!ready || loading ? (
           <p className="font-mono text-xs text-ink-muted tracking-widest">loading...</p>
-        ) : !authenticated ? (
-          <div className="border border-dashed border-beige-darker py-24 flex flex-col items-center gap-4">
-            <p className="font-mono text-xs text-ink-muted tracking-widest">sign in to manage your agents</p>
-          </div>
         ) : agents.length === 0 ? (
           <div className="border border-dashed border-beige-darker py-24 flex flex-col items-center gap-6">
             <p className="font-mono text-xs text-ink-muted tracking-widest">no agents yet</p>
@@ -129,10 +229,24 @@ export default function Dashboard() {
                 className="border border-beige-darker bg-white p-6 flex items-center justify-between cursor-pointer hover:border-ink-muted hover:shadow-sm transition-all group"
               >
                 <div>
-                  <p className="font-serif font-bold text-lg text-black mb-1 group-hover:text-ink transition-colors">{agent.name}</p>
-                  <p className="font-mono text-[0.65rem] text-ink-muted tracking-wide">{agent.walletAddress}</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="font-serif font-bold text-lg text-black group-hover:text-ink transition-colors">{agent.name}</p>
+                    {agent._guest && (
+                      <span className="font-mono text-[0.55rem] text-ink-muted border border-beige-darker px-1.5 py-0.5 tracking-widest">guest</span>
+                    )}
+                  </div>
+                  <div className="flex items-center">
+                    <p className="font-mono text-[0.65rem] text-ink-muted tracking-wide">{agent.walletAddress}</p>
+                    <CopyAddress address={agent.walletAddress} />
+                  </div>
                 </div>
-                <div className="flex items-center gap-6">
+                <div className="flex items-center gap-8">
+                  {balances[agent.walletAddress] !== undefined && (
+                    <div className="text-right">
+                      <p className="font-mono text-[0.65rem] text-ink-muted tracking-widest uppercase mb-1">balance</p>
+                      <p className="font-mono text-sm text-black">{balances[agent.walletAddress]!.toFixed(4)} <span className="text-ink-muted text-xs">SOL</span></p>
+                    </div>
+                  )}
                   <div className="text-right">
                     <p className="font-mono text-[0.65rem] text-ink-muted tracking-widest uppercase mb-1">created</p>
                     <p className="font-mono text-xs text-ink-muted">{new Date(agent.createdAt).toLocaleDateString()}</p>
@@ -156,7 +270,9 @@ export default function Dashboard() {
             onClick={e => e.stopPropagation()}
           >
             <h2 className="font-serif font-black text-2xl text-black mb-1">Create Agent</h2>
-            <p className="font-mono text-[0.65rem] text-ink-muted tracking-widest mb-6">a Solana wallet will be created automatically</p>
+            <p className="font-mono text-[0.65rem] text-ink-muted tracking-widest mb-6">
+              {authenticated ? 'a Solana wallet will be created automatically' : 'a local devnet wallet will be generated in your browser'}
+            </p>
 
             <label className="font-mono text-[0.65rem] text-ink-muted tracking-widest uppercase block mb-2">Agent Name</label>
             <input

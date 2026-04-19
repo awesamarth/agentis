@@ -24,6 +24,13 @@ type Agent = {
   policy?: Policy
 }
 
+type TxRecord = {
+  txHash: string
+  amount: number
+  recipient: string
+  timestamp: string
+}
+
 type TokenBalance = {
   symbol: string
   name: string
@@ -99,10 +106,41 @@ export default function AgentDetail() {
   const [saved, setSaved] = useState(false)
   const [copiedAddress, setCopiedAddress] = useState(false)
 
+  const [apiKey, setApiKey] = useState<string | null>(null)
+  const [apiKeyVisible, setApiKeyVisible] = useState(false)
+  const [copiedKey, setCopiedKey] = useState(false)
+  const [regenning, setRegenning] = useState(false)
+  const [regenConfirm, setRegenConfirm] = useState(false)
+
+  const [transactions, setTransactions] = useState<TxRecord[]>([])
+  const [txLoading, setTxLoading] = useState(false)
+
   useEffect(() => {
     if (!ready) return
-    if (!authenticated) { router.push('/dashboard'); return }
-    fetchAgent()
+    if (authenticated) {
+      fetchAgent()
+    } else {
+      // guest mode — load from localStorage
+      try {
+        const raw = localStorage.getItem('agentis_guest_agents')
+        const guests = raw ? JSON.parse(raw) : []
+        const found = guests.find((a: Agent) => a.id === id)
+        if (found) {
+          setAgent(found)
+          setAgentName(found.name)
+          setPolicy({ ...DEFAULT_POLICY, ...found.policy })
+          setApiKey(found.apiKey)
+          setTransactions((found as any).transactions ?? [])
+          fetchBalances(found.walletAddress)
+        } else {
+          setNotFound(true)
+        }
+      } catch {
+        setNotFound(true)
+      } finally {
+        setLoading(false)
+      }
+    }
   }, [ready, authenticated, id])
 
   async function fetchAgent() {
@@ -119,7 +157,9 @@ export default function AgentDetail() {
       setAgent(data)
       setAgentName(data.name)
       setPolicy({ ...DEFAULT_POLICY, ...data.policy })
+      setApiKey(data.apiKey)
       fetchBalances(data.walletAddress)
+      fetchTransactions(token)
     } finally {
       setLoading(false)
     }
@@ -164,22 +204,69 @@ export default function AgentDetail() {
     }
   }
 
+  async function fetchTransactions(token: string) {
+    setTxLoading(true)
+    try {
+      const res = await fetch(`${API}/agents/${id}/transactions`, {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      if (res.ok) setTransactions(await res.json())
+    } finally {
+      setTxLoading(false)
+    }
+  }
+
+  async function handleRegenKey() {
+    if (!regenConfirm) { setRegenConfirm(true); return }
+    setRegenning(true)
+    setRegenConfirm(false)
+    try {
+      const token = await getAccessToken()
+      const res = await fetch(`${API}/agents/${id}/regen-key`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setApiKey(data.apiKey)
+        setApiKeyVisible(true)
+      }
+    } finally {
+      setRegenning(false)
+    }
+  }
+
   async function handleSave() {
     setSaving(true)
     setSaved(false)
     try {
-      const token = await getAccessToken()
-      const res = await fetch(`${API}/agents/${id}`, {
-        method: 'PATCH',
-        headers: {
-          authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ name: agentName.trim() || agent?.name, policy }),
-      })
-      if (res.ok) {
-        const updated = await res.json()
-        setAgent(updated)
+      if (authenticated) {
+        const token = await getAccessToken()
+        const res = await fetch(`${API}/agents/${id}`, {
+          method: 'PATCH',
+          headers: {
+            authorization: `Bearer ${token}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ name: agentName.trim() || agent?.name, policy }),
+        })
+        if (res.ok) {
+          const updated = await res.json()
+          setAgent(updated)
+          setEditingName(false)
+          setSaved(true)
+          setTimeout(() => setSaved(false), 2500)
+        }
+      } else {
+        // guest — save to localStorage
+        const raw = localStorage.getItem('agentis_guest_agents')
+        const guests = raw ? JSON.parse(raw) : []
+        const idx = guests.findIndex((a: Agent) => a.id === id)
+        if (idx !== -1) {
+          guests[idx] = { ...guests[idx], name: agentName.trim() || agent?.name, policy }
+          localStorage.setItem('agentis_guest_agents', JSON.stringify(guests))
+          setAgent(guests[idx])
+        }
         setEditingName(false)
         setSaved(true)
         setTimeout(() => setSaved(false), 2500)
@@ -293,6 +380,54 @@ export default function AgentDetail() {
             </button>
           </div>
         </section>
+
+        {/* API Key */}
+        {authenticated && (
+        <section className="mb-10">
+          <h2 className="font-mono text-[0.65rem] text-ink-muted tracking-widest uppercase mb-4">API Key</h2>
+          <div className="bg-white border border-beige-darker p-5">
+            <p className="font-mono text-[0.6rem] text-ink-muted/70 mb-4">
+              Use this key to authenticate the Agentis SDK. Keep it secret.
+            </p>
+            <div className="flex items-center gap-3 mb-3">
+              <p className="font-mono text-sm text-black flex-1 break-all">
+                {apiKeyVisible && apiKey ? apiKey : (apiKey ? apiKey.slice(0, 12) + '••••••••••••••••••••••••••••••••' : '—')}
+              </p>
+              <button
+                onClick={() => setApiKeyVisible(v => !v)}
+                className="font-mono text-xs tracking-widest text-ink-muted border border-beige-darker px-3 py-1.5 hover:border-ink-muted transition-colors cursor-pointer shrink-0"
+              >
+                {apiKeyVisible ? 'hide' : 'show'}
+              </button>
+              <button
+                onClick={() => { navigator.clipboard.writeText(apiKey ?? ''); setCopiedKey(true); setTimeout(() => setCopiedKey(false), 2000) }}
+                className="font-mono text-xs tracking-widest text-ink-muted border border-beige-darker px-3 py-1.5 hover:border-ink-muted transition-colors cursor-pointer shrink-0"
+              >
+                {copiedKey ? 'copied!' : 'copy'}
+              </button>
+            </div>
+            <button
+              onClick={handleRegenKey}
+              disabled={regenning}
+              className={`font-mono text-xs tracking-widest px-4 py-2 transition-colors cursor-pointer disabled:opacity-40 border ${
+                regenConfirm
+                  ? 'bg-black text-beige border-black hover:bg-ink'
+                  : 'text-ink-muted border-beige-darker hover:border-ink-muted'
+              }`}
+            >
+              {regenning ? 'regenerating...' : regenConfirm ? 'confirm regenerate — old key will stop working' : 'regenerate key'}
+            </button>
+            {regenConfirm && (
+              <button
+                onClick={() => setRegenConfirm(false)}
+                className="font-mono text-xs tracking-widest text-ink-muted ml-3 cursor-pointer hover:text-ink transition-colors"
+              >
+                cancel
+              </button>
+            )}
+          </div>
+        </section>
+        )}
 
         {/* Balances */}
         <section className="mb-10">
@@ -476,6 +611,45 @@ export default function AgentDetail() {
               </div>
             )}
           </div>
+        </section>
+
+        {/* Transaction History */}
+        <section className="mb-10">
+          <h2 className="font-mono text-[0.65rem] text-ink-muted tracking-widest uppercase mb-4">Transaction History</h2>
+          {txLoading ? (
+            <div className="bg-white border border-beige-darker p-5">
+              <p className="font-mono text-[0.65rem] text-ink-muted/50 tracking-widest">loading...</p>
+            </div>
+          ) : transactions.length === 0 ? (
+            <div className="bg-white border border-beige-darker p-5">
+              <p className="font-mono text-[0.65rem] text-ink-muted/50 tracking-widest">no transactions yet</p>
+            </div>
+          ) : (
+            <div className="bg-white border border-beige-darker divide-y divide-beige-darker">
+              {[...transactions].reverse().map((tx, i) => (
+                <div key={tx.txHash + i} className="px-5 py-3 flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 mb-0.5">
+                      <span className="font-mono text-sm text-black font-medium">−{tx.amount} SOL</span>
+                      <span className="font-mono text-[0.6rem] text-ink-muted/50">→</span>
+                      <span className="font-mono text-xs text-ink-muted truncate">{tx.recipient.slice(0, 8)}...{tx.recipient.slice(-6)}</span>
+                    </div>
+                    <a
+                      href={`https://explorer.solana.com/tx/${tx.txHash}?cluster=devnet`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-[0.6rem] text-ink-muted/50 hover:text-ink-muted transition-colors"
+                    >
+                      {tx.txHash.slice(0, 12)}...{tx.txHash.slice(-8)} ↗
+                    </a>
+                  </div>
+                  <p className="font-mono text-[0.6rem] text-ink-muted shrink-0">
+                    {new Date(tx.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} {new Date(tx.timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Save */}

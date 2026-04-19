@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { privy } from '../lib/privy'
-import { createAgent, getAgentsByUser, getAgentById, updateAgent } from '../lib/db'
+import { createAgent, getAgentsByUser, getAgentById, updateAgent, updateAgentApiKey, recordTransaction } from '../lib/db'
 import { randomBytes } from 'crypto'
 import {
   Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL
@@ -84,6 +84,28 @@ agents.patch('/:id', async (c) => {
   return c.json(updated)
 })
 
+// GET /agents/:id/transactions — get transaction history (owner only)
+agents.get('/:id/transactions', async (c) => {
+  const userId = c.get('userId')
+  const agent = await getAgentById(c.req.param('id'))
+  if (!agent || agent.userId !== userId) {
+    return c.json({ error: 'Not found' }, 404)
+  }
+  return c.json(agent.transactions ?? [])
+})
+
+// POST /agents/:id/regen-key — regenerate API key (owner only)
+agents.post('/:id/regen-key', async (c) => {
+  const userId = c.get('userId')
+  const agent = await getAgentById(c.req.param('id'))
+  if (!agent || agent.userId !== userId) {
+    return c.json({ error: 'Not found' }, 404)
+  }
+  const newKey = 'agt_live_' + randomBytes(24).toString('hex')
+  const updated = await updateAgentApiKey(c.req.param('id'), newKey)
+  return c.json({ apiKey: updated.apiKey })
+})
+
 // POST /agents/:id/send — send SOL from agent wallet (owner only)
 agents.post('/:id/send', async (c) => {
   const userId = c.get('userId')
@@ -96,6 +118,53 @@ agents.post('/:id/send', async (c) => {
 
   if (!to || !amountSol || amountSol <= 0) {
     return c.json({ error: 'to and amountSol are required' }, 400)
+  }
+
+  // Policy checks
+  const policy = agent.policy
+  if (policy) {
+    if (policy.killSwitch) {
+      return c.json({ error: 'Kill switch is active — agent payments disabled' }, 403)
+    }
+    if (policy.maxPerTx !== null && amountSol > policy.maxPerTx) {
+      return c.json({ error: `Exceeds max per transaction limit (${policy.maxPerTx} SOL)` }, 403)
+    }
+
+    const now = Date.now()
+    const txns = agent.transactions ?? []
+
+    if (policy.hourlyLimit !== null) {
+      const hourSpend = txns
+        .filter(t => now - new Date(t.timestamp).getTime() < 60 * 60 * 1000)
+        .reduce((sum, t) => sum + t.amount, 0)
+      if (hourSpend + amountSol > policy.hourlyLimit) {
+        return c.json({ error: `Hourly spend limit exceeded (${policy.hourlyLimit} SOL)` }, 403)
+      }
+    }
+
+    if (policy.dailyLimit !== null) {
+      const daySpend = txns
+        .filter(t => now - new Date(t.timestamp).getTime() < 24 * 60 * 60 * 1000)
+        .reduce((sum, t) => sum + t.amount, 0)
+      if (daySpend + amountSol > policy.dailyLimit) {
+        return c.json({ error: `Daily spend limit exceeded (${policy.dailyLimit} SOL)` }, 403)
+      }
+    }
+
+    if (policy.monthlyLimit !== null) {
+      const currentMonth = new Date().toISOString().slice(0, 7)
+      const monthSpend = agent.monthSpend?.month === currentMonth ? agent.monthSpend.spend : 0
+      if (monthSpend + amountSol > policy.monthlyLimit) {
+        return c.json({ error: `Monthly spend limit exceeded (${policy.monthlyLimit} SOL)` }, 403)
+      }
+    }
+
+    if (policy.maxBudget !== null) {
+      const totalSpend = txns.reduce((sum, t) => sum + t.amount, 0)
+      if (totalSpend + amountSol > policy.maxBudget) {
+        return c.json({ error: `Total budget cap exceeded (${policy.maxBudget} SOL)` }, 403)
+      }
+    }
   }
 
   let toPubkey: PublicKey
@@ -129,6 +198,14 @@ agents.post('/:id/send', async (c) => {
       transaction: tx,
       caip2: DEVNET_CAIP2,
     })
+
+    await recordTransaction(agent.id, {
+      txHash: result.hash,
+      amount: amountSol,
+      recipient: to,
+      timestamp: new Date().toISOString(),
+    })
+
     return c.json({ signature: result.hash })
   } catch (err: any) {
     return c.json({ error: err?.message ?? 'Transaction failed' }, 500)

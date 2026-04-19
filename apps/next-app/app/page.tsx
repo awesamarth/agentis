@@ -2,18 +2,11 @@
 
 import { usePrivy } from '@privy-io/react-auth'
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
 import Navbar from '@/components/Navbar'
 
 export default function Home() {
   const { ready, authenticated, login } = usePrivy()
   const router = useRouter()
-
-  useEffect(() => {
-    if (ready && authenticated) {
-      router.push('/dashboard')
-    }
-  }, [ready, authenticated, router])
 
   return (
     <main className="min-h-screen bg-beige flex flex-col">
@@ -55,7 +48,7 @@ export default function Home() {
 
         {/* CTAs */}
         <div className="animate-fade-up flex gap-4 items-center flex-wrap justify-center [animation-delay:240ms] opacity-0">
-          {ready && (
+          {ready && !authenticated && (
             <button
               onClick={login}
               className="bg-black text-beige font-mono text-sm tracking-widest px-8 py-3.5 hover:bg-ink transition-colors cursor-pointer"
@@ -63,12 +56,22 @@ export default function Home() {
               get started
             </button>
           )}
-          <a
-            href="/dashboard"
-            className="font-mono text-sm tracking-widest text-ink px-8 py-3.5 border border-beige-darker hover:border-ink-muted transition-colors"
-          >
-            explore dashboard →
-          </a>
+          {ready && authenticated && (
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="bg-black text-beige font-mono text-sm tracking-widest px-8 py-3.5 hover:bg-ink transition-colors cursor-pointer"
+            >
+              go to dashboard →
+            </button>
+          )}
+          {ready && !authenticated && (
+            <a
+              href="/dashboard"
+              className="font-mono text-sm tracking-widest text-ink px-8 py-3.5 border border-beige-darker hover:border-ink-muted transition-colors"
+            >
+              explore dashboard →
+            </a>
+          )}
         </div>
 
         {/* Feature strip */}
