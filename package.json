@@ -1,0 +1,8 @@
+{
+  "name": "agentis",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}
