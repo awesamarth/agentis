@@ -25,9 +25,9 @@ export default function Navbar({ showCrumb }: { showCrumb?: string }) {
       <div className="flex items-center gap-6">
         {ready && authenticated ? (
           <>
-            <span className="font-mono text-xs text-ink-muted tracking-wide">
+            <Link href="/dashboard/profile" className="font-mono text-xs text-ink-muted tracking-wide hover:text-ink transition-colors">
               {user?.google?.email ?? (user?.wallet?.address ? user.wallet.address.slice(0, 6) + '...' + user.wallet.address.slice(-4) : 'anon')}
-            </span>
+            </Link>
             <button
               onClick={logout}
               className="font-mono text-xs text-ink-muted tracking-widest border border-beige-darker px-4 py-1.5 hover:border-ink-muted transition-colors cursor-pointer"

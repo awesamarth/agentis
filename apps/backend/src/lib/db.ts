@@ -32,15 +32,24 @@ type Agent = {
   monthSpend: { month: string; spend: number }  // month = "YYYY-MM"
 }
 
+type Account = {
+  userId: string       // Privy DID
+  accountKey: string   // agt_user_xxx
+  createdAt: string
+}
+
 type DB = {
   agents: Agent[]
+  accounts: Account[]
 }
 
 async function readDb(): Promise<DB> {
   const file = Bun.file(DB_PATH)
   const exists = await file.exists()
-  if (!exists) return { agents: [] }
-  return file.json()
+  if (!exists) return { agents: [], accounts: [] }
+  const data = await file.json()
+  if (!data.accounts) data.accounts = []
+  return data
 }
 
 async function writeDb(data: DB): Promise<void> {
@@ -49,7 +58,9 @@ async function writeDb(data: DB): Promise<void> {
 
 export async function getAgentsByUser(userId: string): Promise<Agent[]> {
   const db = await readDb()
-  return db.agents.filter(a => a.userId === userId)
+  return db.agents
+    .filter(a => a.userId === userId)
+    .map(a => ({ ...a, transactions: a.transactions ?? [], monthSpend: a.monthSpend ?? { month: '', spend: 0 } }))
 }
 
 export async function createAgent(agent: Omit<Agent, 'transactions' | 'monthSpend'>): Promise<Agent> {
@@ -118,4 +129,27 @@ export async function updateAgentApiKey(id: string, apiKey: string): Promise<Age
 export async function getAgentByApiKey(apiKey: string): Promise<Agent | undefined> {
   const db = await readDb()
   return db.agents.find(a => a.apiKey === apiKey)
+}
+
+export async function getAccountByUserId(userId: string): Promise<Account | undefined> {
+  const db = await readDb()
+  return db.accounts.find(a => a.userId === userId)
+}
+
+export async function getAccountByKey(accountKey: string): Promise<Account | undefined> {
+  const db = await readDb()
+  return db.accounts.find(a => a.accountKey === accountKey)
+}
+
+export async function createOrUpdateAccount(userId: string, accountKey: string): Promise<Account> {
+  const db = await readDb()
+  const existing = db.accounts.findIndex(a => a.userId === userId)
+  const account: Account = { userId, accountKey, createdAt: new Date().toISOString() }
+  if (existing !== -1) {
+    db.accounts[existing] = account
+  } else {
+    db.accounts.push(account)
+  }
+  await writeDb(db)
+  return account
 }

@@ -3,6 +3,7 @@
   "private": true,
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "sdk-testing/*"
   ]
 }

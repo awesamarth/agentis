@@ -1,0 +1,12 @@
+{
+  "name": "agent-app",
+  "private": true,
+  "scripts": {
+    "start": "bun run index.ts",
+    "dev": "bun run --watch index.ts"
+  },
+  "dependencies": {
+    "@agentis/sdk": "workspace:*",
+    "@agentis/core": "workspace:*"
+  }
+}
