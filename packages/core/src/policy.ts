@@ -3,7 +3,7 @@ import { KillSwitchError, PolicyError } from './errors'
 
 export function checkPolicy(
   policy: Policy,
-  amountSol: number,
+  amountUsd: number,
   url: string,
   history: SpendRecord[]
 ): void {
@@ -21,8 +21,8 @@ export function checkPolicy(
     }
   }
 
-  if (policy.maxPerTx !== null && amountSol > policy.maxPerTx) {
-    throw new PolicyError(`Exceeds max per transaction limit (${policy.maxPerTx} SOL)`)
+  if (policy.maxPerTx !== null && amountUsd > policy.maxPerTx) {
+    throw new PolicyError(`Exceeds max per transaction limit ($${policy.maxPerTx})`)
   }
 
   const now = Date.now()
@@ -31,16 +31,16 @@ export function checkPolicy(
     const spend = history
       .filter(t => now - new Date(t.timestamp).getTime() < 60 * 60 * 1000)
       .reduce((s, t) => s + t.amount, 0)
-    if (spend + amountSol > policy.hourlyLimit)
-      throw new PolicyError(`Hourly spend limit exceeded (${policy.hourlyLimit} SOL)`)
+    if (spend + amountUsd > policy.hourlyLimit)
+      throw new PolicyError(`Hourly spend limit exceeded ($${policy.hourlyLimit})`)
   }
 
   if (policy.dailyLimit !== null) {
     const spend = history
       .filter(t => now - new Date(t.timestamp).getTime() < 24 * 60 * 60 * 1000)
       .reduce((s, t) => s + t.amount, 0)
-    if (spend + amountSol > policy.dailyLimit)
-      throw new PolicyError(`Daily spend limit exceeded (${policy.dailyLimit} SOL)`)
+    if (spend + amountUsd > policy.dailyLimit)
+      throw new PolicyError(`Daily spend limit exceeded ($${policy.dailyLimit})`)
   }
 
   if (policy.monthlyLimit !== null) {
@@ -48,13 +48,13 @@ export function checkPolicy(
     const spend = history
       .filter(t => t.timestamp.slice(0, 7) === currentMonth)
       .reduce((s, t) => s + t.amount, 0)
-    if (spend + amountSol > policy.monthlyLimit)
-      throw new PolicyError(`Monthly spend limit exceeded (${policy.monthlyLimit} SOL)`)
+    if (spend + amountUsd > policy.monthlyLimit)
+      throw new PolicyError(`Monthly spend limit exceeded ($${policy.monthlyLimit})`)
   }
 
   if (policy.maxBudget !== null) {
     const spend = history.reduce((s, t) => s + t.amount, 0)
-    if (spend + amountSol > policy.maxBudget)
-      throw new PolicyError(`Total budget cap exceeded (${policy.maxBudget} SOL)`)
+    if (spend + amountUsd > policy.maxBudget)
+      throw new PolicyError(`Total budget cap exceeded ($${policy.maxBudget})`)
   }
 }

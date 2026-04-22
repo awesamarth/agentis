@@ -5,5 +5,10 @@
     "apps/*",
     "packages/*",
     "sdk-testing/*"
-  ]
+  ],
+  "dependencies": {
+    "@solana-program/compute-budget": "^0.15.0",
+    "@solana/mpp": "^0.5.2",
+    "mppx": "^0.5.17"
+  }
 }

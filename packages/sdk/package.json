@@ -16,7 +16,9 @@
   "dependencies": {
     "@agentis/core": "workspace:*",
     "@solana/kit": "^2.1.0",
-    "gill": "^0.14.0"
+    "@solana/mpp": "^0.5.2",
+    "gill": "^0.14.0",
+    "mppx": "^0.5.17"
   },
   "devDependencies": {
     "tsup": "^8.0.0",

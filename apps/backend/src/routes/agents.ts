@@ -5,6 +5,7 @@ import { randomBytes } from 'crypto'
 import {
   Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL
 } from '@solana/web3.js'
+import { solToUsd } from '../lib/price'
 
 const DEVNET_RPC = 'https://api.devnet.solana.com'
 const DEVNET_CAIP2 = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
@@ -199,9 +200,11 @@ agents.post('/:id/send', async (c) => {
       caip2: DEVNET_CAIP2,
     })
 
+    const amountUsd = await solToUsd(amountSol)
     await recordTransaction(agent.id, {
       txHash: result.hash,
       amount: amountSol,
+      amountUsd,
       recipient: to,
       timestamp: new Date().toISOString(),
     })

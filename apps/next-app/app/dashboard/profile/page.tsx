@@ -14,7 +14,8 @@ const API = process.env.NEXT_PUBLIC_BACKEND_URL
 
 type TxRecord = {
   txHash: string
-  amount: number
+  amount: number      // SOL
+  amountUsd: number   // USD
   recipient: string
   timestamp: string
 }
@@ -54,7 +55,7 @@ function CustomTooltip({ active, payload, label }: any) {
   return (
     <div className="bg-white border border-beige-darker px-3 py-2 font-mono text-xs text-ink">
       <p className="text-ink-muted mb-1">{label}</p>
-      <p className="text-ink">{Number(payload[0].value).toFixed(4)} SOL</p>
+      <p className="text-ink">${Number(payload[0].value).toFixed(4)}</p>
     </div>
   )
 }
@@ -64,7 +65,7 @@ function PieTooltip({ active, payload }: any) {
   return (
     <div className="bg-white border border-beige-darker px-3 py-2 font-mono text-xs text-ink">
       <p className="text-ink-muted">{payload[0].name}</p>
-      <p className="text-ink">{Number(payload[0].value).toFixed(4)} SOL</p>
+      <p className="text-ink">${Number(payload[0].value).toFixed(4)}</p>
     </div>
   )
 }
@@ -135,7 +136,7 @@ export default function ProfilePage() {
 
   // Derived stats
   const allTxns = agents.flatMap(a => (a.transactions ?? []).map(tx => ({ ...tx, agentName: a.name })))
-  const totalSpend = allTxns.reduce((s, t) => s + t.amount, 0)
+  const totalSpend = allTxns.reduce((s, t) => s + (t.amountUsd ?? t.amount), 0)
   const activeAgents = agents.filter(a => !a.policy?.killSwitch).length
 
   // Bar chart — spend per day (last 14 days)
@@ -149,7 +150,7 @@ export default function ProfilePage() {
     allTxns.forEach(tx => {
       const d = new Date(tx.timestamp)
       const key = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      if (key in map) map[key] += tx.amount
+      if (key in map) map[key] += tx.amountUsd ?? tx.amount
     })
     return Object.entries(map).map(([date, amount]) => ({ date, amount }))
   })()
@@ -158,7 +159,7 @@ export default function ProfilePage() {
   const spendByAgent = agents
     .map(a => ({
       name: a.name,
-      value: (a.transactions ?? []).reduce((s, t) => s + t.amount, 0),
+      value: (a.transactions ?? []).reduce((s, t) => s + (t.amountUsd ?? t.amount), 0),
     }))
     .filter(a => a.value > 0)
 
@@ -207,7 +208,7 @@ export default function ProfilePage() {
             {[
               { label: 'total agents', value: agents.length },
               { label: 'active agents', value: activeAgents },
-              { label: 'total spend', value: `${totalSpend.toFixed(4)} SOL` },
+              { label: 'total spend', value: `$${totalSpend.toFixed(2)}` },
             ].map(s => (
               <div key={s.label} className="border border-beige-darker bg-white p-5">
                 <p className="font-mono text-[0.6rem] tracking-widest text-ink-muted uppercase mb-2">{s.label}</p>
@@ -239,7 +240,7 @@ export default function ProfilePage() {
                     axisLine={false}
                     tickLine={false}
                     width={48}
-                    tickFormatter={(v) => `${v.toFixed(3)}`}
+                    tickFormatter={(v) => `$${v.toFixed(3)}`}
                   />
                   <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f5f0e8' }} />
                   <Bar dataKey="amount" fill={ACCENT} radius={[2, 2, 0, 0]} />

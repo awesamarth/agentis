@@ -29,20 +29,24 @@ export type MPPChallenge = {
   expiresAt?: string
 }
 
+// v1 format (body JSON)
 export type X402PaymentRequirements = {
   scheme: string
   network: string
-  maxAmountRequired: string
-  resource: string
+  maxAmountRequired?: string  // v1
+  amount?: string             // v2
+  resource?: string
   description?: string
   mimeType?: string
-  payTo: string
+  payTo?: string              // v1
   maxTimeoutSeconds: number
   asset: string
+  extra?: { feePayer?: string } // v2
 }
 
 export type X402Response = {
   x402Version: number
   accepts: X402PaymentRequirements[]
   error?: string
+  resource?: { url: string; description?: string; mimeType?: string }
 }

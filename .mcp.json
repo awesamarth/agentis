@@ -3,6 +3,10 @@
     "privy-docs": {
       "type": "http",
       "url": "https://docs.privy.io/mcp"
+    },
+    "cdp": {
+      "type": "http",
+      "url": "https://docs.cdp.coinbase.com/mcp"
     }
   }
 }

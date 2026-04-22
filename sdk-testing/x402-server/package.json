@@ -5,7 +5,13 @@
     "dev": "bun run --watch index.ts"
   },
   "dependencies": {
+    "@payai/facilitator": "^2.4.0",
+    "@solana/kit": "^6.8.0",
+    "@x402/core": "^2.10.0",
+    "@x402/hono": "^2.10.0",
+    "@x402/svm": "^2.10.0",
     "hono": "^4.12.14",
-    "@solana/kit": "^6.8.0"
+    "x402-express": "^1.2.0",
+    "x402-hono": "^1.2.0"
   }
 }

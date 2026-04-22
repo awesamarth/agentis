@@ -75,7 +75,7 @@ export default function AgentTestConsole() {
   useEffect(() => {
     if (!leftColRef.current) return
     const observer = new ResizeObserver(() => {
-      setLogHeight(leftColRef.current!.offsetHeight)
+      if (leftColRef.current) setLogHeight(leftColRef.current.offsetHeight)
     })
     observer.observe(leftColRef.current)
     return () => observer.disconnect()

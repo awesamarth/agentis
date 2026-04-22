@@ -24,7 +24,7 @@ export type TxRecord = {
 }
 
 export type SpendRecord = {
-  amount: number
+  amount: number   // USD
   timestamp: string
   url: string
 }

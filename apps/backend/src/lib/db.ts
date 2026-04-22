@@ -14,7 +14,8 @@ type Policy = {
 
 export type TxRecord = {
   txHash: string
-  amount: number       // SOL
+  amount: number       // SOL (raw chain value)
+  amountUsd: number    // USD at time of payment
   recipient: string
   timestamp: string    // ISO
 }
@@ -49,6 +50,12 @@ async function readDb(): Promise<DB> {
   if (!exists) return { agents: [], accounts: [] }
   const data = await file.json()
   if (!data.accounts) data.accounts = []
+  // Migrate old tx records missing amountUsd — assume 1:1 with raw amount as fallback
+  for (const agent of data.agents ?? []) {
+    for (const tx of agent.transactions ?? []) {
+      if (tx.amountUsd === undefined) tx.amountUsd = tx.amount
+    }
+  }
   return data
 }
 
@@ -111,7 +118,7 @@ export async function recordTransaction(id: string, tx: TxRecord): Promise<void>
   }
 
   agent.transactions.push(tx)
-  agent.monthSpend.spend += tx.amount
+  agent.monthSpend.spend += tx.amountUsd
 
   db.agents[idx] = agent
   await writeDb(db)

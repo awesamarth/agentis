@@ -120,11 +120,10 @@ Web UI for managing agents. Auth via Privy (Google/wallet). Target: less technic
 
 #### 4. On-Chain Programs (Quasar)
 - Agent identity registry (PDA per agent)
-- Kill switch flag (the one policy that must be trustless)
+- Full policy stored on-chain: kill switch, spend limits (hourly/daily/monthly/maxBudget/maxPerTx), allowed domains (up to 10, 64 chars each)
 - Spend counters for rate limiting verification
-- Policy hash (full policy off-chain, hash on-chain for verifiability)
 
-**Note on policy storage:** Full policy rules stored off-chain in Agentis DB (encrypted). On-chain stores only the kill switch, spend counters, and a policy commitment hash. Tx fees on Solana are ~$0.001 so on-chain updates are not a cost concern.
+**Note on policy storage:** Full policy stored on-chain in agent PDA. Solana tx fees are ~$0.00025 so on-chain updates for every policy change are totally fine.
 
 #### 5. Facilitator Service
 - Jupiter Swap: agent holds SOL, endpoint needs USDC → swap silently, pay, done
@@ -148,10 +147,13 @@ agentis/
     next-app/       ← Dashboard (Next.js 16, Tailwind v4, Bun)
     backend/        ← Hono API server (Bun, port 3001)
   packages/
-    core/
-    sdk/
-    cli/
-    mcp/
+    core/           ← Shared types, policy engine, constants (@agentis/core)
+    sdk/            ← AgentisClient SDK (@agentis/sdk)
+    cli/            ← Not built yet
+    mcp/            ← Not built yet
+  sdk-testing/
+    x402-server/    ← Test x402 paid server (Hono + PayAI facilitator, port 4000)
+    agent-app/      ← Test script using AgentisClient to hit paid endpoints
 ```
 
 ---
@@ -178,15 +180,28 @@ agentis/
 
 ### Backend (`apps/backend`)
 - Hono server on port 3001
-- `GET /agents` — list agents for authenticated user
-- `POST /agents` — create agent: calls `privy.walletApi.createWallet({ chainType: 'solana' })`, generates `agt_live_xxx` API key, stores in JSON DB
-- `GET /agents/:id` — get single agent (owner-only, returns 404 for non-owners)
-- `PATCH /agents/:id` — update name + policy (owner-only, ignores sensitive fields)
-- `POST /agents/:id/send` — send SOL from agent wallet via Privy signAndSendTransaction, builds tx with @solana/web3.js, fetches blockhash from devnet with 'finalized' commitment
+- **`/agents` routes** (Privy JWT auth):
+  - `GET /agents` — list agents for authenticated user
+  - `POST /agents` — create agent with Privy wallet, generates `agt_live_xxx` API key
+  - `GET /agents/:id` — get single agent (owner-only)
+  - `PATCH /agents/:id` — update name + policy
+  - `GET /agents/:id/transactions` — transaction history
+  - `POST /agents/:id/regen-key` — regenerate API key
+  - `POST /agents/:id/send` — send SOL from agent wallet
+- **`/sdk` routes** (`agt_live_xxx` API key auth via `x-api-key` header):
+  - `GET /sdk/agent` — agent info + policy + transactions
+  - `PATCH /sdk/agent/policy` — update policy
+  - `POST /sdk/agent/sign` — sign message (for MPP), returns signature bytes
+  - `POST /sdk/agent/sign-payment` — build + sign x402 USDC SPL payload via `@x402/svm`, returns base64 payment
+  - `POST /sdk/agent/record-spend` — record confirmed spend (requires txHash)
+- **`/account` routes** (Privy JWT or `agt_user_xxx` account key):
+  - `GET /account/key` — get masked account key (JWT only)
+  - `POST /account/key` — generate/regenerate account key (JWT only, plaintext once)
+  - `GET /account/agents` — list agents
+  - `POST /account/agents` — create agent
 - Auth middleware: verifies Privy JWT (`privy.verifyAuthToken`) to identify user
 - JSON file DB at `apps/backend/data/db.json` (gitignored, temporary)
-- Privy server-auth SDK quirks: use `privy.walletApi.createWallet()` not `.create()` (deprecated). `signAndSendTransaction` takes a `Transaction` object + `caip2` string, NOT base64.
-- `@solana/web3.js` installed for building transactions
+- **NOTE:** `agents.ts` and `sdk.ts` still use `@solana/web3.js` for SOL transfers (send endpoint). New code should use `@solana/kit` + `gill`.
 - Devnet CAIP2: `'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'`
 
 ### Agent data model:
@@ -286,7 +301,7 @@ CLI → Agentis API (validates session token) → Privy (signs tx)
 
 Like AWS IAM for AI agents. Enforced at two layers:
 - **Off-chain (SDK):** Checks before any payment attempt
-- **On-chain (Quasar):** Kill switch + spend counters (trustless guarantees)
+- **On-chain (Quasar):** Full policy enforcement — all limits, kill switch, allowed domains (trustless guarantees)
 
 Policy rules:
 - Max spend per day/week/month
@@ -402,18 +417,164 @@ Jupiter + Privy are perfectly compatible. Jupiter builds transactions, Privy sig
 
 ---
 
+## What's Been Built — Session 2 Updates
+
+### SDK (`packages/sdk`) — Now Working End-to-End
+- `AgentisClient.create()` bootstraps from backend, seeds `spendHistory` from DB transactions
+- `agentis.fetch()` — detects 402, identifies MPP vs x402, handles both flows
+- **MPP flow:** backend signs message via Privy `signMessage`, sends `Authorization: Payment <credential>`
+- **x402 flow:** SDK calls `POST /sdk/agent/fetch-paid` on backend → backend uses `createX402Client` + `wrapFetchWithPayment` to proxy the paid request → returns `{ status, headers, body }` → SDK reconstructs Response
+- Policy enforcement before every payment (`checkPolicy` from `@agentis/core`)
+- `packages/core` and `packages/sdk` `package.json` exports point to `src/` directly — no build needed locally
+
+### Backend (`apps/backend`) — New Routes
+- `GET/POST /account/key` — account-level API keys (`agt_user_xxx`) for MCP/CLI use
+- `GET/POST /account/agents` — create/list agents via account key or Privy JWT
+- `GET /sdk/agent` — now returns `transactions` array too
+- `POST /sdk/agent/fetch-paid` — proxies a URL through Privy x402 wallet (full pay cycle), returns response body. Uses `createX402Client` from `@privy-io/node/x402` + `wrapFetchWithPayment` from `@x402/fetch`
+- `POST /sdk/agent/sign-payment` — kept for reference but replaced by `fetch-paid`
+- `POST /sdk/agent/record-spend` — records spend after facilitator confirms
+- DB now has `accounts` array alongside `agents`
+- CORS: `/agents/*` restricted to `localhost:3000`, `/sdk/*` no CORS needed (server-to-server)
+
+### Dashboard (`apps/next-app`) — New Pages
+- `/dashboard/profile` — identity, stats (total agents, active, total spend), bar chart (daily spend 14 days), donut chart (spend by agent), account API key generate/display
+- Navbar email/wallet now links to profile page
+- `recharts` installed for charts
+
+### SDK Testing (`sdk-testing/`)
+- `x402-server/` — Hono server using `@x402/hono` + `@payai/facilitator` + `ExactSvmScheme` for real USDC payments on Solana devnet
+- `agent-app/` — test script using `AgentisClient` to hit paid endpoints
+- Both added to monorepo workspaces
+
+### Agent Data Model — Updated
+```typescript
+{
+  id, name, userId, walletId, walletAddress, apiKey, createdAt,
+  policy?: { hourlyLimit, dailyLimit, monthlyLimit, maxBudget, maxPerTx, allowedDomains, killSwitch },
+  transactions: TxRecord[],   // ← now always present
+  monthSpend: { month: string, spend: number }
+}
+```
+
+---
+
+## MPP vs x402 — Critical Knowledge
+
+### MPP Flow
+```
+Client → GET /resource
+Server → 402 + WWW-Authenticate: Payment <base64url-challenge>
+Client → Signs challenge message (Ed25519), builds credential
+Client → GET /resource + Authorization: Payment <base64-credential>
+Server → Verifies signature, delivers resource + Payment-Receipt header
+```
+- Client signs a **message**, no on-chain tx needed for verification
+- Server handles settlement however it wants
+- Currency agnostic — server decides what payment means
+
+### x402 Flow (v2 — what PayAI uses)
+```
+Client → GET /resource
+Server → 402 + PAYMENT-REQUIRED: <base64-encoded-JSON>
+  (JSON contains: x402Version, accepts[{scheme, network, amount, asset, payTo, extra.feePayer}])
+Client → Builds + signs USDC SPL token transfer tx (NOT submitted to chain yet)
+Client → GET /resource + X-Payment: <base64-payment-payload>
+Server → Calls PayAI facilitator /verify (validates the signed tx)
+Server → Calls PayAI facilitator /settle (broadcasts tx to chain, pays gas)
+Server → 200 OK
+```
+- v1 used body JSON + `maxAmountRequired`/`payTo` field names, `WWW-Authenticate` header
+- v2 uses `PAYMENT-REQUIRED` header (base64 JSON) + `amount`/`asset` field names
+- **PayAI facilitator pays gas** — client doesn't need SOL for fees
+- Payment is **USDC SPL token transfer**, not SOL transfer
+- `feePayer` comes from facilitator in `extra.feePayer` field — facilitator's address
+- Client signs tx but doesn't broadcast — facilitator does that
+
+### SDK handles both
+`parse402WithBody` checks:
+1. `WWW-Authenticate: Payment` header → MPP
+2. `PAYMENT-REQUIRED` header (base64) → x402 v2
+3. Body JSON with `x402Version` → x402 v1
+
+### Key Libraries
+- **`@x402/hono`** — server middleware (use `paymentMiddleware` + `x402ResourceServer`)
+- **`@x402/svm`** — SVM scheme implementations
+  - `@x402/svm/exact/server` → `ExactSvmScheme` for server (facilitator-side)
+  - `@x402/svm/exact/v1/client` → `ExactSvmSchemeV1` for client (signing-side)
+  - `@x402/svm/exact/v1/facilitator` → `ExactSvmSchemeV1` for facilitator-side (server settlement)
+- **`@payai/facilitator`** — `facilitator` config object + `createFacilitatorConfig()` — Payai is the Solana x402 facilitator (supports devnet). Free tier available, paid with `PAYAI_API_KEY_ID` + `PAYAI_API_KEY_SECRET` env vars.
+- **`@x402/fetch`** — `wrapFetchWithPayment` for client-side fetch wrapping
+- **`@x402/core/server`** → `HTTPFacilitatorClient`
+
+### x402 Server Setup (Hono)
+```typescript
+import { paymentMiddleware, x402ResourceServer } from '@x402/hono'
+import { HTTPFacilitatorClient } from '@x402/core/server'
+import { ExactSvmScheme } from '@x402/svm/exact/server'
+import { facilitator } from '@payai/facilitator'
+
+const facilitatorClient = new HTTPFacilitatorClient(facilitator)
+app.use(paymentMiddleware(
+  { 'GET /paid': { accepts: [{ scheme: 'exact', price: '$0.001', network: 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1', payTo: ADDRESS }] } },
+  new x402ResourceServer(facilitatorClient).register(NETWORK, new ExactSvmScheme())
+))
+```
+
+### x402 Client Signing (correct approach — via @privy-io/node/x402)
+**Do NOT use `ExactSvmSchemeV1` directly with a manual Privy signer.** That approach fails because `ExactSvmSchemeV1` uses `@solana/kit` transaction format internally, but `privy.walletApi.solana.signTransaction` (from `@privy-io/server-auth`) expects a `@solana/web3.js` VersionedTransaction object.
+
+**Correct approach:** Use `createX402Client` from `@privy-io/node/x402` + `wrapFetchWithPayment` from `@x402/fetch`. The `@privy-io/node` client uses `getBase64EncodedWireTransaction` (kit) → `client.wallets().solana().signTransaction(walletId, { transaction: base64 })` which accepts base64 directly.
+
+**SDK x402 flow (current):**
+1. SDK detects 402, parses requirements, does policy check
+2. SDK calls `POST /sdk/agent/fetch-paid` on backend with the URL
+3. Backend creates `x402client = createX402Client(privyNode, { walletId, address })`
+4. Backend calls `wrapFetchWithPayment(fetch, x402client)(url)` — handles full 402→sign→pay cycle
+5. Backend returns `{ status, headers, body }` to SDK
+6. SDK reconstructs a `Response` and returns to caller
+
+```typescript
+// Backend fetch-paid endpoint
+import { PrivyClient } from '@privy-io/node'
+import { createX402Client } from '@privy-io/node/x402'
+import { wrapFetchWithPayment } from '@x402/fetch'
+
+const privyNode = new PrivyClient({ appId, appSecret })
+const x402client = createX402Client(privyNode, { walletId: agent.walletId, address: agent.walletAddress })
+const fetchWithPayment = wrapFetchWithPayment(globalThis.fetch, x402client)
+const response = await fetchWithPayment(url)
+```
+
+**Required deps in backend:** `@privy-io/node`, `@x402/fetch`, `@x402/evm` (peer dep of `@privy-io/node/x402`)
+
+### x402 Test Server
+- `PAY_TO` must be an address with an existing USDC ATA on devnet
+- Test server uses `77rKFXbTbWQMXeQ97AYwThPcuh8sotTtz3jssRMRszGq` (agent wallet) as recipient — it has 20 devnet USDC and a valid ATA
+- The burn address `5yDpyuSofQARocCtzkrHaEeRjSBTuYTPPna1aeZjqUB6` has NO USDC ATA on devnet — don't use it as PAY_TO
+
+### Current Status of x402 Test
+- x402-server running with PayAI facilitator ✅
+- SDK detects x402 v2 (`PAYMENT-REQUIRED` header) ✅
+- Backend uses `createX402Client` + `wrapFetchWithPayment` (Privy official x402 integration) ✅
+- PayAI settles on devnet ✅
+- **WORKING END-TO-END** — real USDC transfers confirmed on devnet (verified via `getSignaturesForAddress`)
+
+---
+
 ## What Still Needs Building (Priority Order)
 
-### Immediate next steps:
-1. **SDK** — `AgentisClient.create()`, `agentis.fetch()` with MPP/x402 flow, policy enforcement before payments
-2. **CLI** — `agentis login` browser flow, `agentis wallet list`, `agentis agent create`, `agentis facilitator bootstrap`
-3. **Quasar programs** — agent registry PDA, kill switch, spend counters, policy hash on-chain
-4. **Facilitator (Jupiter)** — token swap layer: agent holds SOL, endpoint needs USDC → swap silently via Jupiter, then pay. Jupiter Earn for idle funds.
-5. **MCP server** — expose Agentis functionality as MCP tools
+### Immediate:
+1. ~~**Fix x402 end-to-end test**~~ ✅ **DONE** — real USDC payments working on devnet via `fetch-paid` proxy + PayAI facilitator
+2. ~~**MPP end-to-end**~~ ✅ **DONE** — MPP push mode working on devnet via `createSolanaKitSigner` + `broadcast: true`
+3. **CLI** — `agentis login` browser flow, `agentis agent list/create`, `agentis policy set`
+4. **Quasar programs** — agent registry PDA, full policy on-chain (all limits + kill switch + allowed domains), spend counters
+5. **Jupiter facilitator** — agent holds SOL, endpoint needs USDC → swap silently via Jupiter, then pay. Jupiter Earn for idle funds.
+6. **MCP server** — expose Agentis functionality as MCP tools
 
 ### Dashboard — what's left:
-- **API key display + regen** on agent detail page — currently key is shown once at creation on dashboard, never again. Need masked display + regenerate button on detail page. Backend needs `POST /agents/:id/regen-key` route.
-- **Policy enforcement** — stored in DB but not actually enforced anywhere. Will be enforced in SDK.
+~~**API key display + regen**~~ ✅ **DONE**
+~~**Policy enforcement UI**~~ ✅ **DONE**
 
 ### Later:
 - Skill (SKILL.md) — free once MCP exists
@@ -421,7 +582,6 @@ Jupiter + Privy are perfectly compatible. Jupiter builds transactions, Privy sig
 - Replace JSON DB with real DB (Postgres/SQLite)
 - Hash API keys before storing (SHA-256, show plaintext once)
 - CLI session token auth in backend middleware
-- Policy enforcement actually wired up in SDK (currently only stored in DB, not enforced)
 
 ### Facilitator Bootstrap Feature (CLI)
 **Discussed but not built yet.** Key idea: `agentis facilitator bootstrap` CLI command that:

@@ -1,12 +1,21 @@
 import { Hono } from 'hono'
 import { privy } from '../lib/privy'
 import { getAgentByApiKey, updateAgent, recordTransaction } from '../lib/db'
-import {
-  Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL
-} from '@solana/web3.js'
+import { PrivyClient } from '@privy-io/node'
+import { createX402Client } from '@privy-io/node/x402'
+import { wrapFetchWithPayment } from '@x402/fetch'
+import { Mppx, solana as solanaClient } from '@solana/mpp/client'
+import { createSolanaKitSigner } from '@privy-io/node/solana-kit'
+import { address as toAddress } from '@solana/kit'
+import { solToUsd, getTokenPriceUsd } from '../lib/price'
 
-const DEVNET_RPC = 'https://api.devnet.solana.com'
 const DEVNET_CAIP2 = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
+
+// @privy-io/node client for x402 signing
+const privyNode = new PrivyClient({
+  appId: process.env.PRIVY_APP_ID!,
+  appSecret: process.env.PRIVY_APP_SECRET!,
+})
 
 type Agent = Awaited<ReturnType<typeof getAgentByApiKey>>
 
@@ -81,62 +90,182 @@ sdk.post('/agent/sign', async (c) => {
   }
 })
 
-// POST /sdk/agent/sign-payment — build + sign x402 payment transaction
+// POST /sdk/agent/sign-payment — kept for backwards compatibility but deprecated
+// Use /sdk/agent/fetch-paid instead
 sdk.post('/agent/sign-payment', async (c) => {
   const agent = c.get('agent')
-  const { requirements } = await c.req.json()
+  const { requirements, x402Version } = await c.req.json()
 
-  if (!requirements?.payTo || !requirements?.maxAmountRequired) {
+  const payTo = requirements?.payTo
+  const amount = requirements?.maxAmountRequired ?? requirements?.amount
+  if (!payTo || !amount) {
     return c.json({ error: 'Invalid payment requirements' }, 400)
   }
 
   try {
-    const connection = new Connection(DEVNET_RPC, 'confirmed')
-    const fromPubkey = new PublicKey(agent.walletAddress)
-    const toPubkey = new PublicKey(requirements.payTo)
-    const lamports = parseInt(requirements.maxAmountRequired, 10)
-
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized')
-
-    const tx = new Transaction()
-    tx.recentBlockhash = blockhash
-    tx.lastValidBlockHeight = lastValidBlockHeight
-    tx.feePayer = fromPubkey
-    tx.add(SystemProgram.transfer({ fromPubkey, toPubkey, lamports }))
-
-    const result = await (privy.walletApi.solana as any).signTransaction({
+    const x402client = createX402Client(privyNode, {
       walletId: agent.walletId,
-      transaction: tx,
+      address: agent.walletAddress,
+    })
+
+    const normalizedRequirements = {
+      ...requirements,
+      amount: String(amount),
+      extra: requirements.extra ?? {},
+    }
+
+    const paymentRequired = {
+      x402Version: x402Version ?? 2,
+      accepts: [normalizedRequirements],
+      resource: { url: 'https://agentis.xyz' },
+    }
+
+    const payloadResult = await x402client.createPaymentPayload(paymentRequired as any)
+    const payment = Buffer.from(JSON.stringify(payloadResult)).toString('base64')
+    return c.json({ payment, payTo, amount })
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? 'Sign payment failed' }, 500)
+  }
+})
+
+// POST /sdk/agent/fetch-paid — proxy a request through Privy x402 wallet
+// The SDK sends the URL here, backend does the paid fetch and returns the response
+sdk.post('/agent/fetch-paid', async (c) => {
+  const agent = c.get('agent')
+  const { url, method, headers, body, amount, mint } = await c.req.json()
+
+  if (!url) {
+    return c.json({ error: 'url is required' }, 400)
+  }
+
+  try {
+    const x402client = createX402Client(privyNode, {
+      walletId: agent.walletId,
+      address: agent.walletAddress,
+    })
+
+    const fetchWithPayment = wrapFetchWithPayment(globalThis.fetch, x402client)
+
+    const response = await fetchWithPayment(url, {
+      method: method ?? 'GET',
+      headers: headers ?? {},
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    })
+
+    const responseBody = await response.text()
+
+    // Record transaction if payment succeeded
+    if (response.status === 200 && amount) {
+      const paymentResponse = response.headers.get('payment-response')
+      const txHash = paymentResponse ? (() => { try { return JSON.parse(atob(paymentResponse)).transaction ?? 'x402-unknown' } catch { return 'x402-unknown' } })() : 'x402-unknown'
+      const amountNum = Number(amount)
+      const amountUsd = mint ? amountNum * await getTokenPriceUsd(mint) : await solToUsd(amountNum)
+      await recordTransaction(agent.id, {
+        txHash,
+        amount: amountNum,
+        amountUsd,
+        recipient: url,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {}) // don't fail the response if recording fails
+    }
+
+    return c.json({
+      status: response.status,
+      headers: Object.fromEntries(response.headers.entries()),
+      body: responseBody,
+    })
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? 'Fetch failed' }, 500)
+  }
+})
+
+// POST /sdk/agent/fetch-paid-mpp — proxy a request through @solana/mpp client with Privy wallet
+// Uses mppx.fetch() which handles the full 402 → sign → credential → retry flow.
+sdk.post('/agent/fetch-paid-mpp', async (c) => {
+  const agent = c.get('agent')
+  const { url, method, headers: reqHeaders, amount, mint } = await c.req.json()
+
+  if (!url) {
+    return c.json({ error: 'url is required' }, 400)
+  }
+
+  try {
+    const signer = createSolanaKitSigner(privyNode, {
+      walletId: agent.walletId,
+      address: toAddress(agent.walletAddress),
       caip2: DEVNET_CAIP2,
     })
 
-    // Return base64 signed tx as x402 payment header value
-    const serialized = (result.signedTransaction as Transaction).serialize()
-    const payment = Buffer.from(serialized).toString('base64')
+    const mppx = Mppx.create({
+      polyfill: false,
+      methods: [
+        solanaClient.charge({
+          broadcast: true,
+          signer,
+          rpcUrl: 'https://api.devnet.solana.com',
+        }),
+      ],
+    })
 
-    return c.json({ payment, lamports, payTo: requirements.payTo })
+    const response = await mppx.fetch(url, {
+      method: method ?? 'GET',
+      headers: reqHeaders ?? {},
+    })
+
+    const responseBody = await response.text()
+    if (response.status === 402) {
+      console.error('[fetch-paid-mpp] Server still returned 402:', responseBody.slice(0, 500))
+    }
+
+    // Record transaction if payment succeeded
+    if (response.status === 200 && amount) {
+      const receipt = response.headers.get('payment-receipt')
+      const txHash = receipt ? (() => { try { return JSON.parse(atob(receipt)).reference ?? 'mpp-unknown' } catch { return 'mpp-unknown' } })() : 'mpp-unknown'
+      const amountNum = Number(amount)
+      const amountUsd = mint ? amountNum * await getTokenPriceUsd(mint) : await solToUsd(amountNum)
+      await recordTransaction(agent.id, {
+        txHash,
+        amount: amountNum,
+        amountUsd,
+        recipient: url,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {})
+    }
+
+    return c.json({
+      status: response.status,
+      headers: Object.fromEntries(response.headers.entries()),
+      body: responseBody,
+    })
   } catch (err: any) {
-    return c.json({ error: err?.message ?? 'Sign payment failed' }, 500)
+    console.error('[fetch-paid-mpp] Error:', err)
+    return c.json({ error: err?.message ?? 'MPP payment failed' }, 500)
   }
 })
 
 // POST /sdk/agent/record-spend — called by SDK after facilitator confirms payment
 sdk.post('/agent/record-spend', async (c) => {
   const agent = c.get('agent')
-  const { txHash, lamports, payTo } = await c.req.json()
+  const { txHash, amount, payTo, mint } = await c.req.json()
 
-  if (!txHash || !lamports || !payTo) {
-    return c.json({ error: 'txHash, lamports, and payTo are required' }, 400)
+  if (!txHash || !amount || !payTo) {
+    return c.json({ error: 'txHash, amount, and payTo are required' }, 400)
   }
+
+  const amountSol = Number(amount)
+  const amountUsd = mint
+    ? amountSol * await getTokenPriceUsd(mint)
+    : await solToUsd(amountSol)
 
   await recordTransaction(agent.id, {
     txHash,
-    amount: lamports / 1e9,
+    amount: amountSol,
+    amountUsd,
     recipient: payTo,
     timestamp: new Date().toISOString(),
   })
 
-  return c.json({ ok: true })
+  return c.json({ ok: true, amountUsd })
 })
 
 export default sdk
