@@ -180,23 +180,38 @@ export default function AgentDetail() {
       const rpcData = await rpcRes.json()
       setSolBalance(rpcData.result.value / 1e9)
 
-      // Token balances via Jupiter portfolio API
-      const res = await fetch(`https://lite-api.jup.ag/portfolio/v1/positions/${address}`)
-      if (res.ok) {
-        const data = await res.json()
-        const walletTokens: TokenBalance[] = (data?.wallet_balances ?? [])
-          .filter((t: any) => t.ui_amount > 0)
-          .map((t: any) => ({
-            symbol: t.symbol ?? t.mint?.slice(0, 6),
-            name: t.name ?? t.symbol ?? 'Unknown',
-            mint: t.mint,
-            balance: t.amount,
-            uiAmount: t.ui_amount,
-            usdValue: t.value_usd ?? null,
-            logoURI: t.logo_uri,
-          }))
-        setTokens(walletTokens)
+      // Token balances via Solana devnet RPC (Jupiter portfolio API is mainnet-only)
+      const KNOWN_TOKENS: Record<string, { symbol: string; name: string; usdPerUnit: number }> = {
+        '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU': { symbol: 'USDC', name: 'USD Coin', usdPerUnit: 1 },
+        'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB': { symbol: 'USDT', name: 'Tether USD', usdPerUnit: 1 },
+        '2u1tszSeqaGNBXyMBCBMHXHNsJL83PbkSbB5CmEZi69W': { symbol: 'USDG', name: 'USDG', usdPerUnit: 1 },
       }
+      const tokenRes = await fetch('https://api.devnet.solana.com', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0', id: 2, method: 'getTokenAccountsByOwner',
+          params: [address, { programId: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' }, { encoding: 'jsonParsed' }]
+        })
+      })
+      const tokenData = await tokenRes.json()
+      const walletTokens: TokenBalance[] = (tokenData.result?.value ?? [])
+        .map((acc: any) => {
+          const info = acc.account.data.parsed.info
+          const known = KNOWN_TOKENS[info.mint]
+          const uiAmount = info.tokenAmount.uiAmount ?? 0
+          return {
+            symbol: known?.symbol ?? info.mint.slice(0, 6),
+            name: known?.name ?? info.mint.slice(0, 6),
+            mint: info.mint,
+            balance: info.tokenAmount.amount,
+            uiAmount,
+            usdValue: known ? uiAmount * known.usdPerUnit : null,
+            logoURI: undefined,
+          }
+        })
+        .filter((t: TokenBalance) => t.uiAmount > 0)
+      setTokens(walletTokens)
     } catch {
       // silently fail — balance is non-critical
     } finally {
@@ -613,6 +628,22 @@ export default function AgentDetail() {
           </div>
         </section>
 
+        {/* Save */}
+        <div className="flex items-center gap-4 mb-10">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="bg-black text-beige font-mono text-xs tracking-widest px-8 py-3 hover:bg-ink transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {saving ? 'saving...' : 'save policy'}
+          </button>
+          {saved && (
+            <p className="font-mono text-[0.65rem] text-ink-muted tracking-widest animate-fade-up">
+              policy saved.
+            </p>
+          )}
+        </div>
+
         {/* Transaction History */}
         <section className="mb-10">
           <h2 className="font-mono text-[0.65rem] text-ink-muted tracking-widest uppercase mb-4">Transaction History</h2>
@@ -652,21 +683,6 @@ export default function AgentDetail() {
           )}
         </section>
 
-        {/* Save */}
-        <div className="flex items-center gap-4">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="bg-black text-beige font-mono text-xs tracking-widest px-8 py-3 hover:bg-ink transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {saving ? 'saving...' : 'save policy'}
-          </button>
-          {saved && (
-            <p className="font-mono text-[0.65rem] text-ink-muted tracking-widest animate-fade-up">
-              policy saved.
-            </p>
-          )}
-        </div>
 
       </div>
     </main>

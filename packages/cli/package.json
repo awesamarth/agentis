@@ -1,0 +1,14 @@
+{
+  "name": "@agentis/cli",
+  "version": "0.1.0",
+  "bin": {
+    "agentis": "./src/index.ts"
+  },
+  "description": "Agentis CLI",
+  "scripts": {
+    "dev": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "@napi-rs/keyring": "^1.2.0"
+  }
+}

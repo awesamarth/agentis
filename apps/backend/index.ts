@@ -4,12 +4,14 @@ import { logger } from 'hono/logger'
 import agents from './src/routes/agents'
 import sdk from './src/routes/sdk'
 import account from './src/routes/account'
+import auth from './src/routes/auth'
 import { solToUsd } from './src/lib/price'
 
 const app = new Hono()
 
 app.use('/agents/*', cors({ origin: 'http://localhost:3000' }))
 app.use('/account/*', cors({ origin: 'http://localhost:3000' }))
+app.use('/auth/*', cors({ origin: 'http://localhost:3000' }))
 app.use('/sol-price', cors({ origin: '*' }))
 app.use('*', logger())
 
@@ -22,6 +24,7 @@ app.get('/sol-price', async (c) => {
 app.route('/agents', agents)
 app.route('/sdk', sdk)
 app.route('/account', account)
+app.route('/auth', auth)
 
 export default {
   port: process.env.PORT ?? 3001,

@@ -39,17 +39,27 @@ type Account = {
   createdAt: string
 }
 
+export type LoginSession = {
+  id: string           // random hex, used as session ID
+  status: 'pending' | 'complete'
+  accountKey?: string  // set on complete
+  createdAt: string
+  expiresAt: string    // 10 min TTL
+}
+
 type DB = {
   agents: Agent[]
   accounts: Account[]
+  loginSessions: LoginSession[]
 }
 
 async function readDb(): Promise<DB> {
   const file = Bun.file(DB_PATH)
   const exists = await file.exists()
-  if (!exists) return { agents: [], accounts: [] }
+  if (!exists) return { agents: [], accounts: [], loginSessions: [] }
   const data = await file.json()
   if (!data.accounts) data.accounts = []
+  if (!data.loginSessions) data.loginSessions = []
   // Migrate old tx records missing amountUsd — assume 1:1 with raw amount as fallback
   for (const agent of data.agents ?? []) {
     for (const tx of agent.transactions ?? []) {
@@ -146,6 +156,33 @@ export async function getAccountByUserId(userId: string): Promise<Account | unde
 export async function getAccountByKey(accountKey: string): Promise<Account | undefined> {
   const db = await readDb()
   return db.accounts.find(a => a.accountKey === accountKey)
+}
+
+export async function createLoginSession(id: string): Promise<LoginSession> {
+  const db = await readDb()
+  const session: LoginSession = {
+    id,
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+  }
+  db.loginSessions.push(session)
+  await writeDb(db)
+  return session
+}
+
+export async function getLoginSession(id: string): Promise<LoginSession | undefined> {
+  const db = await readDb()
+  return db.loginSessions.find(s => s.id === id)
+}
+
+export async function completeLoginSession(id: string, accountKey: string): Promise<LoginSession> {
+  const db = await readDb()
+  const idx = db.loginSessions.findIndex(s => s.id === id)
+  if (idx === -1) throw new Error('Session not found')
+  db.loginSessions[idx] = { ...db.loginSessions[idx]!, status: 'complete', accountKey }
+  await writeDb(db)
+  return db.loginSessions[idx]!
 }
 
 export async function createOrUpdateAccount(userId: string, accountKey: string): Promise<Account> {
