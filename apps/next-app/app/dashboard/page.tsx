@@ -1,6 +1,6 @@
 'use client'
 
-import { Copy, Check } from 'lucide-react'
+import { Copy, Check, Lock, Unlock } from 'lucide-react'
 import { usePrivy } from '@privy-io/react-auth'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -231,7 +231,11 @@ export default function Dashboard() {
               <div
                 key={agent.id}
                 onClick={() => router.push(`/dashboard/agents/${agent.id}`)}
-                className="border border-beige-darker bg-white p-6 flex items-center justify-between cursor-pointer hover:border-ink-muted hover:shadow-sm transition-all group"
+                className={`border p-6 flex items-center justify-between cursor-pointer hover:border-ink-muted hover:shadow-sm transition-all group ${
+                  agent.privacyEnabled && agent.umbraStatus === 'registered'
+                    ? 'border-[#b7cce5] bg-[linear-gradient(115deg,#ffffff_0%,#ffffff_62%,#eef6ff_100%)]'
+                    : 'border-beige-darker bg-white'
+                }`}
               >
                 <div>
                   <div className="flex items-center gap-2 mb-1">
@@ -239,15 +243,22 @@ export default function Dashboard() {
                     {agent._guest && (
                       <span className="font-mono text-[0.55rem] text-ink-muted border border-beige-darker px-1.5 py-0.5 tracking-widest">guest</span>
                     )}
-                    {agent.privacyEnabled && (
-                      <span className={`font-mono text-[0.55rem] border px-1.5 py-0.5 tracking-widest ${
-                        agent.umbraStatus === 'registered'
-                          ? 'text-black border-black'
-                          : agent.umbraStatus === 'failed'
-                            ? 'text-red-700 border-red-200 bg-red-50'
-                            : 'text-ink-muted border-beige-darker'
+                    {agent.privacyEnabled && agent.umbraStatus === 'registered' && (
+                      <span
+                        title="private agent"
+                        className="text-ink-muted inline-flex h-5 w-5 items-center justify-center -translate-y-px"
+                      >
+                        <Lock size={12} strokeWidth={2} />
+                      </span>
+                    )}
+                    {agent.privacyEnabled && agent.umbraStatus !== 'registered' && (
+                      <span className={`font-mono text-[0.55rem] border px-1.5 py-0.5 tracking-widest inline-flex items-center gap-1.5 ${
+                        agent.umbraStatus === 'failed'
+                          ? 'text-red-700 border-red-200 bg-red-50'
+                          : 'text-ink-muted border-beige-darker'
                       }`}>
-                        private {agent.umbraStatus ? `· ${agent.umbraStatus}` : ''}
+                        <Unlock size={10} strokeWidth={2.2} />
+                        registration needed
                       </span>
                     )}
                   </div>
