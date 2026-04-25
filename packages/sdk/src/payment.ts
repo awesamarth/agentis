@@ -1,10 +1,7 @@
 import type {
-  MPPChallenge,
   X402Response,
   X402PaymentRequirements,
-  PaymentDetails,
 } from './types'
-import { PaymentError } from './types'
 
 const SOLANA_DEVNET = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
 const SOLANA_MAINNET = 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'
@@ -110,30 +107,6 @@ function parseMPPRequest(wwwAuth: string): { amount: number; currency: string; r
 export function parseAmount(amountStr: string, currency: string): number {
   const num = parseFloat(amountStr.replace(/[^0-9.]/g, ''))
   return isNaN(num) ? 0 : num
-}
-
-// Build x402 X-PAYMENT header
-// Calls backend sign endpoint — Privy wallet signs the payment transaction
-export async function buildX402Payment(
-  requirements: X402PaymentRequirements,
-  x402Version: number,
-  backendUrl: string,
-  apiKey: string
-): Promise<{ payment: string; amount: string; payTo: string }> {
-  const res = await fetch(`${backendUrl}/sdk/agent/sign-payment`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-    },
-    body: JSON.stringify({ requirements, x402Version }),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new PaymentError((err as any).error ?? 'Failed to sign payment')
-  }
-  const { payment, amount, payTo } = await res.json()
-  return { payment, amount, payTo }
 }
 
 // Stablecoin mints — amount is already USD, no conversion needed

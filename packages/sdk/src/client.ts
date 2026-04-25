@@ -187,6 +187,31 @@ export class AgentisClient {
     this.config.onPayment(details)
   }
 
+  // Direct SOL transfer (amount in SOL, e.g. 0.001)
+  async send(to: string, amountSol: number, mint?: string): Promise<string> {
+    // Policy check
+    const amountUsd = amountSol // rough — backend does real check too
+    checkPolicy(this.agent.policy, amountUsd, to, this.spendHistory)
+
+    const res = await globalThis.fetch(`${this.config.baseUrl}/sdk/agent/send`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': this.config.apiKey,
+      },
+      body: JSON.stringify({ to, amountSol, mint }),
+    })
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new PaymentError((err as any).error ?? 'Send failed')
+    }
+
+    const { signature } = await res.json()
+    this.spendHistory.push({ amount: amountUsd, timestamp: new Date().toISOString(), url: to })
+    return signature
+  }
+
   // Policy management
   readonly policy = {
     get: async (): Promise<Policy> => {

@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { privy } from '../lib/privy'
-import { createAgent, getAgentsByUser, getAgentById, updateAgent, updateAgentApiKey, recordTransaction } from '../lib/db'
+import { createAgent, getAgentsByUser, getAgentById, updateAgent, updateAgentApiKey, recordTransaction, getAccountByKey } from '../lib/db'
 import { randomBytes } from 'crypto'
 import {
   Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL
@@ -12,13 +12,22 @@ const DEVNET_CAIP2 = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
 
 const agents = new Hono<{ Variables: { userId: string } }>()
 
-// Middleware: verify Privy token and attach userId
+// Middleware: verify Privy JWT or account key (agt_user_xxx)
 agents.use('*', async (c, next) => {
   const authHeader = c.req.header('authorization')
   if (!authHeader?.startsWith('Bearer ')) {
     return c.json({ error: 'Unauthorized' }, 401)
   }
   const token = authHeader.slice(7)
+
+  if (token.startsWith('agt_user_')) {
+    const acc = await getAccountByKey(token)
+    if (!acc) return c.json({ error: 'Invalid account key' }, 401)
+    c.set('userId', acc.userId)
+    await next()
+    return
+  }
+
   try {
     const { userId } = await privy.verifyAuthToken(token)
     c.set('userId', userId)

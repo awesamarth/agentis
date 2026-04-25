@@ -5,6 +5,7 @@ import agents from './src/routes/agents'
 import sdk from './src/routes/sdk'
 import account from './src/routes/account'
 import auth from './src/routes/auth'
+import umbra from './src/routes/umbra'
 import { solToUsd } from './src/lib/price'
 
 const app = new Hono()
@@ -12,6 +13,8 @@ const app = new Hono()
 app.use('/agents/*', cors({ origin: 'http://localhost:3000' }))
 app.use('/account/*', cors({ origin: 'http://localhost:3000' }))
 app.use('/auth/*', cors({ origin: 'http://localhost:3000' }))
+app.use('/sdk/*', cors({ origin: 'http://localhost:3000' }))
+app.use('/umbra/*', cors({ origin: 'http://localhost:3000' }))
 app.use('/sol-price', cors({ origin: '*' }))
 app.use('*', logger())
 
@@ -25,6 +28,7 @@ app.route('/agents', agents)
 app.route('/sdk', sdk)
 app.route('/account', account)
 app.route('/auth', auth)
+app.route('/umbra', umbra)
 
 export default {
   port: process.env.PORT ?? 3001,

@@ -90,44 +90,6 @@ sdk.post('/agent/sign', async (c) => {
   }
 })
 
-// POST /sdk/agent/sign-payment — kept for backwards compatibility but deprecated
-// Use /sdk/agent/fetch-paid instead
-sdk.post('/agent/sign-payment', async (c) => {
-  const agent = c.get('agent')
-  const { requirements, x402Version } = await c.req.json()
-
-  const payTo = requirements?.payTo
-  const amount = requirements?.maxAmountRequired ?? requirements?.amount
-  if (!payTo || !amount) {
-    return c.json({ error: 'Invalid payment requirements' }, 400)
-  }
-
-  try {
-    const x402client = createX402Client(privyNode, {
-      walletId: agent.walletId,
-      address: agent.walletAddress,
-    })
-
-    const normalizedRequirements = {
-      ...requirements,
-      amount: String(amount),
-      extra: requirements.extra ?? {},
-    }
-
-    const paymentRequired = {
-      x402Version: x402Version ?? 2,
-      accepts: [normalizedRequirements],
-      resource: { url: 'https://agentis.xyz' },
-    }
-
-    const payloadResult = await x402client.createPaymentPayload(paymentRequired as any)
-    const payment = Buffer.from(JSON.stringify(payloadResult)).toString('base64')
-    return c.json({ payment, payTo, amount })
-  } catch (err: any) {
-    return c.json({ error: err?.message ?? 'Sign payment failed' }, 500)
-  }
-})
-
 // POST /sdk/agent/fetch-paid — proxy a request through Privy x402 wallet
 // The SDK sends the URL here, backend does the paid fetch and returns the response
 sdk.post('/agent/fetch-paid', async (c) => {
@@ -240,6 +202,67 @@ sdk.post('/agent/fetch-paid-mpp', async (c) => {
   } catch (err: any) {
     console.error('[fetch-paid-mpp] Error:', err)
     return c.json({ error: err?.message ?? 'MPP payment failed' }, 500)
+  }
+})
+
+// POST /sdk/agent/send — direct SOL or SPL token transfer from agent wallet
+sdk.post('/agent/send', async (c) => {
+  const agent = c.get('agent')
+  const { to, amountSol, mint } = await c.req.json()
+
+  if (!to || !amountSol || amountSol <= 0) {
+    return c.json({ error: 'to and amountSol are required' }, 400)
+  }
+
+  // Policy: kill switch
+  if (agent.policy?.killSwitch) {
+    return c.json({ error: 'Kill switch is active — agent payments disabled' }, 403)
+  }
+
+  // Policy: maxPerTx (in USD)
+  if (agent.policy?.maxPerTx !== null && agent.policy?.maxPerTx !== undefined) {
+    const amountUsdEstimate = mint ? amountSol * await getTokenPriceUsd(mint) : await solToUsd(amountSol)
+    if (amountUsdEstimate > agent.policy.maxPerTx) {
+      return c.json({ error: `Exceeds max per transaction limit ($${agent.policy.maxPerTx})` }, 403)
+    }
+  }
+
+  try {
+    const { Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } = await import('@solana/web3.js')
+
+    const connection = new Connection('https://api.devnet.solana.com', 'confirmed')
+    const fromPubkey = new PublicKey(agent.walletAddress)
+    const toPubkey = new PublicKey(to)
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized')
+
+    const tx = new Transaction()
+    tx.recentBlockhash = blockhash
+    tx.lastValidBlockHeight = lastValidBlockHeight
+    tx.feePayer = fromPubkey
+    tx.add(SystemProgram.transfer({
+      fromPubkey,
+      toPubkey,
+      lamports: Math.round(amountSol * LAMPORTS_PER_SOL),
+    }))
+
+    const result = await privy.walletApi.solana.signAndSendTransaction({
+      walletId: agent.walletId,
+      transaction: tx,
+      caip2: DEVNET_CAIP2,
+    })
+
+    const amountUsd = await solToUsd(amountSol)
+    await recordTransaction(agent.id, {
+      txHash: result.hash,
+      amount: amountSol,
+      amountUsd,
+      recipient: to,
+      timestamp: new Date().toISOString(),
+    })
+
+    return c.json({ signature: result.hash })
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? 'Send failed' }, 500)
   }
 })
 

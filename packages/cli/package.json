@@ -1,5 +1,5 @@
 {
-  "name": "@agentis/cli",
+  "name": "@agentis-hq/cli",
   "version": "0.1.0",
   "bin": {
     "agentis": "./src/index.ts"
@@ -9,6 +9,15 @@
     "dev": "bun run src/index.ts"
   },
   "dependencies": {
-    "@napi-rs/keyring": "^1.2.0"
+    "@agentis/core": "workspace:*",
+    "@napi-rs/keyring": "^1.2.0",
+    "@noble/ciphers": "^2.2.0",
+    "@noble/curves": "^2.2.0",
+    "@noble/hashes": "^2.2.0",
+    "@scure/bip32": "^2.2.0",
+    "@scure/bip39": "^2.2.0",
+    "@solana-program/system": "^0.12.0",
+    "@solana/kit": "^6.8.0",
+    "uuid": "^14.0.0"
   }
 }
