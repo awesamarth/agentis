@@ -21,6 +21,11 @@ type Agent = {
   walletAddress: string
   apiKey: string
   createdAt: string
+  privacyEnabled?: boolean
+  umbraStatus?: 'disabled' | 'pending' | 'registered' | 'failed'
+  umbraRegisteredAt?: string
+  umbraRegistrationSignatures?: string[]
+  umbraError?: string
   policy?: Policy
 }
 
@@ -105,6 +110,7 @@ export default function AgentDetail() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [copiedAddress, setCopiedAddress] = useState(false)
+  const [privacyRegistering, setPrivacyRegistering] = useState(false)
 
   const [apiKey, setApiKey] = useState<string | null>(null)
   const [apiKeyVisible, setApiKeyVisible] = useState(false)
@@ -248,6 +254,22 @@ export default function AgentDetail() {
       }
     } finally {
       setRegenning(false)
+    }
+  }
+
+  async function handleRegisterPrivacy() {
+    if (!authenticated) return
+    setPrivacyRegistering(true)
+    try {
+      const token = await getAccessToken()
+      const res = await fetch(`${API}/agents/${id}/privacy/register`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+      })
+      const updated = await res.json().catch(() => null)
+      if (updated) setAgent(updated)
+    } finally {
+      setPrivacyRegistering(false)
     }
   }
 
@@ -395,6 +417,49 @@ export default function AgentDetail() {
             </button>
           </div>
         </section>
+
+        {/* Privacy */}
+        {(agent?.privacyEnabled || agent?.umbraStatus === 'registered') && (
+          <section className="mb-10">
+            <h2 className="font-mono text-[0.65rem] text-ink-muted tracking-widest uppercase mb-4">Privacy</h2>
+            <div className={`border p-5 ${
+              agent.umbraStatus === 'registered'
+                ? 'bg-white border-black'
+                : agent.umbraStatus === 'failed'
+                  ? 'bg-red-50 border-red-200'
+                  : 'bg-white border-beige-darker'
+            }`}>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="font-mono text-sm text-black mb-1">
+                    Umbra {agent.umbraStatus === 'registered' ? 'registered' : agent.umbraStatus ?? 'pending'}
+                  </p>
+                  <p className="font-mono text-[0.65rem] text-ink-muted leading-relaxed">
+                    {agent.umbraStatus === 'registered'
+                      ? 'Confidential balances and private transfer primitives are enabled for this agent.'
+                      : 'Fund this wallet with SOL, then register it with Umbra to enable private flows.'}
+                  </p>
+                  {agent.umbraError && (
+                    <p className="font-mono text-[0.65rem] text-red-700 mt-3 break-all">{agent.umbraError}</p>
+                  )}
+                </div>
+                {agent.umbraStatus === 'registered' ? (
+                  <span className="font-mono text-[0.6rem] tracking-widest uppercase border border-beige-darker px-2 py-1 text-ink-muted shrink-0">
+                    private
+                  </span>
+                ) : (
+                  <button
+                    onClick={handleRegisterPrivacy}
+                    disabled={privacyRegistering}
+                    className="font-mono text-xs tracking-widest text-beige bg-black px-4 py-2 hover:bg-ink transition-colors cursor-pointer disabled:opacity-40 shrink-0"
+                  >
+                    {privacyRegistering ? 'registering...' : 'register Umbra'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* API Key */}
         {authenticated && (

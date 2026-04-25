@@ -15,7 +15,7 @@ export default function Navbar({ showCrumb }: { showCrumb?: string }) {
           <div className="w-8 h-8 bg-black flex items-center justify-center font-serif text-beige text-lg font-black cursor-pointer">
             A
           </div>
-          <span className="font-serif text-xl text-black tracking-tight">Agentis</span>
+          <span className="font-mono text-base tracking-[0.15em] text-black uppercase">Agentis</span>
         </Link>
         {showCrumb && (
           <span className="font-mono text-[0.65rem] text-ink-muted tracking-widest leading-none translate-y-px">/ {showCrumb}</span>

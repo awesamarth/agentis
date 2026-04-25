@@ -1,14 +1,20 @@
 import { Hono } from 'hono'
 import { privy } from '../lib/privy'
+import { PrivyClient as NodePrivyClient } from '@privy-io/node'
 import { createAgent, getAgentsByUser, getAgentById, updateAgent, updateAgentApiKey, recordTransaction, getAccountByKey } from '../lib/db'
 import { randomBytes } from 'crypto'
 import {
   Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL
 } from '@solana/web3.js'
 import { solToUsd } from '../lib/price'
+import { registerPrivyWalletWithUmbra } from '../lib/umbra-registration'
 
 const DEVNET_RPC = 'https://api.devnet.solana.com'
 const DEVNET_CAIP2 = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
+const privyNode = new NodePrivyClient({
+  appId: process.env.PRIVY_APP_ID!,
+  appSecret: process.env.PRIVY_APP_SECRET!,
+})
 
 const agents = new Hono<{ Variables: { userId: string } }>()
 
@@ -47,7 +53,7 @@ agents.get('/', async (c) => {
 // POST /agents — create a new agent
 agents.post('/', async (c) => {
   const userId = c.get('userId')
-  const { name } = await c.req.json()
+  const { name, privacyEnabled } = await c.req.json()
 
   if (!name?.trim()) {
     return c.json({ error: 'Agent name is required' }, 400)
@@ -67,9 +73,49 @@ agents.post('/', async (c) => {
     walletAddress: wallet.address,
     apiKey,
     createdAt: new Date().toISOString(),
+    privacyEnabled: Boolean(privacyEnabled),
+    umbraStatus: privacyEnabled ? 'pending' : 'disabled',
   })
 
   return c.json(agent, 201)
+})
+
+// POST /agents/:id/privacy/register — register a funded agent wallet with Umbra
+agents.post('/:id/privacy/register', async (c) => {
+  const userId = c.get('userId')
+  const agent = await getAgentById(c.req.param('id'))
+  if (!agent || agent.userId !== userId) {
+    return c.json({ error: 'Not found' }, 404)
+  }
+
+  try {
+    await updateAgent(agent.id, {
+      privacyEnabled: true,
+      umbraStatus: 'pending',
+    })
+
+    const result = await registerPrivyWalletWithUmbra(privyNode, agent.walletId, agent.walletAddress, {
+      confidential: true,
+      anonymous: true,
+    })
+
+    const updated = await updateAgent(agent.id, {
+      privacyEnabled: true,
+      umbraStatus: 'registered',
+      umbraRegisteredAt: new Date().toISOString(),
+      umbraRegistrationSignatures: result.signatures,
+    })
+
+    return c.json(updated)
+  } catch (err: any) {
+    console.error('[agents/privacy/register]', err)
+    const updated = await updateAgent(agent.id, {
+      privacyEnabled: true,
+      umbraStatus: 'failed',
+      umbraError: err?.message ?? 'Umbra registration failed',
+    })
+    return c.json(updated, 500)
+  }
 })
 
 // GET /agents/:id — get single agent (owner only)

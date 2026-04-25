@@ -28,6 +28,11 @@ type Agent = {
   walletAddress: string
   apiKey: string
   createdAt: string
+  privacyEnabled?: boolean
+  umbraStatus?: 'disabled' | 'pending' | 'registered' | 'failed'
+  umbraRegisteredAt?: string
+  umbraRegistrationSignatures?: string[]
+  umbraError?: string
   policy?: Policy
   transactions: TxRecord[]
   monthSpend: { month: string; spend: number }  // month = "YYYY-MM"
@@ -77,7 +82,13 @@ export async function getAgentsByUser(userId: string): Promise<Agent[]> {
   const db = await readDb()
   return db.agents
     .filter(a => a.userId === userId)
-    .map(a => ({ ...a, transactions: a.transactions ?? [], monthSpend: a.monthSpend ?? { month: '', spend: 0 } }))
+    .map(a => ({
+      ...a,
+      privacyEnabled: a.privacyEnabled ?? false,
+      umbraStatus: a.umbraStatus ?? (a.privacyEnabled ? 'pending' : 'disabled'),
+      transactions: a.transactions ?? [],
+      monthSpend: a.monthSpend ?? { month: '', spend: 0 },
+    }))
 }
 
 export async function createAgent(agent: Omit<Agent, 'transactions' | 'monthSpend'>): Promise<Agent> {
@@ -101,10 +112,15 @@ export async function updateAgent(id: string, patch: Partial<Agent>): Promise<Ag
   const db = await readDb()
   const idx = db.agents.findIndex(a => a.id === id)
   if (idx === -1) throw new Error('Agent not found')
-  // never allow patching sensitive fields — only name and policy
-  const safe: Partial<Pick<Agent, 'name' | 'policy'>> = {}
+  // never allow patching sensitive fields — only user-controlled config and system privacy status
+  const safe: Partial<Pick<Agent, 'name' | 'policy' | 'privacyEnabled' | 'umbraStatus' | 'umbraRegisteredAt' | 'umbraRegistrationSignatures' | 'umbraError'>> = {}
   if (patch.name !== undefined) safe.name = patch.name
   if (patch.policy !== undefined) safe.policy = patch.policy
+  if (patch.privacyEnabled !== undefined) safe.privacyEnabled = patch.privacyEnabled
+  if (patch.umbraStatus !== undefined) safe.umbraStatus = patch.umbraStatus
+  if (patch.umbraRegisteredAt !== undefined) safe.umbraRegisteredAt = patch.umbraRegisteredAt
+  if (patch.umbraRegistrationSignatures !== undefined) safe.umbraRegistrationSignatures = patch.umbraRegistrationSignatures
+  if (patch.umbraError !== undefined) safe.umbraError = patch.umbraError
   db.agents[idx] = { ...db.agents[idx]!, ...safe }
   await writeDb(db)
   return db.agents[idx]!

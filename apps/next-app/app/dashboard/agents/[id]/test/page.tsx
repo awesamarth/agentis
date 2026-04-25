@@ -237,6 +237,7 @@ export default function AgentTestConsole() {
 
   async function sendAsGuest(guestAgent: GuestAgent, to: string, amountSol: number) {
     const {
+      address,
       createSolanaClient,
       createTransaction,
       sendAndConfirmTransactionWithSignersFactory,
@@ -260,7 +261,7 @@ export default function AgentTestConsole() {
       instructions: [
         getTransferSolInstruction({
           source: signer,
-          destination: to as `${string}`,
+          destination: address(to),
           amount: Math.round(amountSol * 1e9),
         }),
       ],

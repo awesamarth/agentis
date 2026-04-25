@@ -67,6 +67,7 @@
       },
       "dependencies": {
         "@agentis/core": "workspace:*",
+        "@agentis/sdk": "workspace:*",
         "@napi-rs/keyring": "^1.2.0",
         "@noble/ciphers": "^2.2.0",
         "@noble/curves": "^2.2.0",

@@ -2,11 +2,11 @@
 
 import { usePrivy } from '@privy-io/react-auth'
 import { useSearchParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL
 
-export default function CliAuth() {
+function CliAuthContent() {
   const { ready, authenticated, login, getAccessToken } = usePrivy()
   const searchParams = useSearchParams()
   const sessionId = searchParams.get('session')
@@ -88,5 +88,17 @@ export default function CliAuth() {
         )}
       </div>
     </main>
+  )
+}
+
+export default function CliAuth() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen bg-beige flex items-center justify-center">
+        <p className="font-mono text-sm text-ink-muted">loading...</p>
+      </main>
+    }>
+      <CliAuthContent />
+    </Suspense>
   )
 }

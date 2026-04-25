@@ -81,8 +81,8 @@ export default function TestPage() {
 
   async function testDeposit() {
     await step(async () => {
-      addLog("Depositing 1_000_000 wSOL lamports into encrypted balance...");
-      const data = await call("/umbra/deposit", { amount: "1000000" });
+      addLog("Depositing 1_000_000_000 wSOL lamports into encrypted balance...");
+      const data = await call("/umbra/deposit", { amount: "1000000000" });
       addLog(`Deposited — queue: ${data.queueSignature}, callback: ${data.callbackSignature}`);
     });
   }

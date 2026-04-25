@@ -11,13 +11,12 @@ import {
   getPublicBalanceToReceiverClaimableUtxoCreatorFunction,
   getReceiverClaimableUtxoToEncryptedBalanceClaimerFunction,
   getUmbraRelayer,
-  getUserRegistrationFunction,
 } from '@umbra-privacy/sdk'
 import {
   getNodeClaimReceiverClaimableUtxoIntoEncryptedBalanceProver,
   getNodeCreateReceiverClaimableUtxoFromPublicBalanceProver,
-  getNodeRegistrationProver,
 } from '../lib/node-prover'
+import { registerPrivyWalletWithUmbra } from '../lib/umbra-registration'
 
 const privyNode = new PrivyClient({
   appId: process.env.PRIVY_APP_ID!,
@@ -117,54 +116,12 @@ umbra.post('/register', async (c) => {
     const confidential = body.confidential ?? true
     const anonymous = body.anonymous ?? true
 
-    console.log('[umbra/register] start', {
-      walletAddress: agent.walletAddress,
+    const result = await registerPrivyWalletWithUmbra(privyNode, agent.walletId, agent.walletAddress, {
       confidential,
       anonymous,
     })
 
-    const client = await createUmbraClient(privyNode, agent.walletId, agent.walletAddress)
-    const deps = anonymous ? ({ zkProver: getNodeRegistrationProver() } as any) : undefined
-    const register = getUserRegistrationFunction({ client }, deps)
-    const signatures = await register({
-      confidential,
-      anonymous,
-      callbacks: {
-        userAccountInitialisation: {
-          pre: async () => {
-            console.log('[umbra/register] userAccountInitialisation pre')
-          },
-          post: async (_tx: any, signature: string) => {
-            console.log('[umbra/register] userAccountInitialisation post', signature)
-          },
-        },
-        registerX25519PublicKey: {
-          pre: async () => {
-            console.log('[umbra/register] registerX25519PublicKey pre')
-          },
-          post: async (_tx: any, signature: string) => {
-            console.log('[umbra/register] registerX25519PublicKey post', signature)
-          },
-        },
-        registerUserForAnonymousUsage: {
-          pre: async () => {
-            console.log('[umbra/register] registerUserForAnonymousUsage pre')
-          },
-          post: async (_tx: any, signature: string) => {
-            console.log('[umbra/register] registerUserForAnonymousUsage post', signature)
-          },
-        },
-      },
-    })
-
-    console.log('[umbra/register] done', { signatures })
-
-    return c.json({
-      walletAddress: agent.walletAddress,
-      confidential,
-      anonymous,
-      signatures,
-    })
+    return c.json(result)
   } catch (err: any) {
     console.error('[umbra/register]', err)
     return c.json({ error: err?.message ?? 'Registration failed' }, 500)

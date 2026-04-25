@@ -12,6 +12,9 @@ type Agent = {
   walletAddress: string
   apiKey: string
   createdAt: string
+  privacyEnabled?: boolean
+  umbraStatus?: 'disabled' | 'pending' | 'registered' | 'failed'
+  umbraError?: string
   _guest?: boolean
   _secretKeyBytes?: string  // JSON array of key bytes, only for guest agents
 }
@@ -59,6 +62,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [agentName, setAgentName] = useState('')
+  const [privacyEnabled, setPrivacyEnabled] = useState(false)
   const [creating, setCreating] = useState(false)
   const [revealedKey, setRevealedKey] = useState<string | null>(null)
 
@@ -123,7 +127,7 @@ export default function Dashboard() {
             authorization: `Bearer ${token}`,
             'content-type': 'application/json',
           },
-          body: JSON.stringify({ name: agentName }),
+          body: JSON.stringify({ name: agentName, privacyEnabled }),
         })
         const agent = await res.json()
         setAgents(prev => [agent, ...prev])
@@ -149,6 +153,7 @@ export default function Dashboard() {
         setAgents(updated)
       }
       setAgentName('')
+      setPrivacyEnabled(false)
       setShowModal(false)
     } finally {
       setCreating(false)
@@ -234,6 +239,17 @@ export default function Dashboard() {
                     {agent._guest && (
                       <span className="font-mono text-[0.55rem] text-ink-muted border border-beige-darker px-1.5 py-0.5 tracking-widest">guest</span>
                     )}
+                    {agent.privacyEnabled && (
+                      <span className={`font-mono text-[0.55rem] border px-1.5 py-0.5 tracking-widest ${
+                        agent.umbraStatus === 'registered'
+                          ? 'text-black border-black'
+                          : agent.umbraStatus === 'failed'
+                            ? 'text-red-700 border-red-200 bg-red-50'
+                            : 'text-ink-muted border-beige-darker'
+                      }`}>
+                        private {agent.umbraStatus ? `· ${agent.umbraStatus}` : ''}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center">
                     <p className="font-mono text-[0.65rem] text-ink-muted tracking-wide">{agent.walletAddress}</p>
@@ -283,6 +299,23 @@ export default function Dashboard() {
               placeholder="e.g. trading-agent-01"
               className="w-full bg-white border border-beige-darker px-4 py-3 font-mono text-sm text-black placeholder:text-ink-muted/50 outline-none focus:border-ink-muted transition-colors mb-6"
             />
+
+            {authenticated && (
+              <label className="bg-white border border-beige-darker p-4 mb-6 flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={privacyEnabled}
+                  onChange={e => setPrivacyEnabled(e.target.checked)}
+                  className="mt-1 accent-black"
+                />
+                <span>
+                  <span className="block font-mono text-xs text-black tracking-widest uppercase mb-1">private mode</span>
+                  <span className="block font-mono text-[0.65rem] text-ink-muted leading-relaxed">
+                    marks this agent private. Fund it, then register Umbra from the agent page.
+                  </span>
+                </span>
+              </label>
+            )}
 
             <div className="flex gap-3">
               <button

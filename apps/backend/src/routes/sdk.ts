@@ -40,6 +40,9 @@ sdk.get('/agent', async (c) => {
     id: agent.id,
     name: agent.name,
     walletAddress: agent.walletAddress,
+    privacyEnabled: agent.privacyEnabled ?? false,
+    umbraStatus: agent.umbraStatus ?? (agent.privacyEnabled ? 'pending' : 'disabled'),
+    umbraRegisteredAt: agent.umbraRegisteredAt,
     policy: agent.policy ?? {
       hourlyLimit: null,
       dailyLimit: null,

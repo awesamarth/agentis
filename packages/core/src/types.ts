@@ -12,6 +12,9 @@ export type AgentInfo = {
   id: string
   name: string
   walletAddress: string
+  privacyEnabled?: boolean
+  umbraStatus?: 'disabled' | 'pending' | 'registered' | 'failed'
+  umbraRegisteredAt?: string
   policy: Policy
   transactions: TxRecord[]
 }
@@ -19,6 +22,7 @@ export type AgentInfo = {
 export type TxRecord = {
   txHash: string
   amount: number       // SOL
+  amountUsd?: number   // USD at time of payment
   recipient: string
   timestamp: string    // ISO
 }

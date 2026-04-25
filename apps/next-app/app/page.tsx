@@ -16,7 +16,7 @@ export default function Home() {
       <div className="flex-1 flex flex-col items-center justify-center px-8 py-24 text-center">
 
         {/* Stamp */}
-        <div className="animate-fade-up flex flex-col items-center gap-2 mb-9 [animation-delay:0ms] opacity-0">
+        <div className="animate-fade-up flex flex-col items-center gap-2 mb-7 [animation-delay:0ms] opacity-0">
           <div className="flex items-center gap-3">
             <div className="w-7 h-7 bg-black flex items-center justify-center font-serif text-beige text-sm font-black">
               A
@@ -26,13 +26,13 @@ export default function Home() {
             </span>
           </div>
           <span className="font-mono text-[0.65rem] tracking-widest text-ink-muted opacity-75 uppercase">
-            built on Solana · powered by MPP
+            built on Solana · for autonomous agents
           </span>
         </div>
 
         {/* Headline */}
         <h1
-          className="animate-fade-up font-serif font-black text-black leading-none tracking-[-0.03em] mb-6 max-w-4xl [animation-delay:80ms] opacity-0"
+          className="animate-fade-up font-serif font-black text-black leading-[0.92] tracking-[-0.03em] mb-6 max-w-4xl [animation-delay:80ms] opacity-0"
           style={{ fontSize: 'clamp(3rem, 7vw, 5.8rem)' }}
         >
           The financial OS
@@ -43,7 +43,7 @@ export default function Home() {
         {/* Subheading */}
         <p className="animate-fade-up font-sans text-lg text-ink-muted max-w-lg leading-relaxed mb-12 font-light [animation-delay:160ms] opacity-0">
           Wallets, payments, policy enforcement, privacy, and token swaps —
-          all in one SDK. Your agent pays for what it needs. You stay in control.
+          one platform for agents to hold, spend, and earn on Solana.
         </p>
 
         {/* CTAs */}
@@ -77,9 +77,9 @@ export default function Home() {
         {/* Feature strip */}
         <div className="animate-fade-up w-full max-w-3xl mt-24 border-t border-b border-beige-darker flex [animation-delay:360ms] opacity-0">
           {[
-            { label: 'wallets', desc: 'local + managed' },
+            { label: 'wallets', desc: 'local / managed' },
             { label: 'payments', desc: 'MPP / x402' },
-            { label: 'policies', desc: 'on-chain enforced' },
+            { label: 'policies', desc: 'backend / on-chain' },
             { label: 'privacy', desc: 'via Umbra' },
             { label: 'yield', desc: 'via Jupiter Earn' },
           ].map((f, i) => (

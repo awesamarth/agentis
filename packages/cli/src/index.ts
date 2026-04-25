@@ -3,6 +3,7 @@ import { login, logout, whoami } from './commands/auth'
 import { agentList, agentCreate, agentSend, agentBalance } from './commands/agent'
 import { walletCreate, walletList } from './commands/wallet'
 import { policyGet, policySet } from './commands/policy'
+import { paidFetch } from './commands/fetch'
 
 const args = process.argv.slice(2)
 const cmd = args[0]
@@ -67,6 +68,10 @@ async function main() {
       }
       break
 
+    case 'fetch':
+      await paidFetch(args.slice(1))
+      break
+
     default:
       console.log(`agentis — financial infrastructure for AI agents
 
@@ -84,6 +89,9 @@ Commands:
   agent send <name-or-id> <to> <amount>    send SOL (amount in lamports)
     --sol                                  treat amount as SOL instead of lamports
     --token <mint>                         send SPL token (amount in atomic units)
+
+  fetch <url> --agent <name-or-id>         fetch a URL and auto-pay MPP/x402 402s
+    --method <method>                      HTTP method (default GET)
 
   policy get <name-or-id>                  show agent policy
   policy set <name-or-id> [flags]          update agent policy
