@@ -69,6 +69,18 @@ export default function Dashboard() {
   const [creating, setCreating] = useState(false)
   const [revealedKey, setRevealedKey] = useState<string | null>(null)
 
+  function getAgentCardClass(agent: Agent) {
+    if (agent.policyMode === 'onchain') {
+      return 'border-[#c8b6ff] bg-[linear-gradient(115deg,#ffffff_0%,#ffffff_62%,#f6f1ff_100%)]'
+    }
+
+    if (agent.privacyEnabled && agent.umbraStatus === 'registered') {
+      return 'border-[#b7cce5] bg-[linear-gradient(115deg,#ffffff_0%,#ffffff_62%,#eef6ff_100%)]'
+    }
+
+    return 'border-beige-darker bg-white'
+  }
+
   useEffect(() => {
     if (!ready) return
     if (authenticated) {
@@ -235,11 +247,7 @@ export default function Dashboard() {
               <div
                 key={agent.id}
                 onClick={() => router.push(`/dashboard/agents/${agent.id}`)}
-                className={`border p-6 flex items-center justify-between cursor-pointer hover:border-ink-muted hover:shadow-sm transition-all group ${
-                  agent.privacyEnabled && agent.umbraStatus === 'registered'
-                    ? 'border-[#b7cce5] bg-[linear-gradient(115deg,#ffffff_0%,#ffffff_62%,#eef6ff_100%)]'
-                    : 'border-beige-darker bg-white'
-                }`}
+                className={`border p-6 flex items-center justify-between cursor-pointer hover:border-ink-muted hover:shadow-sm transition-all group ${getAgentCardClass(agent)}`}
               >
                 <div>
                   <div className="flex items-center gap-2 mb-1">
@@ -248,20 +256,19 @@ export default function Dashboard() {
                       <span className="font-mono text-[0.55rem] text-ink-muted border border-beige-darker px-1.5 py-0.5 tracking-widest">guest</span>
                     )}
                     {agent.policyMode === 'onchain' && (
-                      <span className={`font-mono text-[0.55rem] border px-1.5 py-0.5 tracking-widest ${
-                        agent.onchainPolicy?.initialized
-                          ? 'text-[#6d4aff] border-[#c8b6ff] bg-[#f6f1ff]'
-                          : 'text-ink-muted border-beige-darker'
-                      }`}>
+                      <span className="font-mono text-[0.55rem] border px-1.5 py-0.5 tracking-widest text-[#6d4aff] border-[#c8b6ff] bg-[#f6f1ff]">
                         on-chain policy{agent.onchainPolicy?.initialized ? '' : ' pending'}
                       </span>
                     )}
                     {agent.privacyEnabled && agent.umbraStatus === 'registered' && (
-                      <span
-                        title="private agent"
-                        className="text-ink-muted inline-flex h-5 w-5 items-center justify-center -translate-y-px"
-                      >
-                        <Lock size={12} strokeWidth={2} />
+                      <span className="font-mono text-[0.55rem] border border-[#b7cce5] bg-[#eef6ff] text-[#3f6f9f] px-1.5 py-0.5 tracking-widest inline-flex items-center gap-1">
+                        <Lock
+                          size={12}
+                          strokeWidth={2}
+                          className="text-[#3f6f9f] shrink-0 -translate-y-[0.65px]"
+                          aria-label="private agent"
+                        />
+                        private
                       </span>
                     )}
                     {agent.privacyEnabled && agent.umbraStatus !== 'registered' && (

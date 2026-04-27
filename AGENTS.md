@@ -27,6 +27,7 @@ agentis/
     mpp-server/    local MPP test server, port 4001
     agent-app/     SDK test scripts
   umbra-test/      standalone Umbra flow test app
+  quasar-proj/     Quasar on-chain policy program
 ```
 
 Local packages point to `src/` directly; no package build step is normally needed during development.
@@ -49,7 +50,7 @@ Local packages point to `src/` directly; no package build step is normally neede
 
 ### Backend
 Core routes:
-- `/agents/*`: dashboard/user auth; create agents, update policies, send funds, regen keys, transactions.
+- `/agents/*`: dashboard/user auth; create agents, update policies, initialize/read on-chain policy, send funds, regen keys, transactions.
 - `/sdk/*`: API-key auth; `GET /sdk/agent`, policy update, MPP/x402 paid fetch, direct send, spend record.
 - `/account/*`: account key auth for CLI; list/create hosted agents.
 - `/auth/*`: CLI browser login session flow.
@@ -57,6 +58,13 @@ Core routes:
 - `/sol-price`: cached SOL/USD price from Jupiter Price API.
 
 DB is still JSON at `apps/backend/data/db.json` and should be replaced later.
+
+On-chain policy notes:
+- On-chain policy agents use Quasar program `EGZKucpjMmAHvqUP3hLSBCccs4uAQyCAvQ8ikSNCryhM` on devnet.
+- Backend initializes `Agent`, `Policy`, and `SpendCounter` PDAs after the agent wallet is funded.
+- Policy updates for initialized on-chain agents send an on-chain transaction before saving the latest signature.
+- Direct SOL sends for initialized on-chain agents prepend a policy check/record instruction before the transfer.
+- Backend confirms Privy-submitted transactions before recording or returning success.
 
 ### SDK
 `packages/sdk/src/client.ts` exposes:
@@ -68,6 +76,8 @@ DB is still JSON at `apps/backend/data/db.json` and should be replaced later.
 
 MPP and x402 payments are working on devnet through backend-side Privy signing.
 
+For on-chain policy agents, SDK policy updates and direct sends route through the same backend on-chain policy path. x402/MPP policy integration is still backend-enforced for now.
+
 ### CLI
 Command: `agentis`.
 
@@ -76,7 +86,8 @@ Implemented:
 - `agentis wallet create --name <name> [--local]`
 - `agentis wallet list`
 - `agentis agent list/create/balance/send`
-- `agentis policy get/set`
+- `agentis agent create <name> --onchain-policy`
+- `agentis policy get/set/init-onchain`
 - `agentis fetch <url> --agent <name-or-id> [--method GET]`
 - `agentis privacy status/register/balance/deposit/withdraw/create-utxo/scan/claim-latest --agent <name-or-id>`
 
@@ -89,8 +100,10 @@ Local wallets:
 ### Dashboard
 Implemented:
 - Landing page with current Agentis branding.
-- Dashboard agent list with private-agent visual treatment.
-- Agent detail page with wallet balances, policy controls, tx history, and Umbra registration status/action.
+- Dashboard agent list with private-agent and on-chain-agent visual treatments.
+- Create-agent modal supports backend vs on-chain policy mode.
+- Agent detail page with wallet balances, policy controls, tx history, Umbra controls, and on-chain policy state.
+- Agent detail page has an add-funds flow that opens the connected Privy Solana wallet and sends SOL to the agent wallet.
 - CLI auth page.
 - Guest mode still exists via localStorage.
 
@@ -114,8 +127,41 @@ Token balances use devnet RPC directly. Jupiter Portfolio is mainnet-only, so do
 
 ### Policy
 - Policy amounts are USD.
+- On-chain policy stores USD values as micro-USD integers. `1 USD = 1_000_000 micro-USD`.
 - `packages/core/src/policy.ts` is the source of truth.
-- Check policy before signing or proxying payment.
+- Backend/local policies use `checkPolicy(...)` before signing or proxying payment.
+- On-chain policies enforce kill switch, max-per-tx, hourly, daily, monthly, and lifetime limits in the Quasar program for direct SOL sends.
+- Domain allowlists remain backend-only.
+
+## Quasar On-Chain Policy
+
+Program location: `quasar-proj/`.
+
+Deployed devnet program:
+- `EGZKucpjMmAHvqUP3hLSBCccs4uAQyCAvQ8ikSNCryhM`
+
+On-chain accounts:
+- `Agent`: owner/agent wallet binding.
+- `Policy`: kill switch, max-per-tx, hourly, daily, monthly, lifetime limits.
+- `SpendCounter`: hour/day/month/lifetime spend counters.
+
+Instructions:
+- Initialize agent/policy/counter PDAs.
+- Update policy.
+- Check and record spend.
+
+Tested:
+- `quasar test` passes.
+- Initialized on-chain policy from Agentis dashboard/backend.
+- Direct SOL send succeeds with on-chain check.
+- Low max-per-tx policy rejects sends with program error `0x2`.
+- Backend maps no-balance simulation errors to a user-facing "add funds" message.
+
+Important:
+- Quasar is the framework used to build the Solana program. At runtime, Solana executes the deployed program and enforces its checks.
+- Updating on-chain policies costs devnet SOL because it is a real transaction.
+- Creating policy PDAs also costs SOL for fees and rent.
+- x402/MPP do not yet route through the on-chain policy instruction path.
 
 ## Umbra Privacy
 
@@ -132,6 +178,8 @@ Implemented backend routes:
 - `POST /umbra/claim-latest`
 
 Implemented SDK/CLI wrappers for all of the above.
+
+Dashboard agent page also exposes Umbra status, encrypted balance, deposit, withdraw, scan, and registration actions for private agents.
 
 Tested with `private-agent-1777138992`:
 - Umbra direct status: registered and anonymous-ready.
@@ -178,15 +226,16 @@ Useful Jupiter docs in this repo:
 Hosted agents:
 - `leno`: `77rKFXbTbWQMXeQ97AYwThPcuh8sotTtz3jssRMRszGq`
 - `private-agent-1777138992`: `7MoLfxVg5Yww4MLNafmCCfgYe3j8cr6eVrHBpLX9L1Ws`
+- On-chain policy test agent `quasar-agent-1777302205`: `BG63Grs6Uj6oBNtdoeoWhQF9AsPuaiKoMELm3vHBpvQo`
 
 Do not casually mutate `leno` privacy flags; it is useful as a stable funded test agent.
 
 ## What Is Left
 
 Near-term:
-1. Dashboard privacy actions beyond registration: status, encrypted balance, deposit, withdraw, scan.
-2. Decide whether to demo Umbra UTXO/private transfer or keep demo focused on encrypted balance.
-3. Facilitator network work for x402/MPP provider side. User will specify this separately.
+1. Decide whether to demo Umbra UTXO/private transfer or keep demo focused on encrypted balance.
+2. Facilitator network work for x402/MPP provider side. User will specify this separately.
+3. Decide whether x402/MPP sends should eventually pass through an on-chain escrow/router for on-chain policy enforcement.
 4. MCP server exposing Agentis tools.
 5. Jupiter swap/facilitator path: auto-swap SOL to required payment token when needed.
 6. Jupiter Earn: mainnet-only; likely not part of devnet demo except as roadmap or mocked UI.
@@ -194,8 +243,7 @@ Near-term:
 Medium-term:
 - Replace JSON DB with SQLite/Postgres.
 - Hash API keys and show plaintext only once.
-- On-chain policy/registry with Quasar.
-- Better typed backend Hono variables; current full backend `tsc` has pre-existing route variable typing errors.
+- Add richer on-chain policy visibility, including current configured limits decoded from the policy PDA.
 - Production-grade transaction history and observability.
 
 ## Reference Files
