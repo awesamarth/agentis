@@ -10,6 +10,13 @@
   },
   "dependencies": {
     "@privy-io/react-auth": "^3.21.3",
+    "@solana/addresses": "^5.5.1",
+    "@solana/codecs-strings": "^5.5.1",
+    "@solana/functional": "^5.5.1",
+    "@solana/instructions": "^5.5.1",
+    "@solana/rpc": "^5.5.1",
+    "@solana/transaction-messages": "^5.5.1",
+    "@solana/transactions": "^5.5.1",
     "@solana-program/memo": "^0.11.0",
     "gill": "^0.14.0",
     "next": "16.2.4",

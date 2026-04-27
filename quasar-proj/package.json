@@ -1,0 +1,22 @@
+{
+  "name": "quasar-proj",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "mocha --require tsx --delay tests/*.test.ts"
+  },
+  "dependencies": {
+    "@blueshift-gg/quasar-svm": "^0.1",
+    "@solana/web3.js": "^1.98.4"
+  },
+  "devDependencies": {
+    "@types/chai": "^5.2.0",
+    "@types/mocha": "^10.0.0",
+    "@types/node": "^22.0.0",
+    "chai": "^6.2.2",
+    "mocha": "^11.7.5",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

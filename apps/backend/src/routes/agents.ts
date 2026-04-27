@@ -8,6 +8,16 @@ import {
 } from '@solana/web3.js'
 import { solToUsd } from '../lib/price'
 import { registerPrivyWalletWithUmbra } from '../lib/umbra-registration'
+import {
+  createCheckAndRecordSpendInstruction,
+  confirmTransactionOrThrow,
+  createInitializePolicyInstruction,
+  createUpdatePolicyInstruction,
+  deriveOnchainPolicy,
+  formatSolanaTransactionError,
+  preparePrivyTransaction,
+  readOnchainPolicy,
+} from '../lib/onchain-policy'
 
 const DEVNET_RPC = 'https://api.devnet.solana.com'
 const DEVNET_CAIP2 = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
@@ -53,7 +63,7 @@ agents.get('/', async (c) => {
 // POST /agents — create a new agent
 agents.post('/', async (c) => {
   const userId = c.get('userId')
-  const { name, privacyEnabled } = await c.req.json()
+  const { name, privacyEnabled, policyMode } = await c.req.json()
 
   if (!name?.trim()) {
     return c.json({ error: 'Agent name is required' }, 400)
@@ -65,14 +75,19 @@ agents.post('/', async (c) => {
   // Generate API key
   const apiKey = 'agt_live_' + randomBytes(24).toString('hex')
 
+  const walletAddress = wallet.address
+  const useOnchainPolicy = policyMode === 'onchain'
+
   const agent = await createAgent({
     id: crypto.randomUUID(),
     name: name.trim(),
     userId,
     walletId: wallet.id,
-    walletAddress: wallet.address,
+    walletAddress,
     apiKey,
     createdAt: new Date().toISOString(),
+    policyMode: useOnchainPolicy ? 'onchain' : 'backend',
+    onchainPolicy: useOnchainPolicy ? deriveOnchainPolicy(walletAddress) : undefined,
     privacyEnabled: Boolean(privacyEnabled),
     umbraStatus: privacyEnabled ? 'pending' : 'disabled',
   })
@@ -136,8 +151,97 @@ agents.patch('/:id', async (c) => {
     return c.json({ error: 'Not found' }, 404)
   }
   const body = await c.req.json()
+  if (body.policy && agent.policyMode === 'onchain' && agent.onchainPolicy?.initialized) {
+    try {
+      const connection = new Connection(DEVNET_RPC, 'confirmed')
+      const tx = await preparePrivyTransaction(
+        connection,
+        agent.walletAddress,
+        new Transaction().add(createUpdatePolicyInstruction(agent, body.policy)),
+      )
+      const result = await privy.walletApi.solana.signAndSendTransaction({
+        walletId: agent.walletId,
+        transaction: tx,
+        caip2: DEVNET_CAIP2,
+      })
+      await confirmTransactionOrThrow(connection, result.hash, tx)
+      body.onchainPolicy = {
+        ...agent.onchainPolicy,
+        lastPolicySignature: result.hash,
+      }
+    } catch (err) {
+      return c.json({ error: formatSolanaTransactionError(err) }, 500)
+    }
+  }
+  if (body.policyMode === 'onchain' && agent.policyMode !== 'onchain') {
+    body.onchainPolicy = deriveOnchainPolicy(agent.walletAddress)
+  }
   const updated = await updateAgent(c.req.param('id'), body)
   return c.json(updated)
+})
+
+// POST /agents/:id/policy/onchain/initialize — create on-chain policy PDAs after funding
+agents.post('/:id/policy/onchain/initialize', async (c) => {
+  const userId = c.get('userId')
+  const agent = await getAgentById(c.req.param('id'))
+  if (!agent || agent.userId !== userId) {
+    return c.json({ error: 'Not found' }, 404)
+  }
+
+  const onchainPolicy = agent.onchainPolicy ?? deriveOnchainPolicy(agent.walletAddress)
+  const policy = agent.policy ?? {
+    hourlyLimit: null,
+    dailyLimit: null,
+    monthlyLimit: null,
+    maxBudget: null,
+    maxPerTx: null,
+    allowedDomains: [],
+    killSwitch: false,
+  }
+
+  try {
+    const connection = new Connection(DEVNET_RPC, 'confirmed')
+    const tx = await preparePrivyTransaction(
+      connection,
+      agent.walletAddress,
+      new Transaction()
+        .add(createInitializePolicyInstruction({ ...agent, onchainPolicy }))
+        .add(createUpdatePolicyInstruction({ ...agent, onchainPolicy }, policy)),
+    )
+
+    const result = await privy.walletApi.solana.signAndSendTransaction({
+      walletId: agent.walletId,
+      transaction: tx,
+      caip2: DEVNET_CAIP2,
+    })
+    await confirmTransactionOrThrow(connection, result.hash, tx)
+
+    const updated = await updateAgent(agent.id, {
+      policyMode: 'onchain',
+      onchainPolicy: {
+        ...onchainPolicy,
+        initialized: true,
+        initializedAt: new Date().toISOString(),
+        initializedSignature: result.hash,
+        lastPolicySignature: result.hash,
+      },
+    })
+
+    return c.json(updated)
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 500)
+  }
+})
+
+// GET /agents/:id/policy/onchain — read on-chain policy/counter account state
+agents.get('/:id/policy/onchain', async (c) => {
+  const userId = c.get('userId')
+  const agent = await getAgentById(c.req.param('id'))
+  if (!agent || agent.userId !== userId) {
+    return c.json({ error: 'Not found' }, 404)
+  }
+  const connection = new Connection(DEVNET_RPC, 'confirmed')
+  return c.json(await readOnchainPolicy(connection, agent))
 })
 
 // GET /agents/:id/transactions — get transaction history (owner only)
@@ -176,9 +280,16 @@ agents.post('/:id/send', async (c) => {
     return c.json({ error: 'to and amountSol are required' }, 400)
   }
 
-  // Policy checks
+  const amountUsd = await solToUsd(amountSol)
+
+  // Backend policy checks are used for backend-mode agents. On-chain agents enforce
+  // core spend limits in the transaction via Quasar once initialized.
   const policy = agent.policy
-  if (policy) {
+  if (agent.policyMode === 'onchain') {
+    if (!agent.onchainPolicy?.initialized) {
+      return c.json({ error: 'On-chain policy is not initialized. Fund the agent wallet, then initialize policy.' }, 403)
+    }
+  } else if (policy) {
     if (policy.killSwitch) {
       return c.json({ error: 'Kill switch is active — agent payments disabled' }, 403)
     }
@@ -240,6 +351,9 @@ agents.post('/:id/send', async (c) => {
   tx.lastValidBlockHeight = lastValidBlockHeight
   tx.feePayer = fromPubkey
   tx.add(
+    ...(agent.policyMode === 'onchain'
+      ? [createCheckAndRecordSpendInstruction(agent, amountUsd)]
+      : []),
     SystemProgram.transfer({
       fromPubkey,
       toPubkey,
@@ -254,8 +368,8 @@ agents.post('/:id/send', async (c) => {
       transaction: tx,
       caip2: DEVNET_CAIP2,
     })
+    await confirmTransactionOrThrow(connection, result.hash, tx)
 
-    const amountUsd = await solToUsd(amountSol)
     await recordTransaction(agent.id, {
       txHash: result.hash,
       amount: amountSol,
@@ -265,8 +379,8 @@ agents.post('/:id/send', async (c) => {
     })
 
     return c.json({ signature: result.hash })
-  } catch (err: any) {
-    return c.json({ error: err?.message ?? 'Transaction failed' }, 500)
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 500)
   }
 })
 

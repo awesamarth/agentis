@@ -15,6 +15,15 @@ export type AgentInfo = {
   privacyEnabled?: boolean
   umbraStatus?: 'disabled' | 'pending' | 'registered' | 'failed'
   umbraRegisteredAt?: string
+  policyMode?: 'backend' | 'onchain'
+  onchainPolicy?: {
+    programId: string
+    owner: string
+    agent: string
+    policy: string
+    spendCounter: string
+    initialized: boolean
+  }
   policy: Policy
   transactions: TxRecord[]
 }

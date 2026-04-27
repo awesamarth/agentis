@@ -1,6 +1,19 @@
 'use client'
 
 import { usePrivy } from '@privy-io/react-auth'
+import { useSignAndSendTransaction, useWallets } from '@privy-io/react-auth/solana'
+import { address } from '@solana/addresses'
+import { getBase58Decoder } from '@solana/codecs-strings'
+import { pipe } from '@solana/functional'
+import { AccountRole, type Instruction } from '@solana/instructions'
+import { createSolanaRpc } from '@solana/rpc'
+import {
+  appendTransactionMessageInstruction,
+  createTransactionMessage,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
+} from '@solana/transaction-messages'
+import { compileTransaction, getTransactionEncoder } from '@solana/transactions'
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
@@ -26,6 +39,17 @@ type Agent = {
   umbraRegisteredAt?: string
   umbraRegistrationSignatures?: string[]
   umbraError?: string
+  policyMode?: 'backend' | 'onchain'
+  onchainPolicy?: {
+    initialized: boolean
+    programId: string
+    agent: string
+    policy: string
+    spendCounter: string
+    initializedSignature?: string
+    lastPolicySignature?: string
+    lastSpendSignature?: string
+  }
   policy?: Policy
 }
 
@@ -46,6 +70,56 @@ type TokenBalance = {
   logoURI?: string
 }
 
+type UmbraStatus = {
+  isRegistered?: boolean
+  isAnonymousReady?: boolean
+  umbra?: {
+    state?: string
+    isInitialised?: boolean
+    isActiveForAnonymousUsage?: boolean
+    isUserCommitmentRegistered?: boolean
+    isUserAccountX25519KeyRegistered?: boolean
+  }
+}
+
+type UmbraBalance = {
+  state?: string
+  balance?: string | null
+  mint?: string
+}
+
+type UmbraScan = {
+  counts?: {
+    received: number
+    selfBurnable: number
+    publicSelfBurnable: number
+    publicReceived: number
+  }
+}
+
+type OnchainPolicyStatus = {
+  exists?: boolean
+  initialized?: boolean
+  programId: string
+  agent: string
+  policyPda?: string
+  spendCounterPda?: string
+  policyConfig?: {
+    killSwitch: boolean
+    maxPerTxMicroUsd: string
+    hourlyLimitMicroUsd: string
+    dailyLimitMicroUsd: string
+    monthlyLimitMicroUsd: string
+    maxBudgetMicroUsd: string
+  }
+  spendCounterState?: {
+    hourSpentMicroUsd: string
+    daySpentMicroUsd: string
+    monthSpentMicroUsd: string
+    totalSpentMicroUsd: string
+  }
+}
+
 const DEFAULT_POLICY: Policy = {
   hourlyLimit: null,
   dailyLimit: null,
@@ -57,6 +131,44 @@ const DEFAULT_POLICY: Policy = {
 }
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL
+const UMBRA_SOL_MINT = 'So11111111111111111111111111111111111111112'
+const DEVNET_RPC = 'https://api.devnet.solana.com'
+const SYSTEM_PROGRAM_ADDRESS = '11111111111111111111111111111111'
+const LAMPORTS_PER_SOL = BigInt(1_000_000_000)
+
+function parseSolAmountToLamports(value: string) {
+  const trimmed = value.trim()
+  if (!/^\d+(\.\d{0,9})?$/.test(trimmed)) {
+    throw new Error('Enter a valid SOL amount, up to 9 decimal places.')
+  }
+
+  const [whole, fractional = ''] = trimmed.split('.')
+  const lamports = BigInt(whole) * LAMPORTS_PER_SOL + BigInt(fractional.padEnd(9, '0'))
+  if (lamports <= BigInt(0)) throw new Error('Enter an amount greater than 0 SOL.')
+  return lamports
+}
+
+function getSystemTransferInstruction(source: string, destination: string, lamports: bigint): Instruction {
+  const data = new Uint8Array(12)
+  const view = new DataView(data.buffer)
+  view.setUint32(0, 2, true)
+  view.setBigUint64(4, lamports, true)
+
+  return {
+    programAddress: address(SYSTEM_PROGRAM_ADDRESS),
+    accounts: [
+      { address: address(source), role: AccountRole.WRITABLE_SIGNER },
+      { address: address(destination), role: AccountRole.WRITABLE },
+    ],
+    data,
+  }
+}
+
+function formatMicroUsd(value?: string) {
+  if (!value) return '$0.00'
+  const dollars = Number(BigInt(value)) / 1_000_000
+  return `$${dollars.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+}
 
 function LimitInput({
   label,
@@ -90,7 +202,9 @@ function LimitInput({
 }
 
 export default function AgentDetail() {
-  const { ready, authenticated, getAccessToken } = usePrivy()
+  const { ready, authenticated, getAccessToken, login, connectWallet } = usePrivy()
+  const { ready: walletsReady, wallets } = useWallets()
+  const { signAndSendTransaction } = useSignAndSendTransaction()
   const router = useRouter()
   const params = useParams()
   const id = params.id as string
@@ -102,6 +216,10 @@ export default function AgentDetail() {
   const [solBalance, setSolBalance] = useState<number | null>(null)
   const [tokens, setTokens] = useState<TokenBalance[]>([])
   const [balanceLoading, setBalanceLoading] = useState(false)
+  const [fundAmountSol, setFundAmountSol] = useState('0.1')
+  const [fundingAgent, setFundingAgent] = useState(false)
+  const [fundError, setFundError] = useState<string | null>(null)
+  const [fundSignature, setFundSignature] = useState<string | null>(null)
 
   const [agentName, setAgentName] = useState('')
   const [editingName, setEditingName] = useState(false)
@@ -111,6 +229,18 @@ export default function AgentDetail() {
   const [saved, setSaved] = useState(false)
   const [copiedAddress, setCopiedAddress] = useState(false)
   const [privacyRegistering, setPrivacyRegistering] = useState(false)
+  const [umbraLoading, setUmbraLoading] = useState(false)
+  const [umbraWorking, setUmbraWorking] = useState<string | null>(null)
+  const [umbraStatus, setUmbraStatus] = useState<UmbraStatus | null>(null)
+  const [umbraBalance, setUmbraBalance] = useState<UmbraBalance | null>(null)
+  const [umbraScan, setUmbraScan] = useState<UmbraScan | null>(null)
+  const [umbraAmount, setUmbraAmount] = useState('1000000')
+  const [umbraError, setUmbraError] = useState<string | null>(null)
+  const [umbraMessage, setUmbraMessage] = useState<string | null>(null)
+  const [onchainStatus, setOnchainStatus] = useState<OnchainPolicyStatus | null>(null)
+  const [onchainLoading, setOnchainLoading] = useState(false)
+  const [onchainInitializing, setOnchainInitializing] = useState(false)
+  const [onchainError, setOnchainError] = useState<string | null>(null)
 
   const [apiKey, setApiKey] = useState<string | null>(null)
   const [apiKeyVisible, setApiKeyVisible] = useState(false)
@@ -166,8 +296,90 @@ export default function AgentDetail() {
       setApiKey(data.apiKey)
       fetchBalances(data.walletAddress)
       fetchTransactions(token)
+      if (data.privacyEnabled || data.umbraStatus === 'registered') {
+        fetchUmbraSnapshot(data.apiKey)
+      }
+      if (data.policyMode === 'onchain') {
+        fetchOnchainPolicy()
+      }
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function umbraFetch<T>(path: string, init: RequestInit = {}, key = apiKey): Promise<T> {
+    if (!key) throw new Error('Missing agent API key')
+
+    const res = await fetch(`${API}/umbra${path}`, {
+      ...init,
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': key,
+        ...(init.headers as Record<string, string> ?? {}),
+      },
+    })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error((body as any).error ?? `Umbra request failed: ${path}`)
+    return body as T
+  }
+
+  async function fetchUmbraSnapshot(key = apiKey) {
+    if (!key) return
+    setUmbraLoading(true)
+    setUmbraError(null)
+    try {
+      const [status, balance, scan] = await Promise.all([
+        umbraFetch<UmbraStatus>('/status', {}, key),
+        umbraFetch<UmbraBalance>(`/balance?mint=${encodeURIComponent(UMBRA_SOL_MINT)}`, {}, key),
+        umbraFetch<UmbraScan>('/scan', {}, key).catch(() => null),
+      ])
+      setUmbraStatus(status)
+      setUmbraBalance(balance)
+      if (scan) setUmbraScan(scan)
+    } catch (err: any) {
+      setUmbraError(err?.message ?? 'Failed to load Umbra state')
+    } finally {
+      setUmbraLoading(false)
+    }
+  }
+
+  async function handleUmbraAction(action: 'deposit' | 'withdraw' | 'scan' | 'status') {
+    setUmbraWorking(action)
+    setUmbraError(null)
+    setUmbraMessage(null)
+    try {
+      if (action === 'scan') {
+        const scan = await umbraFetch<UmbraScan>('/scan')
+        setUmbraScan(scan)
+        setUmbraMessage('scan updated')
+        return
+      }
+
+      if (action === 'status') {
+        await fetchUmbraSnapshot()
+        setUmbraMessage('Umbra state refreshed')
+        return
+      }
+
+      const amount = umbraAmount.trim()
+      if (!amount || BigInt(amount) <= BigInt(0)) {
+        throw new Error('Enter a positive atomic amount')
+      }
+
+      const result = await umbraFetch<Record<string, unknown>>(`/${action}`, {
+        method: 'POST',
+        body: JSON.stringify({ amount, mint: UMBRA_SOL_MINT }),
+      })
+      const signature = result.callbackSignature ?? result.queueSignature
+      setUmbraMessage(`${action} submitted${signature ? `: ${String(signature).slice(0, 12)}...` : ''}`)
+      await Promise.all([
+        fetchUmbraSnapshot(),
+        agent ? fetchBalances(agent.walletAddress) : Promise.resolve(),
+      ])
+    } catch (err: any) {
+      setUmbraError(err?.message ?? `Umbra ${action} failed`)
+    } finally {
+      setUmbraWorking(null)
     }
   }
 
@@ -237,6 +449,101 @@ export default function AgentDetail() {
     }
   }
 
+  async function fetchOnchainPolicy() {
+    if (!authenticated) return
+    setOnchainLoading(true)
+    setOnchainError(null)
+    try {
+      const token = await getAccessToken()
+      if (!token) return
+      const res = await fetch(`${API}/agents/${id}/policy/onchain`, {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      const body = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(body?.error ?? 'Failed to load on-chain policy')
+      setOnchainStatus(body)
+    } catch (err: any) {
+      setOnchainError(err?.message ?? 'Failed to load on-chain policy')
+    } finally {
+      setOnchainLoading(false)
+    }
+  }
+
+  async function handleFundAgent() {
+    if (!agent) return
+    setFundError(null)
+    setFundSignature(null)
+
+    if (!authenticated) {
+      login()
+      return
+    }
+
+    if (!walletsReady) {
+      setFundError('Wallets are still loading. Try again in a second.')
+      return
+    }
+
+    const wallet = wallets[0]
+    if (!wallet) {
+      connectWallet()
+      return
+    }
+
+    setFundingAgent(true)
+    try {
+      const lamports = parseSolAmountToLamports(fundAmountSol)
+      const rpc = createSolanaRpc(DEVNET_RPC as any)
+      const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'finalized' }).send()
+      const source = address(wallet.address)
+      const destination = address(agent.walletAddress)
+      const instruction = getSystemTransferInstruction(source, destination, lamports)
+      const message = pipe(
+        createTransactionMessage({ version: 0 }),
+        tx => setTransactionMessageFeePayer(source, tx),
+        tx => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, tx),
+        tx => appendTransactionMessageInstruction(instruction, tx),
+      )
+      const unsignedTransaction = compileTransaction(message)
+      const transactionBytes = new Uint8Array(getTransactionEncoder().encode(unsignedTransaction))
+      const result = await signAndSendTransaction({
+        wallet,
+        transaction: transactionBytes,
+        chain: 'solana:devnet',
+        options: { commitment: 'confirmed' },
+      })
+      const signature = getBase58Decoder().decode(result.signature)
+      setFundSignature(signature)
+      await fetchBalances(agent.walletAddress)
+    } catch (err: any) {
+      setFundError(err?.message ?? 'Funding transaction failed.')
+    } finally {
+      setFundingAgent(false)
+    }
+  }
+
+  async function handleInitializeOnchainPolicy() {
+    if (!authenticated) return
+    setOnchainInitializing(true)
+    setOnchainError(null)
+    try {
+      const token = await getAccessToken()
+      if (!token) return
+      const res = await fetch(`${API}/agents/${id}/policy/onchain/initialize`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+      })
+      const body = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(body?.error ?? 'On-chain initialization failed')
+      setAgent(body)
+      await fetchOnchainPolicy()
+    } catch (err: any) {
+      setOnchainError(err?.message ?? 'On-chain initialization failed')
+    } finally {
+      setOnchainInitializing(false)
+    }
+  }
+
   async function handleRegenKey() {
     if (!regenConfirm) { setRegenConfirm(true); return }
     setRegenning(true)
@@ -267,7 +574,11 @@ export default function AgentDetail() {
         headers: { authorization: `Bearer ${token}` },
       })
       const updated = await res.json().catch(() => null)
-      if (updated) setAgent(updated)
+      if (updated) {
+        setAgent(updated)
+        setApiKey(updated.apiKey ?? apiKey)
+        await fetchUmbraSnapshot(updated.apiKey ?? apiKey)
+      }
     } finally {
       setPrivacyRegistering(false)
     }
@@ -290,6 +601,7 @@ export default function AgentDetail() {
         if (res.ok) {
           const updated = await res.json()
           setAgent(updated)
+          if (updated.policyMode === 'onchain') await fetchOnchainPolicy()
           setEditingName(false)
           setSaved(true)
           setTimeout(() => setSaved(false), 2500)
@@ -416,15 +728,141 @@ export default function AgentDetail() {
               {copiedAddress ? 'copied!' : 'copy'}
             </button>
           </div>
+          <div className="mt-3 bg-white border border-beige-darker p-5">
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
+                <label className="font-mono text-[0.6rem] text-ink-muted tracking-widest uppercase block mb-2">
+                  add funds to agent
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={fundAmountSol}
+                  onChange={e => setFundAmountSol(e.target.value.replace(/[^\d.]/g, ''))}
+                  className="w-full h-10.5 bg-white border border-beige-darker px-4 font-mono text-sm text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
+                  placeholder="0.1"
+                />
+              </div>
+              <button
+                onClick={handleFundAgent}
+                disabled={fundingAgent || !agent}
+                className="bg-black text-beige font-mono text-xs tracking-widest px-5 h-[42px] hover:bg-ink transition-colors cursor-pointer disabled:opacity-40"
+              >
+                {fundingAgent ? 'funding...' : authenticated && wallets.length === 0 ? 'connect wallet' : 'fund'}
+              </button>
+            </div>
+            <p className="font-mono text-[0.55rem] text-ink-muted/50 mt-1">
+              sends SOL from your connected Privy wallet to this agent on devnet.
+            </p>
+            {(fundError || fundSignature) && (
+              <p className={`font-mono text-[0.65rem] mt-3 break-all ${fundError ? 'text-red-700' : 'text-ink-muted'}`}>
+                {fundError ?? `funded: ${fundSignature}`}
+              </p>
+            )}
+          </div>
         </section>
+
+        {/* On-chain policy */}
+        {agent?.policyMode === 'onchain' && (
+          <section className="mb-10">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-mono text-[0.65rem] text-ink-muted tracking-widest uppercase">On-chain Policy</h2>
+              <button
+                onClick={fetchOnchainPolicy}
+                disabled={onchainLoading}
+                className="font-mono text-[0.6rem] text-ink-muted/50 tracking-widest hover:text-ink-muted transition-colors cursor-pointer disabled:opacity-40"
+              >
+                refresh ↻
+              </button>
+            </div>
+            <div className="border border-[#c8b6ff] bg-[linear-gradient(115deg,#ffffff_0%,#ffffff_55%,#f6f1ff_100%)] p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="font-mono text-sm text-black">
+                      {agent.onchainPolicy?.initialized ? 'On-chain policy initialized' : 'On-chain policy pending'}
+                    </p>
+                    <span className={`font-mono text-[0.55rem] tracking-widest uppercase border px-1.5 py-0.5 ${
+                      agent.onchainPolicy?.initialized
+                        ? 'text-[#6d4aff] border-[#c8b6ff] bg-[#f6f1ff]'
+                        : 'text-ink-muted border-beige-darker bg-white/70'
+                    }`}>
+                      {agent.onchainPolicy?.initialized ? 'live' : 'needs init'}
+                    </span>
+                  </div>
+                  <p className="font-mono text-[0.65rem] text-ink-muted leading-relaxed">
+                    {agent.onchainPolicy?.initialized
+                      ? 'Direct SOL sends include an Agentis policy-program check before the transfer.'
+                      : 'Fund this wallet first, then initialize the policy PDAs on devnet.'}
+                  </p>
+                </div>
+                {!agent.onchainPolicy?.initialized && (
+                  <button
+                    onClick={handleInitializeOnchainPolicy}
+                    disabled={onchainInitializing}
+                    className="font-mono text-xs tracking-widest text-beige bg-black px-4 py-2 hover:bg-ink transition-colors cursor-pointer disabled:opacity-40 shrink-0"
+                  >
+                    {onchainInitializing ? 'initializing...' : 'initialize'}
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 mt-5">
+                <div className="bg-white/70 border border-[#c8b6ff]/70 px-4 py-3">
+                  <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">today</p>
+                  <p className="font-mono text-sm text-black">{formatMicroUsd(onchainStatus?.spendCounterState?.daySpentMicroUsd)}</p>
+                  <p className="font-mono text-[0.55rem] text-ink-muted/60 tracking-widest uppercase">on-chain spend</p>
+                </div>
+                <div className="bg-white/70 border border-[#c8b6ff]/70 px-4 py-3">
+                  <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">month</p>
+                  <p className="font-mono text-sm text-black">{formatMicroUsd(onchainStatus?.spendCounterState?.monthSpentMicroUsd)}</p>
+                  <p className="font-mono text-[0.55rem] text-ink-muted/60 tracking-widest uppercase">policy counter</p>
+                </div>
+                <div className="bg-white/70 border border-[#c8b6ff]/70 px-4 py-3">
+                  <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">lifetime</p>
+                  <p className="font-mono text-sm text-black">{formatMicroUsd(onchainStatus?.spendCounterState?.totalSpentMicroUsd)}</p>
+                  <p className="font-mono text-[0.55rem] text-ink-muted/60 tracking-widest uppercase">total tracked</p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                {[
+                  ['agent PDA', agent.onchainPolicy?.agent],
+                  ['policy PDA', agent.onchainPolicy?.policy],
+                  ['counter PDA', agent.onchainPolicy?.spendCounter],
+                ].map(([label, value]) => (
+                  <div key={label} className="min-w-0">
+                    <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">{label}</p>
+                    <p className="font-mono text-[0.6rem] text-ink-muted truncate">{value ?? '—'}</p>
+                  </div>
+                ))}
+              </div>
+
+              {onchainError && (
+                <p className="font-mono text-[0.65rem] text-red-700 mt-4 break-all">{onchainError}</p>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Privacy */}
         {(agent?.privacyEnabled || agent?.umbraStatus === 'registered') && (
           <section className="mb-10">
-            <h2 className="font-mono text-[0.65rem] text-ink-muted tracking-widest uppercase mb-4">Privacy</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-mono text-[0.65rem] text-ink-muted tracking-widest uppercase">Privacy</h2>
+              {agent.umbraStatus === 'registered' && (
+                <button
+                  onClick={() => handleUmbraAction('status')}
+                  disabled={umbraLoading || umbraWorking !== null}
+                  className="font-mono text-[0.6rem] text-ink-muted/50 tracking-widest hover:text-ink-muted transition-colors cursor-pointer disabled:opacity-40"
+                >
+                  refresh ↻
+                </button>
+              )}
+            </div>
             <div className={`border p-5 ${
               agent.umbraStatus === 'registered'
-                ? 'bg-white border-black'
+                ? 'border-[#b7cce5] bg-[linear-gradient(115deg,#ffffff_0%,#ffffff_58%,#eef6ff_100%)]'
                 : agent.umbraStatus === 'failed'
                   ? 'bg-red-50 border-red-200'
                   : 'bg-white border-beige-darker'
@@ -442,6 +880,11 @@ export default function AgentDetail() {
                   {agent.umbraError && (
                     <p className="font-mono text-[0.65rem] text-red-700 mt-3 break-all">{agent.umbraError}</p>
                   )}
+                  {umbraStatus && (
+                    <p className="font-mono text-[0.6rem] text-ink-muted/60 mt-3 tracking-widest uppercase">
+                      on-chain: {umbraStatus.umbra?.state ?? 'unknown'} · anonymous {umbraStatus.isAnonymousReady ? 'ready' : 'not ready'}
+                    </p>
+                  )}
                 </div>
                 {agent.umbraStatus === 'registered' ? (
                   <span className="font-mono text-[0.6rem] tracking-widest uppercase border border-beige-darker px-2 py-1 text-ink-muted shrink-0">
@@ -457,6 +900,90 @@ export default function AgentDetail() {
                   </button>
                 )}
               </div>
+
+              {agent.umbraStatus === 'registered' && (
+                <div className="mt-6 pt-5 border-t border-beige-darker">
+                  <div className="grid grid-cols-3 gap-3 mb-5">
+                    <div className="bg-white/70 border border-[#b7cce5]/70 px-4 py-3">
+                      <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">encrypted balance</p>
+                      <p className="font-mono text-sm text-black">
+                        {umbraLoading && !umbraBalance
+                          ? 'loading...'
+                          : umbraBalance?.balance ?? '0'}
+                      </p>
+                      <p className="font-mono text-[0.55rem] text-ink-muted/60 tracking-widest uppercase">
+                        wSOL atomic units
+                      </p>
+                    </div>
+                    <div className="bg-white/70 border border-[#b7cce5]/70 px-4 py-3">
+                      <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">balance state</p>
+                      <p className="font-mono text-sm text-black">{umbraBalance?.state ?? 'unknown'}</p>
+                      <p className="font-mono text-[0.55rem] text-ink-muted/60 tracking-widest uppercase">
+                        Umbra shared mode
+                      </p>
+                    </div>
+                    <div className="bg-white/70 border border-[#b7cce5]/70 px-4 py-3">
+                      <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">claimable UTXOs</p>
+                      <p className="font-mono text-sm text-black">
+                        {umbraScan
+                          ? (umbraScan.counts?.publicReceived ?? 0) + (umbraScan.counts?.received ?? 0)
+                          : '—'}
+                      </p>
+                      <p className="font-mono text-[0.55rem] text-ink-muted/60 tracking-widest uppercase">
+                        received + publicReceived
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div className="flex-1 min-w-52">
+                      <label className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase block mb-1.5">
+                        amount
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={umbraAmount}
+                        onChange={e => setUmbraAmount(e.target.value.replace(/[^\d]/g, ''))}
+                        className="w-full h-[46px] bg-beige border border-beige-darker px-3 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
+                        placeholder="1000000"
+                      />
+                      </div>
+                      <button
+                        onClick={() => handleUmbraAction('deposit')}
+                        disabled={umbraWorking !== null || !umbraAmount}
+                        className="bg-black text-beige font-mono text-xs tracking-widest px-5 h-[46px] hover:bg-ink transition-colors cursor-pointer disabled:opacity-40"
+                      >
+                        {umbraWorking === 'deposit' ? 'depositing...' : 'deposit'}
+                      </button>
+                      <button
+                        onClick={() => handleUmbraAction('withdraw')}
+                        disabled={umbraWorking !== null || !umbraAmount}
+                        className="font-mono text-xs tracking-widest text-ink-muted border border-beige-darker px-5 h-[46px] hover:border-ink-muted transition-colors cursor-pointer disabled:opacity-40"
+                      >
+                        {umbraWorking === 'withdraw' ? 'withdrawing...' : 'withdraw'}
+                      </button>
+                      <button
+                        onClick={() => handleUmbraAction('scan')}
+                        disabled={umbraWorking !== null}
+                        className="font-mono text-xs tracking-widest text-ink-muted border border-beige-darker px-5 h-[46px] hover:border-ink-muted transition-colors cursor-pointer disabled:opacity-40"
+                      >
+                        {umbraWorking === 'scan' ? 'scanning...' : 'scan'}
+                      </button>
+                    </div>
+                    <p className="font-mono text-[0.55rem] text-ink-muted/50 mt-1">
+                      atomic units. 1 SOL = 1,000,000,000.
+                    </p>
+                  </div>
+
+                  {(umbraError || umbraMessage) && (
+                    <p className={`font-mono text-[0.65rem] mt-4 break-all ${umbraError ? 'text-red-700' : 'text-ink-muted'}`}>
+                      {umbraError ?? umbraMessage}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </section>
         )}

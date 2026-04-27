@@ -90,15 +90,21 @@ export async function agentList() {
   console.log()
 }
 
-export async function agentCreate(name: string | undefined) {
+export async function agentCreate(args: string[] | string | undefined) {
+  const parts = Array.isArray(args) ? args : args ? [args] : []
+  const name = parts.find(part => !part.startsWith('--'))
+  const policyMode = parts.includes('--onchain-policy') || parts.includes('--policy-onchain')
+    ? 'onchain'
+    : 'backend'
+
   if (!name) {
-    console.error('Usage: agentis agent create <name>')
+    console.error('Usage: agentis agent create <name> [--onchain-policy]')
     process.exit(1)
   }
   const token = await requireAuth()
   const res = await apiFetch('/account/agents', {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, policyMode }),
   }, token)
   if (!res.ok) {
     const data = await res.json()
@@ -110,6 +116,7 @@ export async function agentCreate(name: string | undefined) {
   console.log(`  Name:    ${agent.name}`)
   console.log(`  ID:      ${agent.id}`)
   console.log(`  Wallet:  ${agent.walletAddress}`)
+  console.log(`  Policy:  ${agent.policyMode ?? 'backend'}${agent.onchainPolicy?.initialized ? ' (initialized)' : agent.policyMode === 'onchain' ? ' (pending init)' : ''}`)
   console.log(`  API Key: ${agent.apiKey}\n`)
 }
 

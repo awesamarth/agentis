@@ -1,0 +1,198 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&family=Playfair+Display:wght@900&display=swap");
+
+      :root {
+        --beige: #f5f0e8;
+        --beige-dark: #d9d0be;
+        --ink: #0f0e0c;
+        --muted: #6b6459;
+        --blue-soft: #dcecff;
+        --blue-line: #9bbfe8;
+      }
+
+      html,
+      body {
+        width: 1500px;
+        height: 500px;
+        margin: 0;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 72% 8%, rgba(220, 236, 255, 0.9), transparent 36%),
+          linear-gradient(115deg, #f8f4ed 0%, #f5f0e8 55%, #edf6ff 100%);
+      }
+
+      body {
+        font-family: "DM Sans", sans-serif;
+        color: var(--ink);
+      }
+
+      .header {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        background:
+          radial-gradient(circle at 72% 8%, rgba(220, 236, 255, 0.9), transparent 36%),
+          linear-gradient(115deg, #f8f4ed 0%, #f5f0e8 55%, #edf6ff 100%);
+      }
+
+      .header::before {
+        content: "";
+        position: absolute;
+        inset: 32px;
+        border: 1px solid rgba(15, 14, 12, 0.16);
+      }
+
+      .header::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(15, 14, 12, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(15, 14, 12, 0.035) 1px, transparent 1px);
+        background-size: 48px 48px;
+        mask-image: radial-gradient(circle at 72% 18%, transparent 0 20%, black 64%);
+        opacity: 0.75;
+      }
+
+      .ghost-a {
+        position: absolute;
+        right: 68px;
+        top: -134px;
+        font-family: "Playfair Display", serif;
+        font-size: 520px;
+        font-weight: 900;
+        line-height: 1;
+        color: rgba(15, 14, 12, 0.03);
+        letter-spacing: -0.08em;
+      }
+
+      .content {
+        position: relative;
+        z-index: 1;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding-left: 150px;
+        padding-bottom: 38px;
+        box-sizing: border-box;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 30px;
+      }
+
+      .mark {
+        width: 92px;
+        height: 92px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--ink);
+        color: var(--beige);
+        font-family: "Playfair Display", serif;
+        font-size: 58px;
+        font-weight: 900;
+        line-height: 1;
+        padding-bottom: 4px;
+        box-sizing: border-box;
+      }
+
+      .wordmark {
+        font-family: "DM Mono", monospace;
+        font-size: 74px;
+        font-weight: 500;
+        line-height: 1;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+      }
+
+      .subtitle {
+        margin-top: 28px;
+        margin-left: 124px;
+        max-width: 620px;
+        font-size: 29px;
+        font-weight: 300;
+        line-height: 1.28;
+        color: var(--muted);
+        letter-spacing: -0.01em;
+      }
+
+      .rail {
+        position: absolute;
+        left: 154px;
+        bottom: 126px;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        font-family: "DM Mono", monospace;
+        font-size: 15px;
+        letter-spacing: 0.16em;
+        color: rgba(107, 100, 89, 0.82);
+        text-transform: uppercase;
+      }
+
+      .rail-line {
+        width: 70px;
+        height: 1px;
+        background: rgba(15, 14, 12, 0.28);
+      }
+
+      .solana {
+        position: absolute;
+        right: 86px;
+        bottom: 116px;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 13px 16px;
+        border: 1px solid rgba(15, 14, 12, 0.18);
+        background: rgba(245, 240, 232, 0.58);
+        backdrop-filter: blur(10px);
+      }
+
+      .solana-logo {
+        width: 28px;
+        height: 28px;
+        object-fit: contain;
+      }
+
+      .solana-text {
+        font-family: "DM Mono", monospace;
+        font-size: 14px;
+        font-weight: 400;
+        letter-spacing: 0.18em;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="header">
+      <div class="ghost-a">A</div>
+      <section class="content">
+        <div class="brand">
+          <div class="mark">A</div>
+          <div class="wordmark">Agentis</div>
+        </div>
+        <div class="subtitle">Financial infrastructure for autonomous agents</div>
+      </section>
+      <div class="rail">
+        <span class="rail-line"></span>
+        <span>wallets · payments · policies · privacy</span>
+      </div>
+      <div class="solana">
+        <img class="solana-logo" src="../apps/next-app/public/solana-logo.png" alt="" />
+        <div class="solana-text">BUILT ON SOLANA</div>
+      </div>
+    </main>
+  </body>
+</html>

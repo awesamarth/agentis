@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 import { Copy, Check, RefreshCw } from 'lucide-react'
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   PieChart, Pie, Cell, Legend,
 } from 'recharts'
 
@@ -36,7 +36,16 @@ const ACCENT = '#c8a96e'
 const ACCENT2 = '#2a2620'
 const MUTED = '#d9d0be'
 
-const PIE_COLORS = [ACCENT, ACCENT2, '#a08650', '#6b6459', '#b8955a', '#4a4340']
+const PIE_COLORS = [
+  ACCENT,
+  ACCENT2,
+  '#8f7a50',
+  '#b8955a',
+  '#6b6459',
+  '#d6c18a',
+  '#4a4340',
+  '#aeb9c8',
+]
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
@@ -53,8 +62,8 @@ function CopyButton({ text }: { text: string }) {
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-white border border-beige-darker px-3 py-2 font-mono text-xs text-ink">
-      <p className="text-ink-muted mb-1">{label}</p>
+    <div className="bg-white border border-ink px-3 py-2 font-mono text-xs text-ink shadow-[4px_4px_0_rgba(15,14,12,0.08)]">
+      <p className="text-ink-muted mb-1 tracking-widest uppercase">{label}</p>
       <p className="text-ink">${Number(payload[0].value).toFixed(4)}</p>
     </div>
   )
@@ -155,13 +164,22 @@ export default function ProfilePage() {
     return Object.entries(map).map(([date, amount]) => ({ date, amount }))
   })()
 
-  // Pie chart — spend per agent
-  const spendByAgent = agents
+  // Pie chart — spend per agent. Keep the chart readable when there are many
+  // low-spend agents by grouping the tail.
+  const spendByAgentRaw = agents
     .map(a => ({
       name: a.name,
       value: (a.transactions ?? []).reduce((s, t) => s + (t.amountUsd ?? t.amount), 0),
     }))
     .filter(a => a.value > 0)
+    .sort((a, b) => b.value - a.value)
+
+  const spendByAgent = (() => {
+    if (spendByAgentRaw.length <= 7) return spendByAgentRaw
+    const head = spendByAgentRaw.slice(0, 7)
+    const other = spendByAgentRaw.slice(7).reduce((sum, a) => sum + a.value, 0)
+    return [...head, { name: 'other agents', value: other }]
+  })()
 
   const identity = user?.google?.email
     ?? user?.github?.email
@@ -225,56 +243,99 @@ export default function ProfilePage() {
 
             {/* Bar chart */}
             <div className="border border-beige-darker bg-white p-6">
-              <p className="font-mono text-xs text-ink-muted mb-6">daily spend — last 14 days</p>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={spendByDay} barSize={14}>
+              <div className="flex items-start justify-between mb-6">
+                <div>
+                  <p className="font-mono text-xs text-ink-muted mb-1">daily spend — last 14 days</p>
+                  <p className="font-mono text-[0.6rem] text-ink-muted/50 tracking-widest uppercase">
+                    USD settled through Agentis
+                  </p>
+                </div>
+                <p className="font-mono text-[0.65rem] text-ink-muted/60 tracking-widest uppercase">
+                  total ${totalSpend.toFixed(2)}
+                </p>
+              </div>
+              <div className="bg-beige/50 border border-beige-darker/70 px-3 pt-5 pb-2">
+              <ResponsiveContainer width="100%" height={230}>
+                <BarChart data={spendByDay} barSize={18} margin={{ top: 8, right: 14, left: 2, bottom: 8 }}>
+                  <CartesianGrid
+                    stroke="#d9d0be"
+                    strokeDasharray="3 6"
+                    vertical={false}
+                  />
                   <XAxis
                     dataKey="date"
                     tick={{ fontFamily: 'DM Mono', fontSize: 9, fill: '#6b6459' }}
-                    axisLine={false}
+                    axisLine={{ stroke: '#d9d0be' }}
                     tickLine={false}
-                    interval={2}
+                    interval={1}
+                    dy={8}
                   />
                   <YAxis
                     tick={{ fontFamily: 'DM Mono', fontSize: 9, fill: '#6b6459' }}
-                    axisLine={false}
+                    axisLine={{ stroke: '#d9d0be' }}
                     tickLine={false}
-                    width={48}
-                    tickFormatter={(v) => `$${v.toFixed(3)}`}
+                    width={58}
+                    tickFormatter={(v) => `$${Number(v).toFixed(2)}`}
                   />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f5f0e8' }} />
-                  <Bar dataKey="amount" fill={ACCENT} radius={[2, 2, 0, 0]} />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(200,169,110,0.12)' }} />
+                  <Bar dataKey="amount" fill={ACCENT} radius={[5, 5, 0, 0]} minPointSize={3} />
                 </BarChart>
               </ResponsiveContainer>
+              </div>
             </div>
 
             {/* Pie chart — only if multiple agents with spend */}
             {spendByAgent.length > 1 && (
               <div className="border border-beige-darker bg-white p-6">
                 <p className="font-mono text-xs text-ink-muted mb-6">spend by agent</p>
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie
-                      data={spendByAgent}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={90}
-                      paddingAngle={3}
-                      dataKey="value"
-                    >
-                      {spendByAgent.map((_, i) => (
-                        <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip content={<PieTooltip />} />
-                    <Legend
-                      formatter={(value) => (
-                        <span style={{ fontFamily: 'DM Mono', fontSize: '0.7rem', color: '#6b6459' }}>{value}</span>
-                      )}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+                <div className="grid grid-cols-[minmax(0,1fr)_260px] gap-6 items-center">
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={spendByAgent}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={64}
+                        outerRadius={96}
+                        minAngle={4}
+                        paddingAngle={1}
+                        startAngle={90}
+                        endAngle={-270}
+                        dataKey="value"
+                      >
+                        {spendByAgent.map((_, i) => (
+                          <Cell
+                            key={i}
+                            fill={PIE_COLORS[i % PIE_COLORS.length]}
+                            stroke="#ffffff"
+                            strokeWidth={2}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<PieTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+
+                  <div className="space-y-2">
+                    {spendByAgent.map((agent, i) => {
+                      const pct = totalSpend > 0 ? (agent.value / totalSpend) * 100 : 0
+                      return (
+                        <div key={agent.name} className="flex items-center gap-3 border border-beige-darker/70 bg-beige/40 px-3 py-2">
+                          <span
+                            className="h-3 w-3 shrink-0"
+                            style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="font-mono text-[0.65rem] text-ink truncate">{agent.name}</p>
+                            <p className="font-mono text-[0.55rem] text-ink-muted/60 tracking-widest uppercase">
+                              ${agent.value.toFixed(4)} · {pct.toFixed(1)}%
+                            </p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
               </div>
             )}
           </section>

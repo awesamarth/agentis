@@ -32,5 +32,6 @@ app.route('/umbra', umbra)
 
 export default {
   port: process.env.PORT ?? 3001,
+  idleTimeout: 60,
   fetch: app.fetch,
 }

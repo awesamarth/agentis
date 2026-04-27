@@ -1,4 +1,11 @@
-import type { AgentisConfig, PaymentDetails } from './types'
+import type {
+  AgentisConfig,
+  PaymentDetails,
+  UmbraAmountOptions,
+  UmbraCreateUtxoOptions,
+  UmbraRegisterOptions,
+  UmbraResponse,
+} from './types'
 import type { AgentInfo, Policy, SpendRecord } from '@agentis/core'
 import { AgentisError, PaymentError } from '@agentis/core'
 import { checkPolicy } from '@agentis/core'
@@ -10,6 +17,17 @@ import {
 } from './payment'
 
 const DEFAULT_BASE_URL = 'https://api.agentis.xyz'
+
+function jsonSafe(value: unknown): unknown {
+  if (typeof value === 'bigint') return value.toString()
+  if (Array.isArray(value)) return value.map(jsonSafe)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entryValue]) => [key, jsonSafe(entryValue)])
+    )
+  }
+  return value
+}
 
 export class AgentisClient {
   private config: Required<AgentisConfig>
@@ -187,6 +205,37 @@ export class AgentisClient {
     this.config.onPayment(details)
   }
 
+  private async _umbra<T extends UmbraResponse = UmbraResponse>(
+    path: string,
+    init: RequestInit = {}
+  ): Promise<T> {
+    const res = await globalThis.fetch(`${this.config.baseUrl}/umbra${path}`, {
+      ...init,
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': this.config.apiKey,
+        ...(init.headers as Record<string, string> ?? {}),
+      },
+    })
+    const body = await res.json().catch(() => ({}))
+
+    if (!res.ok) {
+      throw new AgentisError((body as any).error ?? `Umbra request failed: ${path}`)
+    }
+
+    return body as T
+  }
+
+  private _umbraPost<T extends UmbraResponse = UmbraResponse>(
+    path: string,
+    body: Record<string, unknown> = {}
+  ): Promise<T> {
+    return this._umbra<T>(path, {
+      method: 'POST',
+      body: JSON.stringify(jsonSafe(body)),
+    })
+  }
+
   // Direct SOL transfer (amount in SOL, e.g. 0.001)
   async send(to: string, amountSol: number, mint?: string): Promise<string> {
     // Policy check
@@ -240,6 +289,41 @@ export class AgentisClient {
       const updated: Policy = await res.json()
       this.agent.policy = updated
       return updated
+    },
+  }
+
+  readonly privacy = {
+    status: async (): Promise<UmbraResponse> => {
+      return this._umbra('/status')
+    },
+
+    register: async (options: UmbraRegisterOptions = {}): Promise<UmbraResponse> => {
+      return this._umbraPost('/register', options)
+    },
+
+    balance: async (options: Pick<UmbraAmountOptions, 'mint'> = {}): Promise<UmbraResponse> => {
+      const qs = options.mint ? `?mint=${encodeURIComponent(options.mint)}` : ''
+      return this._umbra(`/balance${qs}`)
+    },
+
+    deposit: async (options: UmbraAmountOptions = {}): Promise<UmbraResponse> => {
+      return this._umbraPost('/deposit', options)
+    },
+
+    withdraw: async (options: UmbraAmountOptions = {}): Promise<UmbraResponse> => {
+      return this._umbraPost('/withdraw', options)
+    },
+
+    createUtxo: async (options: UmbraCreateUtxoOptions = {}): Promise<UmbraResponse> => {
+      return this._umbraPost('/create-utxo', options)
+    },
+
+    scan: async (): Promise<UmbraResponse> => {
+      return this._umbra('/scan')
+    },
+
+    claimLatest: async (): Promise<UmbraResponse> => {
+      return this._umbraPost('/claim-latest')
     },
   }
 

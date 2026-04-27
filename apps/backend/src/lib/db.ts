@@ -12,6 +12,21 @@ type Policy = {
   killSwitch: boolean
 }
 
+type PolicyMode = 'backend' | 'onchain'
+
+type OnchainPolicyState = {
+  programId: string
+  owner: string
+  agent: string
+  policy: string
+  spendCounter: string
+  initialized: boolean
+  initializedAt?: string
+  initializedSignature?: string
+  lastPolicySignature?: string
+  lastSpendSignature?: string
+}
+
 export type TxRecord = {
   txHash: string
   amount: number       // SOL (raw chain value)
@@ -33,6 +48,8 @@ type Agent = {
   umbraRegisteredAt?: string
   umbraRegistrationSignatures?: string[]
   umbraError?: string
+  policyMode?: PolicyMode
+  onchainPolicy?: OnchainPolicyState
   policy?: Policy
   transactions: TxRecord[]
   monthSpend: { month: string; spend: number }  // month = "YYYY-MM"
@@ -86,6 +103,7 @@ export async function getAgentsByUser(userId: string): Promise<Agent[]> {
       ...a,
       privacyEnabled: a.privacyEnabled ?? false,
       umbraStatus: a.umbraStatus ?? (a.privacyEnabled ? 'pending' : 'disabled'),
+      policyMode: a.policyMode ?? 'backend',
       transactions: a.transactions ?? [],
       monthSpend: a.monthSpend ?? { month: '', spend: 0 },
     }))
@@ -113,9 +131,11 @@ export async function updateAgent(id: string, patch: Partial<Agent>): Promise<Ag
   const idx = db.agents.findIndex(a => a.id === id)
   if (idx === -1) throw new Error('Agent not found')
   // never allow patching sensitive fields — only user-controlled config and system privacy status
-  const safe: Partial<Pick<Agent, 'name' | 'policy' | 'privacyEnabled' | 'umbraStatus' | 'umbraRegisteredAt' | 'umbraRegistrationSignatures' | 'umbraError'>> = {}
+  const safe: Partial<Pick<Agent, 'name' | 'policy' | 'policyMode' | 'onchainPolicy' | 'privacyEnabled' | 'umbraStatus' | 'umbraRegisteredAt' | 'umbraRegistrationSignatures' | 'umbraError'>> = {}
   if (patch.name !== undefined) safe.name = patch.name
   if (patch.policy !== undefined) safe.policy = patch.policy
+  if (patch.policyMode !== undefined) safe.policyMode = patch.policyMode
+  if (patch.onchainPolicy !== undefined) safe.onchainPolicy = patch.onchainPolicy
   if (patch.privacyEnabled !== undefined) safe.privacyEnabled = patch.privacyEnabled
   if (patch.umbraStatus !== undefined) safe.umbraStatus = patch.umbraStatus
   if (patch.umbraRegisteredAt !== undefined) safe.umbraRegisteredAt = patch.umbraRegisteredAt

@@ -15,6 +15,8 @@ type Agent = {
   privacyEnabled?: boolean
   umbraStatus?: 'disabled' | 'pending' | 'registered' | 'failed'
   umbraError?: string
+  policyMode?: 'backend' | 'onchain'
+  onchainPolicy?: { initialized: boolean }
   _guest?: boolean
   _secretKeyBytes?: string  // JSON array of key bytes, only for guest agents
 }
@@ -63,6 +65,7 @@ export default function Dashboard() {
   const [showModal, setShowModal] = useState(false)
   const [agentName, setAgentName] = useState('')
   const [privacyEnabled, setPrivacyEnabled] = useState(false)
+  const [policyMode, setPolicyMode] = useState<'backend' | 'onchain'>('backend')
   const [creating, setCreating] = useState(false)
   const [revealedKey, setRevealedKey] = useState<string | null>(null)
 
@@ -127,7 +130,7 @@ export default function Dashboard() {
             authorization: `Bearer ${token}`,
             'content-type': 'application/json',
           },
-          body: JSON.stringify({ name: agentName, privacyEnabled }),
+          body: JSON.stringify({ name: agentName, privacyEnabled, policyMode }),
         })
         const agent = await res.json()
         setAgents(prev => [agent, ...prev])
@@ -154,6 +157,7 @@ export default function Dashboard() {
       }
       setAgentName('')
       setPrivacyEnabled(false)
+      setPolicyMode('backend')
       setShowModal(false)
     } finally {
       setCreating(false)
@@ -243,6 +247,15 @@ export default function Dashboard() {
                     {agent._guest && (
                       <span className="font-mono text-[0.55rem] text-ink-muted border border-beige-darker px-1.5 py-0.5 tracking-widest">guest</span>
                     )}
+                    {agent.policyMode === 'onchain' && (
+                      <span className={`font-mono text-[0.55rem] border px-1.5 py-0.5 tracking-widest ${
+                        agent.onchainPolicy?.initialized
+                          ? 'text-[#6d4aff] border-[#c8b6ff] bg-[#f6f1ff]'
+                          : 'text-ink-muted border-beige-darker'
+                      }`}>
+                        on-chain policy{agent.onchainPolicy?.initialized ? '' : ' pending'}
+                      </span>
+                    )}
                     {agent.privacyEnabled && agent.umbraStatus === 'registered' && (
                       <span
                         title="private agent"
@@ -312,20 +325,51 @@ export default function Dashboard() {
             />
 
             {authenticated && (
-              <label className="bg-white border border-beige-darker p-4 mb-6 flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={privacyEnabled}
-                  onChange={e => setPrivacyEnabled(e.target.checked)}
-                  className="mt-1 accent-black"
-                />
-                <span>
-                  <span className="block font-mono text-xs text-black tracking-widest uppercase mb-1">private mode</span>
-                  <span className="block font-mono text-[0.65rem] text-ink-muted leading-relaxed">
-                    marks this agent private. Fund it, then register Umbra from the agent page.
+              <>
+                <div className="mb-6">
+                  <p className="font-mono text-[0.65rem] text-ink-muted tracking-widest uppercase mb-2">Policy enforcement</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { mode: 'backend' as const, label: 'backend', desc: 'fast setup, server enforced' },
+                      { mode: 'onchain' as const, label: 'on-chain', desc: 'Solana policy account' },
+                    ].map(option => (
+                      <button
+                        key={option.mode}
+                        type="button"
+                        onClick={() => setPolicyMode(option.mode)}
+                        className={`text-left border p-4 transition-colors cursor-pointer ${
+                          policyMode === option.mode
+                            ? 'border-black bg-white'
+                            : 'border-beige-darker bg-white/60 hover:border-ink-muted'
+                        }`}
+                      >
+                        <span className="block font-mono text-xs text-black tracking-widest uppercase mb-1">{option.label}</span>
+                        <span className="block font-mono text-[0.6rem] text-ink-muted leading-relaxed">{option.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {policyMode === 'onchain' && (
+                    <p className="font-mono text-[0.6rem] text-ink-muted/70 mt-2 leading-relaxed">
+                      creates registry, policy, and spend counter PDAs after the wallet is funded.
+                    </p>
+                  )}
+                </div>
+
+                <label className="bg-white border border-beige-darker p-4 mb-6 flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={privacyEnabled}
+                    onChange={e => setPrivacyEnabled(e.target.checked)}
+                    className="mt-[0.1rem] accent-black"
+                  />
+                  <span>
+                    <span className="block font-mono text-xs text-black tracking-widest uppercase mb-1">private mode</span>
+                    <span className="block font-mono text-[0.65rem] text-ink-muted leading-relaxed">
+                      marks this agent private. Fund it, then register Umbra from the agent page.
+                    </span>
                   </span>
-                </span>
-              </label>
+                </label>
+              </>
             )}
 
             <div className="flex gap-3">

@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { PrivyClient } from '@privy-io/node'
 import { address as toAddress } from '@solana/kit'
-import { getAgentByApiKey } from '../lib/db'
+import { getAgentByApiKey, updateAgent } from '../lib/db'
 import { createUmbraClient } from '../lib/umbra-signer'
 import {
   getClaimableUtxoScannerFunction,
@@ -11,6 +11,7 @@ import {
   getPublicBalanceToReceiverClaimableUtxoCreatorFunction,
   getReceiverClaimableUtxoToEncryptedBalanceClaimerFunction,
   getUmbraRelayer,
+  getUserAccountQuerierFunction,
 } from '@umbra-privacy/sdk'
 import {
   getNodeClaimReceiverClaimableUtxoIntoEncryptedBalanceProver,
@@ -107,6 +108,52 @@ async function getEncryptedBalanceValue(client: Awaited<ReturnType<typeof create
   }
 }
 
+// GET /umbra/status — direct Umbra on-chain account status for this agent wallet
+umbra.get('/status', async (c) => {
+  const agent = c.get('agent')
+
+  try {
+    const client = await createUmbraClient(privyNode, agent.walletId, agent.walletAddress)
+    const queryUser = getUserAccountQuerierFunction({ client })
+    const result = await queryUser(toAddress(agent.walletAddress))
+    const safeResult = toJsonSafe(result) as Record<string, unknown>
+    const data = (safeResult.data && typeof safeResult.data === 'object')
+      ? safeResult.data as Record<string, unknown>
+      : {}
+    const state = typeof safeResult.state === 'string' ? safeResult.state : 'unknown'
+    const isInitialised = Boolean(data.isInitialised)
+    const isActiveForAnonymousUsage = Boolean(data.isActiveForAnonymousUsage)
+    const isUserCommitmentRegistered = Boolean(data.isUserCommitmentRegistered)
+    const isUserAccountX25519KeyRegistered = Boolean(data.isUserAccountX25519KeyRegistered)
+
+    return c.json({
+      walletAddress: agent.walletAddress,
+      agentis: {
+        privacyEnabled: agent.privacyEnabled ?? false,
+        umbraStatus: agent.umbraStatus ?? (agent.privacyEnabled ? 'pending' : 'disabled'),
+        umbraRegisteredAt: agent.umbraRegisteredAt ?? null,
+      },
+      umbra: {
+        state,
+        isInitialised,
+        isActiveForAnonymousUsage,
+        isUserCommitmentRegistered,
+        isUserAccountX25519KeyRegistered,
+        generationIndex: data.generationIndex ?? null,
+      },
+      isRegistered: Boolean(
+        isInitialised &&
+        isUserAccountX25519KeyRegistered &&
+        isUserCommitmentRegistered
+      ),
+      isAnonymousReady: isActiveForAnonymousUsage,
+    })
+  } catch (err: any) {
+    console.error('[umbra/status]', err)
+    return c.json({ error: err?.message ?? 'Status query failed' }, 500)
+  }
+})
+
 // POST /umbra/register — register the agent's server-side Privy wallet with Umbra
 umbra.post('/register', async (c) => {
   const agent = c.get('agent')
@@ -121,9 +168,22 @@ umbra.post('/register', async (c) => {
       anonymous,
     })
 
+    await updateAgent(agent.id, {
+      privacyEnabled: true,
+      umbraStatus: 'registered',
+      umbraRegisteredAt: new Date().toISOString(),
+      umbraRegistrationSignatures: result.signatures,
+      umbraError: '',
+    })
+
     return c.json(result)
   } catch (err: any) {
     console.error('[umbra/register]', err)
+    await updateAgent(agent.id, {
+      privacyEnabled: true,
+      umbraStatus: 'failed',
+      umbraError: err?.message ?? 'Registration failed',
+    })
     return c.json({ error: err?.message ?? 'Registration failed' }, 500)
   }
 })

@@ -11,6 +11,9 @@ async function findHostedAgent(nameOrId: string, token: string): Promise<any | n
 
 function printPolicy(name: string, p: any, scope: 'hosted' | 'local') {
   console.log(`\nPolicy for ${name} (${scope}):`)
+  if (scope === 'hosted' && p.policyMode) {
+    console.log(`  Mode:           ${p.policyMode}${p.onchainPolicy?.initialized ? ' (initialized)' : p.policyMode === 'onchain' ? ' (pending init)' : ''}`)
+  }
   console.log(`  Kill switch:    ${p.killSwitch ? 'ON (agent halted)' : 'off'}`)
   console.log(`  Max per tx:     ${p.maxPerTx !== null ? `$${p.maxPerTx}` : 'unlimited'}`)
   console.log(`  Hourly limit:   ${p.hourlyLimit !== null ? `$${p.hourlyLimit}` : 'unlimited'}`)
@@ -55,7 +58,7 @@ export async function policyGet(nameOrId: string | undefined) {
   const token = await getToken()
   const hosted = token ? await findHostedAgent(nameOrId, token) : null
   if (hosted) {
-    printPolicy(hosted.name, { ...DEFAULT_LOCAL_POLICY, ...(hosted.policy ?? {}) }, 'hosted')
+    printPolicy(hosted.name, { ...DEFAULT_LOCAL_POLICY, ...(hosted.policy ?? {}), policyMode: hosted.policyMode ?? 'backend', onchainPolicy: hosted.onchainPolicy }, 'hosted')
     return
   }
 
@@ -105,4 +108,34 @@ export async function policySet(nameOrId: string | undefined, args: string[]) {
 
   console.error(`Agent or local wallet not found: ${nameOrId}`)
   process.exit(1)
+}
+
+export async function policyInitOnchain(nameOrId: string | undefined) {
+  if (!nameOrId) {
+    console.error('Usage: agentis policy init-onchain <name-or-id>')
+    process.exit(1)
+  }
+
+  const token = await getToken()
+  const hosted = token ? await findHostedAgent(nameOrId, token) : null
+  if (!hosted || !token) {
+    console.error(`Hosted agent not found: ${nameOrId}`)
+    process.exit(1)
+  }
+
+  const res = await apiFetch(`/agents/${hosted.id}/policy/onchain/initialize`, {
+    method: 'POST',
+  }, token)
+  const data = await res.json().catch(() => ({}))
+
+  if (!res.ok) {
+    console.error('Failed to initialize on-chain policy:', data.error ?? res.statusText)
+    process.exit(1)
+  }
+
+  console.log(`\nOn-chain policy initialized for ${data.name}.`)
+  console.log(`  Agent PDA:   ${data.onchainPolicy?.agent}`)
+  console.log(`  Policy PDA:  ${data.onchainPolicy?.policy}`)
+  console.log(`  Counter PDA: ${data.onchainPolicy?.spendCounter}`)
+  console.log(`  Signature:   ${data.onchainPolicy?.initializedSignature}\n`)
 }

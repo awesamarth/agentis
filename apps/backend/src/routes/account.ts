@@ -2,8 +2,9 @@ import { Hono } from 'hono'
 import { privy } from '../lib/privy'
 import { getAccountByUserId, createOrUpdateAccount, getAccountByKey, getAgentsByUser, createAgent } from '../lib/db'
 import { randomBytes } from 'crypto'
+import { deriveOnchainPolicy } from '../lib/onchain-policy'
 
-const account = new Hono()
+const account = new Hono<{ Variables: { userId: string; authedViaKey: boolean } }>()
 
 // Middleware: accepts either Privy JWT or account key
 account.use('*', async (c, next) => {
@@ -61,20 +62,25 @@ account.get('/agents', async (c) => {
 // POST /account/agents — create a new agent (JWT or account key)
 account.post('/agents', async (c) => {
   const userId = c.get('userId')
-  const { name } = await c.req.json()
+  const { name, policyMode } = await c.req.json()
   if (!name?.trim()) return c.json({ error: 'Agent name is required' }, 400)
 
   const wallet = await privy.walletApi.createWallet({ chainType: 'solana' })
   const apiKey = 'agt_live_' + randomBytes(24).toString('hex')
+
+  const walletAddress = wallet.address
+  const useOnchainPolicy = policyMode === 'onchain'
 
   const agent = await createAgent({
     id: crypto.randomUUID(),
     name: name.trim(),
     userId,
     walletId: wallet.id,
-    walletAddress: wallet.address,
+    walletAddress,
     apiKey,
     createdAt: new Date().toISOString(),
+    policyMode: useOnchainPolicy ? 'onchain' : 'backend',
+    onchainPolicy: useOnchainPolicy ? deriveOnchainPolicy(walletAddress) : undefined,
   })
 
   return c.json(agent, 201)

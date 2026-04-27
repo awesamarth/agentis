@@ -20,6 +20,22 @@ export type PaymentDetails = {
   protocol: 'mpp' | 'x402'
 }
 
+export type UmbraAmountOptions = {
+  mint?: string
+  amount?: string | number | bigint
+}
+
+export type UmbraRegisterOptions = {
+  confidential?: boolean
+  anonymous?: boolean
+}
+
+export type UmbraCreateUtxoOptions = UmbraAmountOptions & {
+  to?: string
+}
+
+export type UmbraResponse = Record<string, unknown>
+
 export type MPPChallenge = {
   amount: string
   currency: string

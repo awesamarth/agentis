@@ -8,6 +8,13 @@ import { Mppx, solana as solanaClient } from '@solana/mpp/client'
 import { createSolanaKitSigner } from '@privy-io/node/solana-kit'
 import { address as toAddress } from '@solana/kit'
 import { solToUsd, getTokenPriceUsd } from '../lib/price'
+import {
+  createCheckAndRecordSpendInstruction,
+  createUpdatePolicyInstruction,
+  confirmTransactionOrThrow,
+  formatSolanaTransactionError,
+  preparePrivyTransaction,
+} from '../lib/onchain-policy'
 
 const DEVNET_CAIP2 = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
 
@@ -43,6 +50,8 @@ sdk.get('/agent', async (c) => {
     privacyEnabled: agent.privacyEnabled ?? false,
     umbraStatus: agent.umbraStatus ?? (agent.privacyEnabled ? 'pending' : 'disabled'),
     umbraRegisteredAt: agent.umbraRegisteredAt,
+    policyMode: agent.policyMode ?? 'backend',
+    onchainPolicy: agent.onchainPolicy,
     policy: agent.policy ?? {
       hourlyLimit: null,
       dailyLimit: null,
@@ -68,7 +77,32 @@ sdk.patch('/agent/policy', async (c) => {
     if (patch[key] !== undefined) safePolicy[key] = patch[key]
   }
 
-  const updated = await updateAgent(agent.id, { policy: safePolicy })
+  const updatePatch: any = { policy: safePolicy }
+  if (agent.policyMode === 'onchain' && agent.onchainPolicy?.initialized) {
+    try {
+      const { Connection, Transaction } = await import('@solana/web3.js')
+      const connection = new Connection('https://api.devnet.solana.com', 'confirmed')
+      const tx = await preparePrivyTransaction(
+        connection,
+        agent.walletAddress,
+        new Transaction().add(createUpdatePolicyInstruction(agent, safePolicy)),
+      )
+      const result = await privy.walletApi.solana.signAndSendTransaction({
+        walletId: agent.walletId,
+        transaction: tx,
+        caip2: DEVNET_CAIP2,
+      })
+      await confirmTransactionOrThrow(connection, result.hash, tx)
+      updatePatch.onchainPolicy = {
+        ...agent.onchainPolicy,
+        lastPolicySignature: result.hash,
+      }
+    } catch (err) {
+      return c.json({ error: formatSolanaTransactionError(err) }, 500)
+    }
+  }
+
+  const updated = await updateAgent(agent.id, updatePatch)
   return c.json(updated.policy)
 })
 
@@ -217,15 +251,20 @@ sdk.post('/agent/send', async (c) => {
     return c.json({ error: 'to and amountSol are required' }, 400)
   }
 
-  // Policy: kill switch
-  if (agent.policy?.killSwitch) {
-    return c.json({ error: 'Kill switch is active — agent payments disabled' }, 403)
-  }
+  const amountUsdEstimate = mint ? amountSol * await getTokenPriceUsd(mint) : await solToUsd(amountSol)
 
-  // Policy: maxPerTx (in USD)
-  if (agent.policy?.maxPerTx !== null && agent.policy?.maxPerTx !== undefined) {
-    const amountUsdEstimate = mint ? amountSol * await getTokenPriceUsd(mint) : await solToUsd(amountSol)
-    if (amountUsdEstimate > agent.policy.maxPerTx) {
+  if (agent.policyMode === 'onchain') {
+    if (!agent.onchainPolicy?.initialized) {
+      return c.json({ error: 'On-chain policy is not initialized. Fund the agent wallet, then initialize policy.' }, 403)
+    }
+  } else {
+    // Policy: kill switch
+    if (agent.policy?.killSwitch) {
+      return c.json({ error: 'Kill switch is active — agent payments disabled' }, 403)
+    }
+
+    // Policy: maxPerTx (in USD)
+    if (agent.policy?.maxPerTx !== null && agent.policy?.maxPerTx !== undefined && amountUsdEstimate > agent.policy.maxPerTx) {
       return c.json({ error: `Exceeds max per transaction limit ($${agent.policy.maxPerTx})` }, 403)
     }
   }
@@ -242,6 +281,9 @@ sdk.post('/agent/send', async (c) => {
     tx.recentBlockhash = blockhash
     tx.lastValidBlockHeight = lastValidBlockHeight
     tx.feePayer = fromPubkey
+    if (agent.policyMode === 'onchain') {
+      tx.add(createCheckAndRecordSpendInstruction(agent, amountUsdEstimate))
+    }
     tx.add(SystemProgram.transfer({
       fromPubkey,
       toPubkey,
@@ -253,19 +295,19 @@ sdk.post('/agent/send', async (c) => {
       transaction: tx,
       caip2: DEVNET_CAIP2,
     })
+    await confirmTransactionOrThrow(connection, result.hash, tx)
 
-    const amountUsd = await solToUsd(amountSol)
     await recordTransaction(agent.id, {
       txHash: result.hash,
       amount: amountSol,
-      amountUsd,
+      amountUsd: amountUsdEstimate,
       recipient: to,
       timestamp: new Date().toISOString(),
     })
 
     return c.json({ signature: result.hash })
-  } catch (err: any) {
-    return c.json({ error: err?.message ?? 'Send failed' }, 500)
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 500)
   }
 })
 
