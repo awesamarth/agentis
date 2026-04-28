@@ -233,18 +233,16 @@ Do not casually mutate `leno` privacy flags; it is useful as a stable funded tes
 ## What Is Left
 
 Near-term:
-1. Decide whether to demo Umbra UTXO/private transfer or keep demo focused on encrypted balance.
-2. Facilitator network work for x402/MPP provider side. User will specify this separately.
-3. Decide whether x402/MPP sends should eventually pass through an on-chain escrow/router for on-chain policy enforcement.
-4. MCP server exposing Agentis tools.
-5. Jupiter swap/facilitator path: auto-swap SOL to required payment token when needed.
-6. Jupiter Earn: mainnet-only; likely not part of devnet demo except as roadmap or mocked UI.
+1. x402 facilitator/provider-side work. This is the top priority for making Agentis feel like infrastructure.
+2. Jupiter work: swaps/auto-swap first; Earn is mainnet-only and likely roadmap/mock for devnet.
+3. MCP server exposing Agentis tools.
+4. Agentis skill file: a large Markdown skill that explains the Agentis ecosystem, CLI, dashboard, and MCP so other agents can load it and know how to operate Agentis. Include CLI feature coverage and note that the CLI has help commands for command discovery.
+5. Umbra demo choice: decide whether to demo UTXO/private transfer or keep demo focused on encrypted balance.
+6. Production hardening: JSON DB replacement, API key hashing, transaction history, and observability.
 
 Medium-term:
-- Replace JSON DB with SQLite/Postgres.
-- Hash API keys and show plaintext only once.
 - Add richer on-chain policy visibility, including current configured limits decoded from the policy PDA.
-- Production-grade transaction history and observability.
+- On-chain policy for x402/MPP is post-Colosseum. Do not prioritize before Colosseum unless the product direction changes.
 
 ## Reference Files
 - `JUPITER.txt`: Jupiter docs dump.

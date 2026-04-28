@@ -17,9 +17,16 @@ const agentis = await AgentisClient.create({
   apiKey: 'agt_live_xxxx',        // from Agentis Dashboard
 })
 
-// Drop-in fetch replacement — handles 402 silently
+// Paid HTTP/x402/MPP endpoints — handles 402 silently
 const res = await agentis.fetch('https://api.dune.com/some/paid/endpoint')
 const data = await res.json()
+
+// Direct wallet payments
+const signature = await agentis.pay('recipient-solana-address', 0.01)
+
+// Balances
+const balances = await agentis.balance()
+const sol = await agentis.balance('So11111111111111111111111111111111111111112')
 ```
 
 ## Policy management

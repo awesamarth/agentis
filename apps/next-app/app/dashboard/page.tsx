@@ -2,7 +2,7 @@
 
 import { Copy, Check, Lock, Unlock } from 'lucide-react'
 import { usePrivy } from '@privy-io/react-auth'
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 
@@ -81,33 +81,7 @@ export default function Dashboard() {
     return 'border-beige-darker bg-white'
   }
 
-  useEffect(() => {
-    if (!ready) return
-    if (authenticated) {
-      fetchAgents()
-    } else {
-      const guests = loadGuestAgents()
-      setAgents(guests)
-      fetchAllBalances(guests.map(a => a.walletAddress))
-    }
-  }, [ready, authenticated])
-
-  async function fetchAgents() {
-    setLoading(true)
-    try {
-      const token = await getAccessToken()
-      const res = await fetch(`${API}/agents`, {
-        headers: { authorization: `Bearer ${token}` },
-      })
-      const data = await res.json()
-      setAgents(data)
-      fetchAllBalances(data.map((a: Agent) => a.walletAddress))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function fetchAllBalances(addresses: string[]) {
+  const fetchAllBalances = useEffectEvent(async (addresses: string[]) => {
     const results = await Promise.all(
       addresses.map(async (address) => {
         try {
@@ -128,7 +102,37 @@ export default function Dashboard() {
       if (bal !== null) map[addr] = bal
     }
     setBalances(map)
-  }
+  })
+
+  const fetchAgents = useEffectEvent(async () => {
+    const token = await getAccessToken()
+    setLoading(true)
+    try {
+      const res = await fetch(`${API}/agents`, {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      setAgents(data)
+      await fetchAllBalances(data.map((a: Agent) => a.walletAddress))
+    } finally {
+      setLoading(false)
+    }
+  })
+
+  useEffect(() => {
+    if (!ready) return
+    if (authenticated) {
+      queueMicrotask(() => {
+        void fetchAgents()
+      })
+    } else {
+      queueMicrotask(() => {
+        const guests = loadGuestAgents()
+        setAgents(guests)
+        void fetchAllBalances(guests.map(a => a.walletAddress))
+      })
+    }
+  }, [ready, authenticated])
 
   async function handleCreate() {
     if (!agentName.trim()) return
@@ -186,7 +190,7 @@ export default function Dashboard() {
         {ready && !authenticated && (
           <div className="border border-beige-darker bg-white p-4 mb-8 flex items-center justify-between gap-4">
             <p className="font-mono text-[0.65rem] text-ink-muted tracking-widest">
-              you're in guest mode — agents are saved locally and won't persist across devices
+              you&apos;re in guest mode — agents are saved locally and won&apos;t persist across devices
             </p>
             <button
               onClick={login}
@@ -216,7 +220,7 @@ export default function Dashboard() {
         {revealedKey && (
           <div className="border border-beige-darker bg-white p-5 mb-8 flex items-center justify-between gap-4">
             <div>
-              <p className="font-mono text-[0.65rem] text-ink-muted tracking-widest mb-1 uppercase">API Key — save this, it won't be shown again</p>
+              <p className="font-mono text-[0.65rem] text-ink-muted tracking-widest mb-1 uppercase">API Key — save this, it won&apos;t be shown again</p>
               <p className="font-mono text-sm text-black">{revealedKey}</p>
             </div>
             <button

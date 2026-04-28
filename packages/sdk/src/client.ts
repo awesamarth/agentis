@@ -1,6 +1,10 @@
 import type {
+  AgentBalances,
+  AgentTokenBalance,
   AgentisConfig,
   PaymentDetails,
+  PolicyCheckInput,
+  PolicyCheckResult,
   UmbraAmountOptions,
   UmbraCreateUtxoOptions,
   UmbraRegisterOptions,
@@ -17,6 +21,9 @@ import {
 } from './payment'
 
 const DEFAULT_BASE_URL = 'https://api.agentis.xyz'
+const SOLANA_DEVNET_RPC = 'https://api.devnet.solana.com'
+const UMBRA_SOL_MINT = SOL_MINT
+const TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
 
 function jsonSafe(value: unknown): unknown {
   if (typeof value === 'bigint') return value.toString()
@@ -205,6 +212,115 @@ export class AgentisClient {
     this.config.onPayment(details)
   }
 
+  private async _rpc<T>(method: string, params: unknown[]): Promise<T> {
+    const res = await globalThis.fetch(SOLANA_DEVNET_RPC, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method,
+        params,
+      }),
+    })
+
+    if (!res.ok) {
+      throw new AgentisError(`Solana RPC request failed: ${method}`)
+    }
+
+    const body = await res.json() as { result?: T, error?: { message?: string } }
+    if (body.error) {
+      throw new AgentisError(body.error.message ?? `Solana RPC error: ${method}`)
+    }
+
+    return body.result as T
+  }
+
+  async balance(): Promise<AgentBalances>
+  async balance(mint: string): Promise<AgentTokenBalance>
+  async balance(mint?: string): Promise<AgentBalances | AgentTokenBalance> {
+    const native = await this._nativeBalance()
+    if (mint === SOL_MINT) return native
+
+    const tokens = await this._tokenBalances()
+    if (mint) {
+      return tokens.find(token => token.mint === mint) ?? {
+        mint,
+        rawAmount: '0',
+        decimals: 0,
+        amount: 0,
+      }
+    }
+
+    return {
+      walletAddress: this.agent.walletAddress,
+      native,
+      tokens,
+      balances: [native, ...tokens],
+    }
+  }
+
+  private async _nativeBalance(): Promise<AgentTokenBalance> {
+    const body = await this._rpc<{ value?: number }>(
+      'getBalance',
+      [this.agent.walletAddress, { commitment: 'confirmed' }]
+    )
+    const lamports = body.value
+    if (typeof lamports !== 'number') {
+      throw new AgentisError('Invalid balance response from Solana RPC')
+    }
+
+    return {
+      mint: SOL_MINT,
+      rawAmount: String(lamports),
+      decimals: 9,
+      amount: lamports / 1e9,
+      symbol: 'SOL',
+    }
+  }
+
+  private async _tokenBalances(): Promise<AgentTokenBalance[]> {
+    const body = await this._rpc<{
+      value?: Array<{
+        account?: {
+          data?: {
+            parsed?: {
+              info?: {
+                mint?: string
+                tokenAmount?: {
+                  amount?: string
+                  decimals?: number
+                  uiAmount?: number | null
+                }
+              }
+            }
+          }
+        }
+      }>
+    }>(
+      'getTokenAccountsByOwner',
+      [
+        this.agent.walletAddress,
+        { programId: TOKEN_PROGRAM_ID },
+        { encoding: 'jsonParsed', commitment: 'confirmed' },
+      ]
+    )
+
+    return (body.value ?? [])
+      .map(({ account }) => {
+        const info = account?.data?.parsed?.info
+        const tokenAmount = info?.tokenAmount
+        if (!info?.mint || !tokenAmount?.amount || tokenAmount.decimals === undefined) return null
+        return {
+          mint: info.mint,
+          rawAmount: tokenAmount.amount,
+          decimals: tokenAmount.decimals,
+          amount: tokenAmount.uiAmount ?? Number(tokenAmount.amount) / 10 ** tokenAmount.decimals,
+        } satisfies AgentTokenBalance
+      })
+      .filter((balance): balance is AgentTokenBalance => Boolean(balance && balance.rawAmount !== '0'))
+  }
+
   private async _umbra<T extends UmbraResponse = UmbraResponse>(
     path: string,
     init: RequestInit = {}
@@ -236,8 +352,8 @@ export class AgentisClient {
     })
   }
 
-  // Direct SOL transfer (amount in SOL, e.g. 0.001)
-  async send(to: string, amountSol: number, mint?: string): Promise<string> {
+  // Direct payment. Native SOL amount is in SOL, e.g. 0.001.
+  async pay(to: string, amountSol: number, mint?: string): Promise<string> {
     // Policy check
     const amountUsd = amountSol // rough — backend does real check too
     checkPolicy(this.agent.policy, amountUsd, to, this.spendHistory)
@@ -290,6 +406,15 @@ export class AgentisClient {
       this.agent.policy = updated
       return updated
     },
+
+    check: async (input: PolicyCheckInput): Promise<PolicyCheckResult> => {
+      try {
+        checkPolicy(this.agent.policy, input.amountUsd, input.url ?? this.agent.walletAddress, this.spendHistory)
+        return { allowed: true }
+      } catch (err: any) {
+        return { allowed: false, reason: err?.message ?? 'Policy check failed' }
+      }
+    },
   }
 
   readonly privacy = {
@@ -306,12 +431,24 @@ export class AgentisClient {
       return this._umbra(`/balance${qs}`)
     },
 
+    solBalance: async (): Promise<UmbraResponse> => {
+      return this.privacy.balance({ mint: UMBRA_SOL_MINT })
+    },
+
     deposit: async (options: UmbraAmountOptions = {}): Promise<UmbraResponse> => {
       return this._umbraPost('/deposit', options)
     },
 
+    depositSol: async (amount: string | number | bigint): Promise<UmbraResponse> => {
+      return this.privacy.deposit({ amount, mint: UMBRA_SOL_MINT })
+    },
+
     withdraw: async (options: UmbraAmountOptions = {}): Promise<UmbraResponse> => {
       return this._umbraPost('/withdraw', options)
+    },
+
+    withdrawSol: async (amount: string | number | bigint): Promise<UmbraResponse> => {
+      return this.privacy.withdraw({ amount, mint: UMBRA_SOL_MINT })
     },
 
     createUtxo: async (options: UmbraCreateUtxoOptions = {}): Promise<UmbraResponse> => {

@@ -20,6 +20,33 @@ export type PaymentDetails = {
   protocol: 'mpp' | 'x402'
 }
 
+export type AgentTokenBalance = {
+  mint: string
+  rawAmount: string
+  decimals: number
+  amount: number
+  symbol?: string
+}
+
+export type AgentBalance = AgentTokenBalance
+
+export type AgentBalances = {
+  walletAddress: string
+  native: AgentTokenBalance
+  tokens: AgentTokenBalance[]
+  balances: AgentTokenBalance[]
+}
+
+export type PolicyCheckInput = {
+  amountUsd: number
+  url?: string
+}
+
+export type PolicyCheckResult = {
+  allowed: boolean
+  reason?: string
+}
+
 export type UmbraAmountOptions = {
   mint?: string
   amount?: string | number | bigint

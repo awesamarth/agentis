@@ -17,7 +17,7 @@ console.log(`Agent: ${client.agentName} (${client.walletAddress})`)
 console.log(`Sending 0.001 SOL to burn address...`)
 
 try {
-  const sig = await client.send(BURN_ADDRESS, 0.001)
+  const sig = await client.pay(BURN_ADDRESS, 0.001)
   console.log(`\nSuccess!`)
   console.log(`Signature: ${sig}`)
   console.log(`Explorer:  https://explorer.solana.com/tx/${sig}?cluster=devnet`)

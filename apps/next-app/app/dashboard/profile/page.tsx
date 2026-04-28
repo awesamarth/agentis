@@ -346,7 +346,7 @@ export default function ProfilePage() {
           <p className="font-mono text-[0.6rem] tracking-widest text-ink-muted uppercase mb-4">account api key</p>
           <div className="border border-beige-darker bg-white p-6 space-y-4">
             <p className="font-mono text-[0.7rem] text-ink-muted leading-relaxed">
-              Use this key with the Agentis MCP server. Grants access to create and manage agents programmatically.
+              Grants programmatic access to create and manage agents.
             </p>
 
             {newKey ? (
