@@ -2,6 +2,19 @@
 
 ## Future Plans
 
+Main things left now:
+
+1. Jupiter swaps: `agentis swap ...` + SDK/backend route. Earn feature too.
+2. MCP server: expose Agentis tools for agents.
+3. Agentis skill file: so other agents can load “how to use Agentis” and operate CLI/MCP/dashboard correctly.
+4. Facilitator polish: docs, cleaner generated README, seller onboarding/top-up UX, maybe dashboard/explore page.
+5. Production hardening: real DB, hashed API/account keys, better logs/observability, deployment config.
+6. Demo scripting: decide exact Colosseum flow and make it reliable/repeatable.
+
+Post-Colosseum:
+- On-chain policy for x402/MPP.
+- Umbra UTXO/private-transfer demo if you want more privacy depth.
+
 ### SDK Product Split
 
 The Agentis SDK should be treated as a server-side / agent-runtime SDK, not a browser SDK. Agent API keys belong to agent wallets and must stay on a developer backend or inside a trusted agent runtime.
@@ -59,4 +72,3 @@ This suggests a clean long-term split:
   App/developer control plane:
   create agents, list agents, rotate keys, set policy, fund links
 ```
-
