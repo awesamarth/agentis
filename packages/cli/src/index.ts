@@ -5,6 +5,7 @@ import { walletCreate, walletList } from './commands/wallet'
 import { policyGet, policyInitOnchain, policySet } from './commands/policy'
 import { paidFetch } from './commands/fetch'
 import { privacyCommand } from './commands/privacy'
+import { facilitatorCommand } from './commands/facilitator'
 
 const args = process.argv.slice(2)
 const cmd = args[0]
@@ -46,6 +47,13 @@ ${green}${bold}Commands:${reset}
 
   fetch <url> --agent <name-or-id>         fetch a URL and auto-pay MPP/x402 402s
     --method <method>                      HTTP method (default GET)
+
+  facilitator create <name>                scaffold a Kora-backed x402 facilitator
+    --dir <path>                           output directory
+    --fee-bps <bps>                        prepaid seller fee rate (default 500)
+    --listed                               opt into public facilitator discovery
+  facilitator list                         list registered facilitators
+  facilitator publish <name-or-id> --url   set public URL and optional listing
 
   privacy status --agent <name-or-id>      show direct Umbra account status
   privacy register --agent <name-or-id>    register server-side Privy wallet with Umbra
@@ -142,6 +150,10 @@ async function main() {
 
     case 'privacy':
       await privacyCommand(args.slice(1))
+      break
+
+    case 'facilitator':
+      await facilitatorCommand(args.slice(1))
       break
 
     default:

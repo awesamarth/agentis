@@ -1,5 +1,6 @@
 import { getToken } from '../lib/keychain'
 import { apiFetch } from '../lib/config'
+import { fetchAccountAgents, findAccountAgent } from '../lib/account'
 import { getLocalWalletSigner, loadLocalWalletByNameOrId, recordLocalSpend } from '../lib/local-wallet'
 import { checkPolicy } from '@agentis/core'
 import {
@@ -33,10 +34,7 @@ async function requireAuth(): Promise<string> {
 }
 
 async function findHostedAgent(nameOrId: string, token: string): Promise<any | null> {
-  const res = await apiFetch('/account/agents', {}, token)
-  if (!res.ok) return null
-  const agents = await res.json()
-  return agents.find((a: any) => a.id === nameOrId || a.name === nameOrId) ?? null
+  return findAccountAgent(nameOrId, token)
 }
 
 // Resolve agent by name or id — fetches all agents and matches
@@ -73,12 +71,7 @@ async function solToUsd(sol: number): Promise<number> {
 
 export async function agentList() {
   const token = await requireAuth()
-  const res = await apiFetch('/account/agents', {}, token)
-  if (!res.ok) {
-    console.error('Failed to fetch agents')
-    process.exit(1)
-  }
-  const agents = await res.json()
+  const agents = await fetchAccountAgents(token)
   if (agents.length === 0) {
     console.log('No agents found. Run `agentis agent create <name>` to create one.')
     return

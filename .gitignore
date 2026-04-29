@@ -14,6 +14,9 @@ out/
 # Database
 apps/backend/data/db.json
 
+# Local test keys
+.agentis-test-keys/
+
 # OS
 .DS_Store
 

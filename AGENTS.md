@@ -55,6 +55,7 @@ Core routes:
 - `/account/*`: account key auth for CLI; list/create hosted agents.
 - `/auth/*`: CLI browser login session flow.
 - `/umbra/*`: API-key Umbra privacy routes.
+- `/facilitators/*`: public facilitator heartbeat and discovery routes.
 - `/sol-price`: cached SOL/USD price from Jupiter Price API.
 
 DB is still JSON at `apps/backend/data/db.json` and should be replaced later.
@@ -90,6 +91,7 @@ Implemented:
 - `agentis policy get/set/init-onchain`
 - `agentis fetch <url> --agent <name-or-id> [--method GET]`
 - `agentis privacy status/register/balance/deposit/withdraw/create-utxo/scan/claim-latest --agent <name-or-id>`
+- `agentis facilitator create/list/publish`
 
 Local wallets:
 - Stored under `~/.agentis/wallets/<uuid>.json` with chmod `600`.
@@ -108,6 +110,40 @@ Implemented:
 - Guest mode still exists via localStorage.
 
 Token balances use devnet RPC directly. Jupiter Portfolio is mainnet-only, so do not use it for devnet dashboard balances.
+
+### x402 Facilitators
+Implemented provider-side scaffold path:
+- `agentis facilitator create <name>` registers a facilitator record with the Agentis backend and scaffolds a Kora-backed x402 facilitator project.
+- Generated facilitator exposes `/verify`, `/settle`, `/supported`, `/health`, and admin seller-ledger endpoints.
+- Generated facilitator uses Kora as an external binary/service. Agentis does not fork or vendor Kora.
+- Generated facilitator keeps a local SQLite seller ledger using Node's SQLite API and charges facilitator fees from prepaid seller balances.
+- Generated facilitator sends heartbeat metrics to `/facilitators/:id/heartbeat`.
+- `agentis facilitator publish <name-or-id> --url <url> --listed` opts a live facilitator into public discovery via `/facilitators/explore`.
+
+Facilitator model:
+- Sellers advertise a gross x402 price that already accounts for facilitator fees.
+- The x402 payment settles to the seller.
+- The facilitator deducts its fee from the seller's prepaid local balance after successful settlement.
+- This avoids per-request seller transactions and avoids credit risk from unpaid invoices.
+
+Kora:
+- Local machine has `kora-cli 2.0.5` installed.
+- Generated scaffold uses `@solana/kora ^0.2.1`.
+- The wrapper runs via Node/tsx because `@solana/kora` currently has runtime module issues under direct Bun execution.
+- x402 SVM transactions include the Solana Memo program, so generated Kora configs must allow `MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr`.
+- Default facilitator network should be `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`, not plain `solana-devnet`.
+
+Tested Kora/x402 e2e:
+- `sdk-testing/kora-test` is a dedicated x402 protected server that points at `FACILITATOR_URL`.
+- Kora fee payer test wallet: `Cw9XejYk1oN3uSRvLSsdmLPcrQ2mJpFYQ4Z1VqSaenhg`.
+- Test keypair file is local-only under `.agentis-test-keys/` and ignored by git.
+- Created devnet USDC ATA for the Kora fee-payer wallet to use it as seller/payTo.
+- `agentis fetch http://localhost:4002/paid-data --agent leno` succeeded through Kora-backed facilitator for `$0.001`.
+- `agentis fetch http://localhost:4002/premium-data --agent leno` succeeded through Kora-backed facilitator for `$0.005`.
+- Both settlement signatures finalized on devnet:
+  - `4BtXYMaMttqPeNRDjz4KkWVjUAMZEB9W1Fqs8otSrHi2LJC4K6SEPZ6GnYr59Rp6ffb1FoAXbcB2JXuYBDpyKhb7`
+  - `5J15s66Ji7nHryMwMCQMrdFU3M9aksfw5umNxmawCnK6eyKD1i6rA6NhUGg3pSdJ96Nuh764a7R72GQWLx2z425U`
+- Verified side effects: leno USDC decreased from `20` to `19.994`, seller/payTo USDC increased to `0.006`, facilitator ledger settled volume is `$0.006`, and prepaid seller fee balance dropped by `$0.0003` at 500 bps.
 
 ## Payment Protocol Notes
 
@@ -233,7 +269,7 @@ Do not casually mutate `leno` privacy flags; it is useful as a stable funded tes
 ## What Is Left
 
 Near-term:
-1. x402 facilitator/provider-side work. This is the top priority for making Agentis feel like infrastructure.
+1. x402 facilitator/provider-side hardening: real hosted demo deployment, docs polish, seller onboarding UX, and live x402 protected API integration.
 2. Jupiter work: swaps/auto-swap first; Earn is mainnet-only and likely roadmap/mock for devnet.
 3. MCP server exposing Agentis tools.
 4. Agentis skill file: a large Markdown skill that explains the Agentis ecosystem, CLI, dashboard, and MCP so other agents can load it and know how to operate Agentis. Include CLI feature coverage and note that the CLI has help commands for command discovery.

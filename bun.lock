@@ -123,6 +123,19 @@
         "x402-axios": "^1.2.0",
       },
     },
+    "sdk-testing/kora-test": {
+      "name": "kora-test",
+      "dependencies": {
+        "@x402/core": "^2.10.0",
+        "@x402/hono": "^2.10.0",
+        "@x402/svm": "^2.10.0",
+        "hono": "^4.12.14",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "sdk-testing/mpp-server": {
       "name": "mpp-server",
       "dependencies": {
@@ -1652,6 +1665,8 @@
     "keyv": ["keyv@4.5.4", "", { "dependencies": { "json-buffer": "3.0.1" } }, "sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw=="],
 
     "keyvaluestorage-interface": ["keyvaluestorage-interface@1.0.0", "", {}, "sha512-8t6Q3TclQ4uZynJY9IGr2+SsIGwK9JHcO6ootkHCGA0CrQCRy+VkouYNO2xicET6b9al7QKzpebNow+gkpCL8g=="],
+
+    "kora-test": ["kora-test@workspace:sdk-testing/kora-test"],
 
     "language-subtag-registry": ["language-subtag-registry@0.3.23", "", {}, "sha512-0K65Lea881pHotoGEa5gDlMxt3pctLi2RplBb7Ezh4rRdLEOtgi7n4EwK9lamnUCkKBqaeKRVebTq6BAxSkpXQ=="],
 

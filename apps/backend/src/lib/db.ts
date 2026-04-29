@@ -61,6 +61,30 @@ type Account = {
   createdAt: string
 }
 
+export type FacilitatorRecord = {
+  id: string
+  ownerUserId: string
+  name: string
+  status: 'scaffolded' | 'live' | 'offline'
+  heartbeatSecret: string
+  network: string
+  acceptedMint: string
+  feeBps: number
+  publicUrl: string | null
+  listed: boolean
+  createdAt: string
+  updatedAt: string
+  lastHeartbeatAt?: string
+  metrics?: {
+    version?: string
+    supported?: string[]
+    settledCount?: number
+    settledVolumeUsd?: number
+    sellerCount?: number
+    feeBps?: number
+  }
+}
+
 export type LoginSession = {
   id: string           // random hex, used as session ID
   status: 'pending' | 'complete'
@@ -73,15 +97,17 @@ type DB = {
   agents: Agent[]
   accounts: Account[]
   loginSessions: LoginSession[]
+  facilitators: FacilitatorRecord[]
 }
 
 async function readDb(): Promise<DB> {
   const file = Bun.file(DB_PATH)
   const exists = await file.exists()
-  if (!exists) return { agents: [], accounts: [], loginSessions: [] }
+  if (!exists) return { agents: [], accounts: [], loginSessions: [], facilitators: [] }
   const data = await file.json()
   if (!data.accounts) data.accounts = []
   if (!data.loginSessions) data.loginSessions = []
+  if (!data.facilitators) data.facilitators = []
   // Migrate old tx records missing amountUsd — assume 1:1 with raw amount as fallback
   for (const agent of data.agents ?? []) {
     for (const tx of agent.transactions ?? []) {
@@ -232,4 +258,81 @@ export async function createOrUpdateAccount(userId: string, accountKey: string):
   }
   await writeDb(db)
   return account
+}
+
+export async function createFacilitator(input: Omit<FacilitatorRecord, 'createdAt' | 'updatedAt' | 'status' | 'publicUrl' | 'metrics' | 'lastHeartbeatAt'> & { publicUrl?: string | null }): Promise<FacilitatorRecord> {
+  const db = await readDb()
+  const now = new Date().toISOString()
+  const facilitator: FacilitatorRecord = {
+    ...input,
+    status: 'scaffolded',
+    publicUrl: input.publicUrl ?? null,
+    createdAt: now,
+    updatedAt: now,
+  }
+  db.facilitators.push(facilitator)
+  await writeDb(db)
+  return facilitator
+}
+
+export async function getFacilitatorsByUser(userId: string): Promise<FacilitatorRecord[]> {
+  const db = await readDb()
+  return db.facilitators.filter(f => f.ownerUserId === userId)
+}
+
+export async function getFacilitatorById(id: string): Promise<FacilitatorRecord | undefined> {
+  const db = await readDb()
+  return db.facilitators.find(f => f.id === id)
+}
+
+export async function updateFacilitator(id: string, ownerUserId: string, patch: Partial<Pick<FacilitatorRecord, 'name' | 'publicUrl' | 'listed' | 'feeBps' | 'acceptedMint' | 'network'>>): Promise<FacilitatorRecord> {
+  const db = await readDb()
+  const idx = db.facilitators.findIndex(f => f.id === id && f.ownerUserId === ownerUserId)
+  if (idx === -1) throw new Error('Facilitator not found')
+  const current = db.facilitators[idx]!
+  const safePatch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined))
+  db.facilitators[idx] = {
+    ...current,
+    ...safePatch,
+    status: current.lastHeartbeatAt ? 'live' : current.status,
+    updatedAt: new Date().toISOString(),
+  }
+  await writeDb(db)
+  return db.facilitators[idx]!
+}
+
+export async function recordFacilitatorHeartbeat(id: string, heartbeatSecret: string, metrics: FacilitatorRecord['metrics'] & { publicUrl?: string | null }): Promise<FacilitatorRecord | undefined> {
+  const db = await readDb()
+  const idx = db.facilitators.findIndex(f => f.id === id && f.heartbeatSecret === heartbeatSecret)
+  if (idx === -1) return undefined
+  const now = new Date().toISOString()
+  const current = db.facilitators[idx]!
+  db.facilitators[idx] = {
+    ...current,
+    status: 'live',
+    publicUrl: metrics.publicUrl ?? current.publicUrl,
+    lastHeartbeatAt: now,
+    updatedAt: now,
+    metrics: {
+      version: metrics.version,
+      supported: metrics.supported,
+      settledCount: metrics.settledCount,
+      settledVolumeUsd: metrics.settledVolumeUsd,
+      sellerCount: metrics.sellerCount,
+      feeBps: metrics.feeBps,
+    },
+  }
+  await writeDb(db)
+  return db.facilitators[idx]!
+}
+
+export async function getListedFacilitators(): Promise<FacilitatorRecord[]> {
+  const db = await readDb()
+  const cutoff = Date.now() - 2 * 60 * 1000
+  return db.facilitators
+    .filter(f => f.listed && f.publicUrl)
+    .map(f => {
+      const lastSeen = f.lastHeartbeatAt ? new Date(f.lastHeartbeatAt).getTime() : 0
+      return { ...f, status: lastSeen >= cutoff ? 'live' : 'offline' }
+    })
 }

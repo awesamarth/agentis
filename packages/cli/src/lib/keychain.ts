@@ -7,6 +7,7 @@ export async function saveToken(token: string): Promise<void> {
 }
 
 export async function getToken(): Promise<string | null> {
+  if (process.env.AGENTIS_ACCOUNT_KEY) return process.env.AGENTIS_ACCOUNT_KEY
   try {
     return entry.getPassword()
   } catch {

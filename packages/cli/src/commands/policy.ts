@@ -1,12 +1,10 @@
 import { getToken } from '../lib/keychain'
 import { apiFetch } from '../lib/config'
 import { DEFAULT_LOCAL_POLICY, loadLocalWalletByNameOrId, saveLocalWallet } from '../lib/local-wallet'
+import { findAccountAgent } from '../lib/account'
 
 async function findHostedAgent(nameOrId: string, token: string): Promise<any | null> {
-  const res = await apiFetch('/account/agents', {}, token)
-  if (!res.ok) return null
-  const agents = await res.json()
-  return agents.find((a: any) => a.id === nameOrId || a.name === nameOrId) ?? null
+  return findAccountAgent(nameOrId, token)
 }
 
 function printPolicy(name: string, p: any, scope: 'hosted' | 'local') {

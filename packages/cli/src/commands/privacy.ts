@@ -1,6 +1,7 @@
 import { AgentisClient } from '@agentis/sdk'
 import { getToken } from '../lib/keychain'
-import { API_BASE, apiFetch } from '../lib/config'
+import { API_BASE } from '../lib/config'
+import { resolveAccountAgent } from '../lib/account'
 
 function getFlag(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag)
@@ -12,20 +13,7 @@ function hasFlag(args: string[], flag: string): boolean {
 }
 
 async function resolveHostedAgent(nameOrId: string, token: string): Promise<any> {
-  const res = await apiFetch('/account/agents', {}, token)
-  if (!res.ok) {
-    console.error('Failed to fetch hosted agents')
-    process.exit(1)
-  }
-
-  const agents = await res.json()
-  const agent = agents.find((a: any) => a.id === nameOrId || a.name === nameOrId)
-  if (!agent) {
-    console.error(`Hosted agent not found: ${nameOrId}`)
-    process.exit(1)
-  }
-
-  return agent
+  return resolveAccountAgent(nameOrId, token)
 }
 
 async function getPrivacyClient(args: string[]): Promise<AgentisClient> {

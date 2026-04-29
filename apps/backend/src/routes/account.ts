@@ -1,6 +1,15 @@
 import { Hono } from 'hono'
 import { privy } from '../lib/privy'
-import { getAccountByUserId, createOrUpdateAccount, getAccountByKey, getAgentsByUser, createAgent } from '../lib/db'
+import {
+  getAccountByUserId,
+  createOrUpdateAccount,
+  getAccountByKey,
+  getAgentsByUser,
+  createAgent,
+  createFacilitator,
+  getFacilitatorsByUser,
+  updateFacilitator,
+} from '../lib/db'
 import { randomBytes } from 'crypto'
 import { deriveOnchainPolicy } from '../lib/onchain-policy'
 
@@ -84,6 +93,66 @@ account.post('/agents', async (c) => {
   })
 
   return c.json(agent, 201)
+})
+
+// GET /account/facilitators — list facilitator records owned by this account
+account.get('/facilitators', async (c) => {
+  const userId = c.get('userId')
+  const facilitators = await getFacilitatorsByUser(userId)
+  return c.json(facilitators.map(({ heartbeatSecret, ...safe }) => safe))
+})
+
+// POST /account/facilitators — register a facilitator scaffold before deployment
+account.post('/facilitators', async (c) => {
+  const userId = c.get('userId')
+  const body = await c.req.json()
+  const name = String(body.name ?? '').trim()
+  if (!name) return c.json({ error: 'Facilitator name is required' }, 400)
+
+  const feeBps = Number(body.feeBps ?? 500)
+  if (!Number.isFinite(feeBps) || feeBps < 0 || feeBps > 10_000) {
+    return c.json({ error: 'feeBps must be between 0 and 10000' }, 400)
+  }
+
+  const network = String(body.network ?? 'solana-devnet')
+  const acceptedMint = String(body.acceptedMint ?? '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU')
+  const publicUrl = body.publicUrl ? String(body.publicUrl) : null
+
+  const facilitator = await createFacilitator({
+    id: 'fac_' + randomBytes(12).toString('hex'),
+    ownerUserId: userId,
+    name,
+    heartbeatSecret: 'agt_fac_hb_' + randomBytes(24).toString('hex'),
+    network,
+    acceptedMint,
+    feeBps,
+    publicUrl,
+    listed: Boolean(body.listed),
+  })
+
+  return c.json(facilitator, 201)
+})
+
+// PATCH /account/facilitators/:id — publish/update discoverability metadata
+account.patch('/facilitators/:id', async (c) => {
+  const userId = c.get('userId')
+  const id = c.req.param('id')
+  const body = await c.req.json()
+
+  try {
+    const updated = await updateFacilitator(id, userId, {
+      name: body.name === undefined ? undefined : String(body.name).trim(),
+      publicUrl: body.publicUrl === undefined ? undefined : (body.publicUrl ? String(body.publicUrl) : null),
+      listed: body.listed === undefined ? undefined : Boolean(body.listed),
+      feeBps: body.feeBps === undefined ? undefined : Number(body.feeBps),
+      acceptedMint: body.acceptedMint === undefined ? undefined : String(body.acceptedMint),
+      network: body.network === undefined ? undefined : String(body.network),
+    })
+    const { heartbeatSecret, ...safe } = updated
+    return c.json(safe)
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? 'Failed to update facilitator' }, 404)
+  }
 })
 
 export default account

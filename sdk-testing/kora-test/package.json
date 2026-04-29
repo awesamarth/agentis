@@ -1,0 +1,19 @@
+{
+  "name": "kora-test",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@x402/core": "^2.10.0",
+    "@x402/hono": "^2.10.0",
+    "@x402/svm": "^2.10.0",
+    "hono": "^4.12.14"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.0"
+  }
+}
