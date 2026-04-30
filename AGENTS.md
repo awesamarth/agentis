@@ -90,6 +90,8 @@ Implemented:
 - `agentis agent create <name> --onchain-policy`
 - `agentis policy get/set/init-onchain`
 - `agentis fetch <url> --agent <name-or-id> [--method GET]`
+- `agentis earn deposit <agent> --asset USDC --amount <amount> --mainnet`
+- `agentis earn positions <agent> --mainnet [--all]`
 - `agentis privacy status/register/balance/deposit/withdraw/create-utxo/scan/claim-latest --agent <name-or-id>`
 - `agentis facilitator create/list/publish`
 
@@ -246,12 +248,28 @@ ZK prover:
 
 Current usage:
 - SOL price uses Jupiter Price API.
-- Landing page mentions swaps and Jupiter Earn, but Earn is not implemented.
+- `agentis earn deposit <agent> --asset USDC --amount <amount> --mainnet` deposits mainnet USDC into Jupiter Earn.
+- `agentis earn positions <agent> --mainnet [--all]` shows mainnet Jupiter Earn positions.
+- Landing page mentions swaps and Jupiter Earn. Swaps are not implemented yet.
 
 Jupiter Earn/Lend status:
-- Jupiter docs say Jupiter programs are deployed on Solana mainnet only.
-- Earn examples use mainnet RPC and mainnet program IDs.
-- Do not build a devnet Jupiter Earn transaction path. For current devnet demo, show Earn as a planned/mainnet-only feature or simulate UI state only.
+- Jupiter Earn is mainnet-only in Agentis. Do not build a devnet Jupiter Earn transaction path.
+- Backend route: `POST /agents/:id/earn/deposit`.
+- Backend route: `GET /agents/:id/earn/positions?network=mainnet`.
+- Backend calls `POST https://api.jup.ag/lend/v1/earn/deposit`, receives a base64 unsigned legacy transaction, refreshes the blockhash, signs/sends through Privy with mainnet CAIP-2, confirms, and records the transaction.
+- Backend reads positions from `GET https://api.jup.ag/lend/v1/earn/positions?users=<wallet>`.
+- Amounts sent to Jupiter are atomic units. CLI accepts UI units and currently supports only mainnet USDC.
+- Jupiter API key is stored locally in `apps/backend/.env` as `JUPITER_API_KEY` and is optional in code.
+
+Tested Jupiter Earn:
+- `leno` mainnet address: `77rKFXbTbWQMXeQ97AYwThPcuh8sotTtz3jssRMRszGq`.
+- Pre-test mainnet balance: `0.120189671 SOL`, `5.828828 USDC`.
+- Command: `agentis earn deposit leno --asset USDC --amount 1 --mainnet`.
+- First attempt failed with `Blockhash not found`; fixed by refreshing blockhash before Privy signing.
+- Successful finalized signature: `3ZT3RzTkT5GqvRzciB2cSBa4aJbNztVBJrnLeCRYEmZqgZpkoAcr3BtDqkMJ3GmHDQZKQFmTLW5wFMsS8AuNGyAz`.
+- Post-test mainnet balance: `0.118145391 SOL`, `4.828828 USDC`.
+- Jupiter Earn/share token appeared: `9BEcn9aPEmhSPbPQeFGjidRiEKki46fVQDyPpSQXPA2D` balance `0.960198`.
+- `agentis earn positions leno --mainnet` returns `USDC 1.000062 supplied (0.960198 jlUSDC)`.
 
 Useful Jupiter docs in this repo:
 - `JUPITER.txt` is the local full docs dump; search it, do not read all at once.

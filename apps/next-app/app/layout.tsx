@@ -3,8 +3,22 @@ import './globals.css'
 import Providers from './providers'
 
 export const metadata: Metadata = {
-  title: 'Agentis — Agent Financial OS',
-  description: 'The complete financial stack for AI agents on Solana. Wallets, payments, policies, privacy.',
+  metadataBase: new URL('https://agentis.systems'),
+  title: 'Agentis — Financial Infrastructure for Agents',
+  description: 'Wallets, payments, policy enforcement, privacy, and yield for AI agents on Solana.',
+  openGraph: {
+    title: 'Agentis — Financial Infrastructure for Agents',
+    description: 'Wallets, payments, policy enforcement, privacy, and yield for AI agents on Solana.',
+    url: 'https://agentis.systems',
+    siteName: 'Agentis',
+    images: ['/agentis-twitter-header.png'],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Agentis — Financial Infrastructure for Agents',
+    description: 'Wallets, payments, policy enforcement, privacy, and yield for AI agents on Solana.',
+    images: ['/agentis-twitter-header.png'],
+  },
 }
 
 export default function RootLayout({

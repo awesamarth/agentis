@@ -21,12 +21,73 @@ import {
 
 const DEVNET_RPC = 'https://api.devnet.solana.com'
 const DEVNET_CAIP2 = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
+const MAINNET_RPC = process.env.MAINNET_RPC_URL ?? 'https://api.mainnet-beta.solana.com'
+const MAINNET_CAIP2 = 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'
+const JUPITER_LEND_API = 'https://api.jup.ag/lend/v1'
+const USDC_MAINNET_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
 const privyNode = new NodePrivyClient({
   appId: process.env.PRIVY_APP_ID!,
   appSecret: process.env.PRIVY_APP_SECRET!,
 })
 
 const agents = new Hono<{ Variables: { userId: string } }>()
+
+function getFlaggedTokenAmountUi(amount: unknown): number | null {
+  const value = typeof amount === 'string' ? Number(amount) : Number(amount)
+  return Number.isFinite(value) && value > 0 ? value : null
+}
+
+function uiAmountToAtomic(amount: unknown, decimals = 6): string | null {
+  const raw = String(amount ?? '').trim()
+  if (!/^\d+(\.\d+)?$/.test(raw)) return null
+
+  const [whole = '', fraction = ''] = raw.split('.')
+  if (fraction.length > decimals) return null
+
+  const paddedFraction = fraction.padEnd(decimals, '0')
+  const atomic = BigInt(whole) * 10n ** BigInt(decimals) + BigInt(paddedFraction || '0')
+  return atomic > 0n ? atomic.toString() : null
+}
+
+async function buildJupiterEarnTransaction(input: {
+  asset: string
+  signer: string
+  amountAtomic: string
+}) {
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (process.env.JUPITER_API_KEY) headers['x-api-key'] = process.env.JUPITER_API_KEY
+
+  const res = await fetch(`${JUPITER_LEND_API}/earn/deposit`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      asset: input.asset,
+      signer: input.signer,
+      amount: input.amountAtomic,
+    }),
+  })
+
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok || !data.transaction) {
+    throw new Error(data.message ?? data.error ?? `Jupiter Earn deposit build failed (${res.status})`)
+  }
+  return String(data.transaction)
+}
+
+async function fetchJupiterEarnPositions(user: string) {
+  const headers: Record<string, string> = {}
+  if (process.env.JUPITER_API_KEY) headers['x-api-key'] = process.env.JUPITER_API_KEY
+
+  const url = new URL(`${JUPITER_LEND_API}/earn/positions`)
+  url.searchParams.set('users', user)
+
+  const res = await fetch(url, { headers })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.message ?? data.error ?? `Jupiter Earn positions failed (${res.status})`)
+  }
+  return data
+}
 
 // Middleware: verify Privy JWT or account key (agt_user_xxx)
 agents.use('*', async (c, next) => {
@@ -252,6 +313,102 @@ agents.get('/:id/transactions', async (c) => {
     return c.json({ error: 'Not found' }, 404)
   }
   return c.json(agent.transactions ?? [])
+})
+
+// POST /agents/:id/earn/deposit — mainnet Jupiter Earn deposit
+agents.post('/:id/earn/deposit', async (c) => {
+  const userId = c.get('userId')
+  const agent = await getAgentById(c.req.param('id'))
+  if (!agent || agent.userId !== userId) {
+    return c.json({ error: 'Not found' }, 404)
+  }
+
+  const body = await c.req.json()
+  const network = body.network ?? 'mainnet'
+  if (network !== 'mainnet') {
+    return c.json({ error: 'Jupiter Earn is mainnet-only for now' }, 400)
+  }
+
+  const assetInput = String(body.asset ?? 'USDC')
+  const asset = assetInput.toUpperCase() === 'USDC' ? USDC_MAINNET_MINT : assetInput
+  const amountUi = getFlaggedTokenAmountUi(body.amount)
+  if (!amountUi) {
+    return c.json({ error: 'amount must be a positive UI amount' }, 400)
+  }
+
+  // Keep this route narrow until we add token metadata/decimals discovery.
+  if (asset !== USDC_MAINNET_MINT) {
+    return c.json({ error: 'Only mainnet USDC Earn deposits are supported right now' }, 400)
+  }
+
+  const amountAtomic = uiAmountToAtomic(body.amount, 6)
+  if (!amountAtomic) {
+    return c.json({ error: 'amount must fit USDC decimals' }, 400)
+  }
+  const connection = new Connection(MAINNET_RPC, 'confirmed')
+
+  try {
+    const encoded = await buildJupiterEarnTransaction({
+      asset,
+      signer: agent.walletAddress,
+      amountAtomic,
+    })
+
+    const tx = await preparePrivyTransaction(
+      connection,
+      agent.walletAddress,
+      Transaction.from(Buffer.from(encoded, 'base64')),
+    )
+    const result = await privy.walletApi.solana.signAndSendTransaction({
+      walletId: agent.walletId,
+      transaction: tx,
+      caip2: MAINNET_CAIP2,
+    })
+    await confirmTransactionOrThrow(connection, result.hash, tx)
+
+    await recordTransaction(agent.id, {
+      txHash: result.hash,
+      amount: amountUi,
+      amountUsd: amountUi,
+      recipient: `jupiter-earn:${asset}`,
+      timestamp: new Date().toISOString(),
+    })
+
+    return c.json({
+      signature: result.hash,
+      network: 'mainnet',
+      asset,
+      amount: amountUi,
+      amountAtomic,
+    })
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 500)
+  }
+})
+
+// GET /agents/:id/earn/positions — mainnet Jupiter Earn positions
+agents.get('/:id/earn/positions', async (c) => {
+  const userId = c.get('userId')
+  const agent = await getAgentById(c.req.param('id'))
+  if (!agent || agent.userId !== userId) {
+    return c.json({ error: 'Not found' }, 404)
+  }
+
+  const network = c.req.query('network') ?? 'mainnet'
+  if (network !== 'mainnet') {
+    return c.json({ error: 'Jupiter Earn is mainnet-only for now' }, 400)
+  }
+
+  try {
+    const positions = await fetchJupiterEarnPositions(agent.walletAddress)
+    return c.json({
+      network: 'mainnet',
+      walletAddress: agent.walletAddress,
+      positions,
+    })
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 500)
+  }
 })
 
 // POST /agents/:id/regen-key — regenerate API key (owner only)

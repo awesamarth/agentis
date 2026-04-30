@@ -4,7 +4,7 @@
 
 Main things left now:
 
-1. Jupiter swaps: `agentis swap ...` + SDK/backend route. Earn feature too.
+1. Jupiter swaps: `agentis swap ...` + SDK/backend route. Earn deposit is implemented for mainnet USDC; withdraw/positions UI can be added next.
 2. MCP server: expose Agentis tools for agents.
 3. Agentis skill file: so other agents can load “how to use Agentis” and operate CLI/MCP/dashboard correctly.
 4. Facilitator polish: docs, cleaner generated README, seller onboarding/top-up UX, maybe dashboard/explore page.

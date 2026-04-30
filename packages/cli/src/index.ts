@@ -6,6 +6,7 @@ import { policyGet, policyInitOnchain, policySet } from './commands/policy'
 import { paidFetch } from './commands/fetch'
 import { privacyCommand } from './commands/privacy'
 import { facilitatorCommand } from './commands/facilitator'
+import { earnCommand } from './commands/earn'
 
 const args = process.argv.slice(2)
 const cmd = args[0]
@@ -47,6 +48,12 @@ ${green}${bold}Commands:${reset}
 
   fetch <url> --agent <name-or-id>         fetch a URL and auto-pay MPP/x402 402s
     --method <method>                      HTTP method (default GET)
+
+  earn deposit <agent>                     deposit into Jupiter Earn (mainnet only)
+    --asset USDC                           asset to deposit
+    --amount <amount>                      UI amount, e.g. 1 for 1 USDC
+    --mainnet                              required safety flag
+  earn positions <agent> --mainnet         show Jupiter Earn positions
 
   facilitator create <name>                scaffold a Kora-backed x402 facilitator
     --dir <path>                           output directory
@@ -154,6 +161,10 @@ async function main() {
 
     case 'facilitator':
       await facilitatorCommand(args.slice(1))
+      break
+
+    case 'earn':
+      await earnCommand(args.slice(1))
       break
 
     default:
