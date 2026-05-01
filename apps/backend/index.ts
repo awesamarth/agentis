@@ -11,11 +11,13 @@ import { solToUsd } from './src/lib/price'
 
 const app = new Hono()
 
+const devOrigins = ['http://localhost:3000', 'http://localhost:3002']
+
 app.use('/agents/*', cors({ origin: 'http://localhost:3000' }))
 app.use('/account/*', cors({ origin: 'http://localhost:3000' }))
 app.use('/auth/*', cors({ origin: 'http://localhost:3000' }))
-app.use('/sdk/*', cors({ origin: 'http://localhost:3000' }))
-app.use('/umbra/*', cors({ origin: 'http://localhost:3000' }))
+app.use('/sdk/*', cors({ origin: devOrigins }))
+app.use('/umbra/*', cors({ origin: devOrigins }))
 app.use('/facilitators/*', cors({ origin: '*' }))
 app.use('/sol-price', cors({ origin: '*' }))
 app.use('*', logger())

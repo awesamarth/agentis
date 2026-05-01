@@ -263,7 +263,7 @@ umbra.post('/create-utxo', async (c) => {
   try {
     const body: CreateUtxoBody = await c.req.json<CreateUtxoBody>().catch(() => ({}))
     const mint = body.mint ?? DEVNET_MINT
-    const amount = parseAmount(body.amount, 500_000n)
+    const amount = parseAmount(body.amount, 10_000_000n)
     const to = body.to ?? agent.walletAddress
 
     const client = await createUmbraClient(privyNode, agent.walletId, agent.walletAddress)
@@ -321,9 +321,9 @@ umbra.post('/claim-latest', async (c) => {
     const before = await getEncryptedBalanceValue(client, DEVNET_MINT)
     const scan = getClaimableUtxoScannerFunction({ client })
     const result = await (scan as any)(0n, 0n)
-    const claimable = result.publicReceived[0]
+    const claimables = [...result.publicReceived].reverse()
 
-    if (!claimable) {
+    if (claimables.length === 0) {
       return c.json({ error: 'No publicReceived UTXOs to claim' }, 400)
     }
 
@@ -338,22 +338,44 @@ umbra.post('/claim-latest', async (c) => {
         fetchBatchMerkleProof: (client as any).fetchBatchMerkleProof,
       }
     )
-    const claimResult = await claim([claimable])
-    const entries = claimResult.batches instanceof Map
-      ? [...claimResult.batches.entries()]
-      : Object.entries(claimResult.batches)
-    const after = await getEncryptedBalanceValue(client, DEVNET_MINT)
-    const beforeBigInt = before.balance ? BigInt(before.balance) : 0n
-    const afterBigInt = after.balance ? BigInt(after.balance) : 0n
-    const delta = afterBigInt - beforeBigInt
-    const safeEntries = toJsonSafe(entries) as [string, Record<string, unknown>][]
-    const batchPayloads = safeEntries.map(([, payload]) => payload)
-    const anySucceeded = batchPayloads.some((payload) => payload?.status === 'success')
-    const allAlreadyClaimed = batchPayloads.length > 0 && batchPayloads.every((payload) =>
-      payload?.status === 'failed' &&
-      typeof payload?.failureReason === 'string' &&
-      payload.failureReason.includes('NullifierAlreadyBurnt')
-    )
+
+    const attemptedEntries: [string, unknown][] = []
+    let after = before
+    let delta = 0n
+    let anySucceeded = false
+    let skippedAlreadyClaimed = 0
+
+    for (const claimable of claimables) {
+      const claimResult = await claim([claimable])
+      const entries = claimResult.batches instanceof Map
+        ? [...claimResult.batches.entries()]
+        : Object.entries(claimResult.batches)
+      const safeEntries = toJsonSafe(entries) as [string, Record<string, unknown>][]
+      attemptedEntries.push(...safeEntries)
+
+      after = await getEncryptedBalanceValue(client, DEVNET_MINT)
+      const beforeBigInt = before.balance ? BigInt(before.balance) : 0n
+      const afterBigInt = after.balance ? BigInt(after.balance) : 0n
+      delta = afterBigInt - beforeBigInt
+
+      const batchPayloads = safeEntries.map(([, payload]) => payload)
+      anySucceeded = batchPayloads.some((payload) => payload?.status === 'success') || delta > 0n
+      const alreadyClaimed = batchPayloads.length > 0 && batchPayloads.every((payload) =>
+        payload?.status === 'failed' &&
+        typeof payload?.failureReason === 'string' &&
+        payload.failureReason.includes('NullifierAlreadyBurnt')
+      )
+
+      if (anySucceeded) break
+      if (alreadyClaimed) {
+        skippedAlreadyClaimed += 1
+        continue
+      }
+      break
+    }
+
+    const safeEntries = attemptedEntries as [string, Record<string, unknown>][]
+    const allAlreadyClaimed = !anySucceeded && skippedAlreadyClaimed === claimables.length
 
     console.log('[umbra/claim-latest] batches', safeEntries)
     console.log('[umbra/claim-latest] encrypted balance delta', {
@@ -366,6 +388,7 @@ umbra.post('/claim-latest', async (c) => {
       walletAddress: agent.walletAddress,
       success: anySucceeded || delta > 0n,
       alreadyClaimed: allAlreadyClaimed,
+      skippedAlreadyClaimed,
       balanceBefore: before.balance,
       balanceAfter: after.balance,
       balanceDelta: delta.toString(),

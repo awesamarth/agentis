@@ -54,6 +54,7 @@ ${green}${bold}Commands:${reset}
     --amount <amount>                      UI amount, e.g. 1 for 1 USDC
     --mainnet                              required safety flag
   earn positions <agent> --mainnet         show Jupiter Earn positions
+  earn sweep [--dry-run|--no-dry-run]      sweep all agents' mainnet USDC into Earn
 
   facilitator create <name>                scaffold a Kora-backed x402 facilitator
     --dir <path>                           output directory

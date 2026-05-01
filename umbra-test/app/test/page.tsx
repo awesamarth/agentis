@@ -6,6 +6,15 @@ const BACKEND = "http://localhost:3001";
 
 type Log = { msg: string; ok: boolean };
 
+function formatLamportsAsSol(value?: string | null) {
+  if (!value) return "0";
+  const lamports = BigInt(value);
+  const whole = lamports / 1_000_000_000n;
+  const fraction = lamports % 1_000_000_000n;
+  if (fraction === 0n) return whole.toString();
+  return `${whole}.${fraction.toString().padStart(9, "0").replace(/0+$/, "")}`;
+}
+
 export default function TestPage() {
   const [logs, setLogs] = useState<Log[]>([]);
   const [busy, setBusy] = useState(false);
@@ -91,7 +100,7 @@ export default function TestPage() {
     await step(async () => {
       const data = await call("/umbra/balance");
       if (data.state === "shared") {
-        addLog(`Encrypted balance (${data.mint}) — shared: ${data.balance}`);
+        addLog(`Encrypted balance (${data.mint}) — shared: ${formatLamportsAsSol(data.balance)} SOL (${data.balance} lamports)`);
         return;
       }
 
@@ -109,8 +118,8 @@ export default function TestPage() {
 
   async function testCreateUtxo() {
     await step(async () => {
-      addLog("Creating receiver-claimable UTXO to self from public balance...");
-      const data = await call("/umbra/create-utxo", { amount: "500000" });
+      addLog("Creating receiver-claimable UTXO to self from public balance (0.01 SOL)...");
+      const data = await call("/umbra/create-utxo", { amount: "10000000" });
       addLog(
         `UTXO created — createProofAccount: ${data.createProofAccountSignature}, createUtxo: ${data.createUtxoSignature}`
       );

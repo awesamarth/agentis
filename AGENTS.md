@@ -21,7 +21,7 @@ agentis/
     core/          shared types + policy engine
     sdk/           AgentisClient
     cli/           agentis CLI
-    mcp/           placeholder, not built
+    mcp/           local stdio MCP server
   sdk-testing/
     x402-server/   local x402 test server, port 4000
     mpp-server/    local MPP test server, port 4001
@@ -44,7 +44,7 @@ Local packages point to `src/` directly; no package build step is normally neede
 |---|---|---|
 | Privy JWT | Dashboard | Verified with Privy server auth |
 | `agt_live_xxx` | SDK/backend API key | Per-agent key |
-| `agt_user_xxx` | CLI/account API key | Stored in OS keychain |
+| `agt_user_xxx` | CLI/MCP/account API key | Stored in OS keychain for CLI; pass as `AGENTIS_ACCOUNT_KEY` for MCP |
 
 ## Built And Working
 
@@ -92,6 +92,7 @@ Implemented:
 - `agentis fetch <url> --agent <name-or-id> [--method GET]`
 - `agentis earn deposit <agent> --asset USDC --amount <amount> --mainnet`
 - `agentis earn positions <agent> --mainnet [--all]`
+- `agentis earn sweep [--dry-run|--no-dry-run]`
 - `agentis privacy status/register/balance/deposit/withdraw/create-utxo/scan/claim-latest --agent <name-or-id>`
 - `agentis facilitator create/list/publish`
 
@@ -100,6 +101,43 @@ Local wallets:
 - BIP-39 mnemonic, scrypt + AES-256-GCM, Solana path `m/44'/501'/0'/0'`.
 - Local wallet vaults include `policy` and `spendHistory`.
 - Local sends run `checkPolicy(...)` before signing.
+
+### MCP
+Local stdio server: `packages/mcp`.
+
+Run:
+```json
+{
+  "mcpServers": {
+    "agentis": {
+      "command": "bun",
+      "args": ["/Users/awesamarth/Desktop/code/agentis/packages/mcp/src/index.ts"],
+      "env": {
+        "AGENTIS_ACCOUNT_KEY": "agt_user_...",
+        "AGENTIS_API_URL": "http://localhost:3001"
+      }
+    }
+  }
+}
+```
+
+Implemented tools:
+- `agentis_cli_help`.
+- `agentis_list_agents`, `agentis_create_agent`, `agentis_agent_balance`, `agentis_send_sol`, `agentis_transactions`.
+- `agentis_fetch_paid_url` for MPP/x402 paid fetch through the SDK/backend path.
+- `agentis_policy_get`, `agentis_policy_check`, `agentis_policy_update`, `agentis_policy_init_onchain`, `agentis_policy_read_onchain`.
+- `agentis_earn_deposit`, `agentis_earn_positions`, `agentis_earn_sweep`.
+- `agentis_privacy_status/register/balance/deposit/withdraw/create_utxo/scan/claim_latest`.
+- `agentis_scaffold_facilitator`, `agentis_list_facilitators`, `agentis_register_facilitator`, `agentis_publish_facilitator`.
+
+MCP auth is account-key only. It resolves agent API keys internally from the account-owned agent list when it needs to call SDK/Umbra routes. Local encrypted-wallet vault commands are intentionally CLI-only for v1.
+
+Tested MCP:
+- `bun --check packages/mcp/src/index.ts`.
+- Real stdio MCP client listed 27 tools, listed agents, read `leno` policy/balance/transactions, checked policy, fetched `https://example.com` via `agentis_fetch_paid_url`, read `agent-p` Umbra status, read `leno` Earn positions, ran Earn sweep dry-run, listed facilitator records, and returned CLI help.
+- MCP paid fetch executed real devnet payments through local x402 and MPP servers: `http://localhost:4000/paid-data` and `http://localhost:4001/mpp-data` both returned `200`.
+- MCP write tests created fresh hosted agents, sent devnet SOL from `leno`, initialized and updated a Quasar on-chain policy, and decoded/read the on-chain policy state.
+- MCP Umbra write test on `mcp-umbra-1777639104167`: registered, deposited `1_000_000` lamports, withdrew `500_000`, created a `10_000_000` lamport UTXO, claimed UTXO `0:566`, and ended with encrypted balance `10_457_322` lamports.
 
 ### Dashboard
 Implemented:
@@ -217,13 +255,22 @@ Implemented backend routes:
 
 Implemented SDK/CLI wrappers for all of the above.
 
-Dashboard agent page also exposes Umbra status, encrypted balance, deposit, withdraw, scan, and registration actions for private agents.
+Dashboard agent page also exposes Umbra status, encrypted balance, deposit, withdraw, scan, UTXO creation, claim-latest, and registration actions for private agents.
 
 Tested with `private-agent-1777138992`:
 - Umbra direct status: registered and anonymous-ready.
 - Deposit `1_000_000` lamports into encrypted wSOL balance.
 - Withdraw `500_000` lamports.
 - Final encrypted balance after test: `500000`.
+
+Tested UTXO/private-transfer flow with `agent-p`:
+- Starting encrypted balance: `0.0005 SOL`.
+- Created a receiver-claimable UTXO from public SOL balance for `0.01 SOL`.
+- Scan returned `publicReceived: 1`.
+- Claim succeeded into encrypted balance.
+- Final encrypted balance: `0.010457322 SOL`.
+- Net credited from the UTXO claim: `0.009957322 SOL`; total protocol fee across create + claim was `0.000042678 SOL`.
+- Later dashboard retest hit a stale `NullifierAlreadyBurnt` entry because the indexer still returned an already-claimed UTXO. Backend `claim-latest` now tries newest UTXOs first and skips stale already-burnt entries until the first successful claim.
 
 Important Umbra facts:
 - Devnet program: `DSuKkyqGVGgo4QtPABfxKJKygUDACbUhirnuv63mEpAJ`.
@@ -236,7 +283,7 @@ Important Umbra facts:
 Encrypted balance vs UTXO:
 - Encrypted balance hides amount but not linkability.
 - UTXO/mixer flow hides sender-recipient link and amount, but needs ZK proving, scan, claim, and relayer.
-- For the demo, prefer encrypted balance deposit/withdraw/status unless private transfer anonymity is explicitly needed.
+- UTXO/private-transfer flow is now viable for demo if scripted carefully. Keep encrypted balance deposit/withdraw/status as the fallback if the relayer/indexer is flaky live.
 
 ZK prover:
 - Bun cannot run Umbra web prover cleanly because of `web-worker`/`worker_threads`.
@@ -250,6 +297,7 @@ Current usage:
 - SOL price uses Jupiter Price API.
 - `agentis earn deposit <agent> --asset USDC --amount <amount> --mainnet` deposits mainnet USDC into Jupiter Earn.
 - `agentis earn positions <agent> --mainnet [--all]` shows mainnet Jupiter Earn positions.
+- `agentis earn sweep [--dry-run|--no-dry-run]` reads all hosted agents' mainnet USDC balances and deposits non-zero balances into Jupiter Earn. Default behavior prints the dry-run plan and then executes; `--dry-run` only prints; `--no-dry-run` executes directly.
 - Landing page mentions swaps and Jupiter Earn. Swaps are not implemented yet.
 
 Jupiter Earn/Lend status:
@@ -288,14 +336,13 @@ Do not casually mutate `leno` privacy flags; it is useful as a stable funded tes
 
 Near-term:
 1. x402 facilitator/provider-side hardening: real hosted demo deployment, docs polish, seller onboarding UX, and live x402 protected API integration.
-2. Jupiter work: swaps/auto-swap first; Earn is mainnet-only and likely roadmap/mock for devnet.
-3. MCP server exposing Agentis tools.
-4. Agentis skill file: a large Markdown skill that explains the Agentis ecosystem, CLI, dashboard, and MCP so other agents can load it and know how to operate Agentis. Include CLI feature coverage and note that the CLI has help commands for command discovery.
-5. Umbra demo choice: decide whether to demo UTXO/private transfer or keep demo focused on encrypted balance.
-6. Production hardening: JSON DB replacement, API key hashing, transaction history, and observability.
+2. Jupiter Earn polish: sweep is implemented in the CLI for mainnet USDC; withdraw and dashboard positions UI can be added next.
+3. Agentis skill file: a large Markdown skill that explains the Agentis ecosystem, CLI, dashboard, and MCP so other agents can load it and know how to operate Agentis. Include CLI feature coverage and note that the CLI has help commands for command discovery.
+4. Demo scripting: lock the Colosseum demo path for facilitator, Earn sweep, on-chain policy, and Umbra UTXO fallback.
 
 Medium-term:
 - Add richer on-chain policy visibility, including current configured limits decoded from the policy PDA.
+- Production hardening: JSON DB replacement, API key hashing, transaction history, observability, and deployment config.
 - On-chain policy for x402/MPP is post-Colosseum. Do not prioritize before Colosseum unless the product direction changes.
 
 ## Reference Files

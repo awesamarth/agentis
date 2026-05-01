@@ -13,7 +13,7 @@ export default function Home() {
   return (
     <main className="min-h-screen overflow-hidden bg-beige text-ink">
       <section className="relative min-h-screen px-6 py-6 sm:px-10 lg:px-16">
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(42,38,32,0.055)_1px,transparent_1px),linear-gradient(to_bottom,rgba(42,38,32,0.055)_1px,transparent_1px)] bg-[size:48px_48px]" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(42,38,32,0.055)_1px,transparent_1px),linear-gradient(to_bottom,rgba(42,38,32,0.055)_1px,transparent_1px)] bg-size-[48px_48px]" />
         <div className="absolute inset-y-0 right-0 w-[58%] bg-[radial-gradient(circle_at_60%_35%,rgba(153,201,255,0.34),rgba(245,240,232,0)_58%)]" />
         <div className="absolute -right-10 top-0 hidden select-none font-serif text-[32rem] font-black leading-none text-black/[0.035] lg:block">
           A
@@ -65,6 +65,8 @@ export default function Home() {
                 </span>
                 <a
                   href="https://x.com/agentis_hq"
+                  target="_blank"
+                  rel="noreferrer"
                   className="font-mono text-xs uppercase tracking-[0.2em] text-ink-muted transition-colors hover:text-black sm:border sm:border-beige-darker sm:bg-beige/70 sm:px-5 sm:py-3 sm:hover:border-ink-muted"
                 >
                   follow @agentis_hq

@@ -4,16 +4,44 @@
 
 Main things left now:
 
-1. Jupiter swaps: `agentis swap ...` + SDK/backend route. Earn deposit is implemented for mainnet USDC; withdraw/positions UI can be added next.
-2. MCP server: expose Agentis tools for agents.
-3. Agentis skill file: so other agents can load “how to use Agentis” and operate CLI/MCP/dashboard correctly.
-4. Facilitator polish: docs, cleaner generated README, seller onboarding/top-up UX, maybe dashboard/explore page.
-5. Production hardening: real DB, hashed API/account keys, better logs/observability, deployment config.
-6. Demo scripting: decide exact Colosseum flow and make it reliable/repeatable.
+1. Jupiter Earn polish: sweep is implemented in the CLI for mainnet USDC; withdraw and dashboard positions UI can be added next.
+2. Agentis skill file: so other agents can load “how to use Agentis” and operate CLI/MCP/dashboard correctly.
+3. Facilitator polish: docs, cleaner generated README, seller onboarding/top-up UX, maybe dashboard/explore page.
+4. Demo scripting: lock the exact Colosseum flow and make it reliable/repeatable.
 
 Post-Colosseum:
+- Production hardening: real DB, hashed API/account keys, better logs/observability, deployment config.
 - On-chain policy for x402/MPP.
-- Umbra UTXO/private-transfer demo if you want more privacy depth.
+
+## Current Demo Status
+
+- Jupiter Earn deposit, positions, and sweep are implemented for mainnet USDC.
+- Umbra encrypted balance and UTXO/private-transfer flow both work on devnet wSOL/SOL.
+- Umbra UTXO claim handling now skips stale already-burnt indexer entries and claims the newest available UTXO first.
+- On-chain policy is implemented for direct SOL sends on devnet via the Quasar program.
+- Kora-backed x402 facilitator scaffolding and local x402 end-to-end test are implemented.
+- Local stdio MCP server is implemented in `packages/mcp` for account-key-controlled agent operations.
+
+## MCP
+
+Run the local MCP server from Codex/Claude-style MCP config:
+
+```json
+{
+  "mcpServers": {
+    "agentis": {
+      "command": "bun",
+      "args": ["/Users/awesamarth/Desktop/code/agentis/packages/mcp/src/index.ts"],
+      "env": {
+        "AGENTIS_ACCOUNT_KEY": "agt_user_...",
+        "AGENTIS_API_URL": "http://localhost:3001"
+      }
+    }
+  }
+}
+```
+
+It exposes hosted-agent tools for list/create/balance/send, paid fetch, policy, Umbra privacy, Jupiter Earn, sweep, transactions, CLI help, and facilitator metadata/scaffolding. Local encrypted-wallet vault signing remains CLI-only for now.
 
 ### SDK Product Split
 

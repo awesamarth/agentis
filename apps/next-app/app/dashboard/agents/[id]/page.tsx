@@ -170,6 +170,15 @@ function formatMicroUsd(value?: string) {
   return `$${dollars.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
 }
 
+function formatLamportsAsSol(value?: string | null) {
+  if (!value) return '0'
+  const lamports = BigInt(value)
+  const whole = lamports / LAMPORTS_PER_SOL
+  const fraction = lamports % LAMPORTS_PER_SOL
+  if (fraction === BigInt(0)) return whole.toString()
+  return `${whole}.${fraction.toString().padStart(9, '0').replace(/0+$/, '')}`
+}
+
 function LimitInput({
   label,
   sublabel,
@@ -234,7 +243,7 @@ export default function AgentDetail() {
   const [umbraStatus, setUmbraStatus] = useState<UmbraStatus | null>(null)
   const [umbraBalance, setUmbraBalance] = useState<UmbraBalance | null>(null)
   const [umbraScan, setUmbraScan] = useState<UmbraScan | null>(null)
-  const [umbraAmount, setUmbraAmount] = useState('1000000')
+  const [umbraAmount, setUmbraAmount] = useState('0.01')
   const [umbraError, setUmbraError] = useState<string | null>(null)
   const [umbraMessage, setUmbraMessage] = useState<string | null>(null)
   const [onchainStatus, setOnchainStatus] = useState<OnchainPolicyStatus | null>(null)
@@ -343,7 +352,7 @@ export default function AgentDetail() {
     }
   }
 
-  async function handleUmbraAction(action: 'deposit' | 'withdraw' | 'scan' | 'status') {
+  async function handleUmbraAction(action: 'deposit' | 'withdraw' | 'scan' | 'status' | 'create-utxo' | 'claim-latest') {
     setUmbraWorking(action)
     setUmbraError(null)
     setUmbraMessage(null)
@@ -361,17 +370,40 @@ export default function AgentDetail() {
         return
       }
 
-      const amount = umbraAmount.trim()
-      if (!amount || BigInt(amount) <= BigInt(0)) {
-        throw new Error('Enter a positive atomic amount')
+      if (action === 'claim-latest') {
+        const result = await umbraFetch<Record<string, unknown>>('/claim-latest', {
+          method: 'POST',
+          body: JSON.stringify({}),
+        })
+        await fetchUmbraSnapshot()
+
+        if (result.alreadyClaimed) {
+          setUmbraMessage(`stale UTXO already claimed · balance unchanged at ${formatLamportsAsSol(String(result.balanceAfter ?? '0'))} SOL`)
+          return
+        }
+
+        const delta = String(result.balanceDelta ?? '0')
+        const success = Boolean(result.success)
+        setUmbraMessage(
+          success
+            ? `claimed ${formatLamportsAsSol(delta)} SOL net into encrypted balance`
+            : `claim submitted but no balance delta detected`,
+        )
+        return
       }
+
+      const amount = parseSolAmountToLamports(umbraAmount.trim()).toString()
 
       const result = await umbraFetch<Record<string, unknown>>(`/${action}`, {
         method: 'POST',
         body: JSON.stringify({ amount, mint: UMBRA_SOL_MINT }),
       })
       const signature = result.callbackSignature ?? result.queueSignature
-      setUmbraMessage(`${action} submitted${signature ? `: ${String(signature).slice(0, 12)}...` : ''}`)
+      setUmbraMessage(
+        action === 'create-utxo'
+          ? `UTXO created for ${umbraAmount.trim()} SOL${result.createUtxoSignature ? `: ${String(result.createUtxoSignature).slice(0, 12)}...` : ''}`
+          : `${action} submitted${signature ? `: ${String(signature).slice(0, 12)}...` : ''}`,
+      )
       await Promise.all([
         fetchUmbraSnapshot(),
         agent ? fetchBalances(agent.walletAddress) : Promise.resolve(),
@@ -909,10 +941,10 @@ export default function AgentDetail() {
                       <p className="font-mono text-sm text-black">
                         {umbraLoading && !umbraBalance
                           ? 'loading...'
-                          : umbraBalance?.balance ?? '0'}
+                          : formatLamportsAsSol(umbraBalance?.balance)}
                       </p>
                       <p className="font-mono text-[0.55rem] text-ink-muted/60 tracking-widest uppercase">
-                        wSOL atomic units
+                        wSOL / SOL
                       </p>
                     </div>
                     <div className="bg-white/70 border border-[#b7cce5]/70 px-4 py-3">
@@ -943,11 +975,11 @@ export default function AgentDetail() {
                       </label>
                       <input
                         type="text"
-                        inputMode="numeric"
+                        inputMode="decimal"
                         value={umbraAmount}
-                        onChange={e => setUmbraAmount(e.target.value.replace(/[^\d]/g, ''))}
+                        onChange={e => setUmbraAmount(e.target.value.replace(/[^\d.]/g, ''))}
                         className="w-full h-[46px] bg-beige border border-beige-darker px-3 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
-                        placeholder="1000000"
+                        placeholder="0.001"
                       />
                       </div>
                       <button
@@ -971,9 +1003,23 @@ export default function AgentDetail() {
                       >
                         {umbraWorking === 'scan' ? 'scanning...' : 'scan'}
                       </button>
+                      <button
+                        onClick={() => handleUmbraAction('create-utxo')}
+                        disabled={umbraWorking !== null || !umbraAmount}
+                        className="font-mono text-xs tracking-widest text-ink-muted border border-[#b7cce5] px-5 h-[46px] hover:border-[#7fa7d6] transition-colors cursor-pointer disabled:opacity-40"
+                      >
+                        {umbraWorking === 'create-utxo' ? 'creating...' : 'create UTXO'}
+                      </button>
+                      <button
+                        onClick={() => handleUmbraAction('claim-latest')}
+                        disabled={umbraWorking !== null}
+                        className="font-mono text-xs tracking-widest text-beige bg-[#315a8a] px-5 h-[46px] hover:bg-[#25476f] transition-colors cursor-pointer disabled:opacity-40"
+                      >
+                        {umbraWorking === 'claim-latest' ? 'claiming...' : 'claim latest'}
+                      </button>
                     </div>
                     <p className="font-mono text-[0.55rem] text-ink-muted/50 mt-1">
-                      atomic units. 1 SOL = 1,000,000,000.
+                      amount in SOL units. Direct deposit/withdraw uses encrypted balance; UTXO create + claim uses Umbra mixer flow. 1 SOL = 1,000,000,000 lamports.
                     </p>
                   </div>
 
