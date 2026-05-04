@@ -2,7 +2,7 @@ import { getToken } from '../lib/keychain'
 import { apiFetch } from '../lib/config'
 import { fetchAccountAgents, findAccountAgent } from '../lib/account'
 import { getLocalWalletSigner, loadLocalWalletByNameOrId, recordLocalSpend } from '../lib/local-wallet'
-import { checkPolicy } from '@agentis/core'
+import { checkPolicy } from '@agentis-hq/core'
 import {
   address,
   appendTransactionMessageInstruction,

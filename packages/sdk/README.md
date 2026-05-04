@@ -1,17 +1,17 @@
-# @agentis/sdk
+# @agentis-hq/sdk
 
 AI agent payment infrastructure for Solana. Drop-in `fetch` replacement that silently handles MPP/x402 payments, enforces spending policies, and signs transactions via your Agentis agent wallet.
 
 ## Install
 
 ```bash
-npm install @agentis/sdk
+npm install @agentis-hq/sdk
 ```
 
 ## Usage
 
 ```typescript
-import { AgentisClient } from '@agentis/sdk'
+import { AgentisClient } from '@agentis-hq/sdk'
 
 const agentis = await AgentisClient.create({
   apiKey: 'agt_live_xxxx',        // from Agentis Dashboard
@@ -62,7 +62,7 @@ Turn any endpoint into a paid endpoint:
 
 ```typescript
 // app/api/data/route.ts (Next.js)
-import { paywall } from '@agentis/sdk/server'
+import { paywall } from '@agentis-hq/sdk/server'
 
 export const GET = paywall(
   { fee: 0.001, receiver: 'YourSolanaWallet' },
@@ -74,6 +74,6 @@ export const GET = paywall(
 
 ```typescript
 // Hono
-import { honoPaywall } from '@agentis/sdk/server'
+import { honoPaywall } from '@agentis-hq/sdk/server'
 app.use('/api/data', honoPaywall({ fee: 0.001, receiver: 'YourSolanaWallet' }))
 ```

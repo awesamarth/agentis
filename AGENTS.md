@@ -43,8 +43,14 @@ Local packages point to `src/` directly; no package build step is normally neede
 | Credential | Used by | Notes |
 |---|---|---|
 | Privy JWT | Dashboard | Verified with Privy server auth |
-| `agt_live_xxx` | SDK/backend API key | Per-agent key |
-| `agt_user_xxx` | CLI/MCP/account API key | Stored in OS keychain for CLI; pass as `AGENTIS_ACCOUNT_KEY` for MCP |
+| `agt_live_xxx` | SDK/backend API key | Per-agent key; full key shown only on create/regenerate |
+| `agt_user_xxx` | CLI/MCP/account API key | Full key shown only on generate/login; stored in OS keychain for CLI; pass as `AGENTIS_ACCOUNT_KEY` for MCP |
+
+Key storage:
+- `apps/backend/data/db.json` stores only HMAC-SHA256 key hashes plus masked metadata (`prefix`, `suffix`, `masked`).
+- Runtime plaintext key recovery material is in gitignored `apps/backend/data/key-secrets.json`.
+- Set `API_KEY_HASH_SECRET` in production and keep it stable. Local dev falls back to a deterministic dev secret.
+- Normal agent/account reads return masked keys only. Agent API keys are returned only on agent create/regenerate; account keys are returned only on account key generate or CLI login completion.
 
 ## Built And Working
 
@@ -138,6 +144,7 @@ Tested MCP:
 - MCP paid fetch executed real devnet payments through local x402 and MPP servers: `http://localhost:4000/paid-data` and `http://localhost:4001/mpp-data` both returned `200`.
 - MCP write tests created fresh hosted agents, sent devnet SOL from `leno`, initialized and updated a Quasar on-chain policy, and decoded/read the on-chain policy state.
 - MCP Umbra write test on `mcp-umbra-1777639104167`: registered, deposited `1_000_000` lamports, withdrew `500_000`, created a `10_000_000` lamport UTXO, claimed UTXO `0:566`, and ended with encrypted balance `10_457_322` lamports.
+- After key hashing migration, MCP still lists agents without plaintext API keys, fetches `https://example.com`, and reads Umbra status via account-auth proxy routes.
 
 ### Dashboard
 Implemented:
@@ -231,6 +238,7 @@ Tested:
 - Initialized on-chain policy from Agentis dashboard/backend.
 - Direct SOL send succeeds with on-chain check.
 - Low max-per-tx policy rejects sends with program error `0x2`.
+- Kill switch rejects sends for both backend-mode and initialized on-chain policy agents. Latest focused test used fresh agents `ks-backend-1777654074600` and `ks-onchain-1777654074600`; both were restored to `killSwitch: false`.
 - Backend maps no-balance simulation errors to a user-facing "add funds" message.
 
 Important:
@@ -271,6 +279,15 @@ Tested UTXO/private-transfer flow with `agent-p`:
 - Final encrypted balance: `0.010457322 SOL`.
 - Net credited from the UTXO claim: `0.009957322 SOL`; total protocol fee across create + claim was `0.000042678 SOL`.
 - Later dashboard retest hit a stale `NullifierAlreadyBurnt` entry because the indexer still returned an already-claimed UTXO. Backend `claim-latest` now tries newest UTXOs first and skips stale already-burnt entries until the first successful claim.
+
+Tested cross-agent UTXO/private-transfer flow:
+- Sender: `agent-p` (`7MoLfxVg5Yww4MLNafmCCfgYe3j8cr6eVrHBpLX9L1Ws`).
+- Receiver: `mcp-umbra-1777639104167` (`CjGXrfn72cP7DmEFnxac2SkuUxs4emf5r2B5aa1ve6zy`).
+- Sender created a `0.001 SOL` receiver-claimable UTXO to receiver.
+- Receiver scan showed `publicReceived: 2`.
+- Receiver `claim-latest` succeeded on UTXO `0:571`.
+- Receiver encrypted balance moved from `0.010457322 SOL` to `0.011453055 SOL`, net credit `0.000995733 SOL`.
+- Indexer still showed stale `publicReceived: 2` after claim; claim path remains robust because it skips already-burnt/stale UTXOs.
 
 Important Umbra facts:
 - Devnet program: `DSuKkyqGVGgo4QtPABfxKJKygUDACbUhirnuv63mEpAJ`.

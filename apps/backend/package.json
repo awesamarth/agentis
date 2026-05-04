@@ -10,6 +10,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@agentis-hq/sdk": "workspace:*",
     "@privy-io/node": "^0.15.0",
     "@privy-io/server-auth": "^1.32.5",
     "@solana-program/system": "^0.12.0",

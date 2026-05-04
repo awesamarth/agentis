@@ -10,7 +10,7 @@ import { join } from 'path'
 import { homedir } from 'os'
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, chmodSync, existsSync } from 'fs'
 import { createKeyPairSignerFromPrivateKeyBytes, type KeyPairSigner } from '@solana/kit'
-import type { Policy, SpendRecord } from '@agentis/core'
+import type { Policy, SpendRecord } from '@agentis-hq/core'
 
 const VAULT_DIR = join(homedir(), '.agentis', 'wallets')
 

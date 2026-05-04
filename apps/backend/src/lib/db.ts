@@ -1,6 +1,9 @@
 import { join } from 'path'
+import { createHmac, timingSafeEqual } from 'crypto'
 
 const DB_PATH = join(import.meta.dir, '../../data/db.json')
+const KEY_SECRETS_PATH = join(import.meta.dir, '../../data/key-secrets.json')
+const KEY_HASH_SECRET = process.env.API_KEY_HASH_SECRET ?? 'agentis-local-dev-key-hash-secret'
 
 type Policy = {
   hourlyLimit: number | null
@@ -41,7 +44,11 @@ type Agent = {
   userId: string
   walletId: string
   walletAddress: string
-  apiKey: string
+  apiKey?: string
+  apiKeyHash?: string
+  apiKeyPrefix?: string
+  apiKeySuffix?: string
+  apiKeyMasked?: string
   createdAt: string
   privacyEnabled?: boolean
   umbraStatus?: 'disabled' | 'pending' | 'registered' | 'failed'
@@ -57,7 +64,11 @@ type Agent = {
 
 type Account = {
   userId: string       // Privy DID
-  accountKey: string   // agt_user_xxx
+  accountKey?: string
+  accountKeyHash?: string
+  accountKeyPrefix?: string
+  accountKeySuffix?: string
+  accountKeyMasked?: string
   createdAt: string
 }
 
@@ -100,6 +111,119 @@ type DB = {
   facilitators: FacilitatorRecord[]
 }
 
+type KeySecrets = {
+  agents: Record<string, { apiKey: string; masked: string; updatedAt: string }>
+  accounts: Record<string, { accountKey: string; masked: string; updatedAt: string }>
+  loginSessions: Record<string, { accountKey: string; masked: string; expiresAt: string; updatedAt: string }>
+}
+
+function maskKey(key: string): string {
+  return `${key.slice(0, 13)}••••••••${key.slice(-4)}`
+}
+
+function hashKey(key: string): string {
+  return createHmac('sha256', KEY_HASH_SECRET).update(key).digest('hex')
+}
+
+function safeCompare(a: string, b: string): boolean {
+  const left = Buffer.from(a)
+  const right = Buffer.from(b)
+  return left.length === right.length && timingSafeEqual(left, right)
+}
+
+async function readKeySecrets(): Promise<KeySecrets> {
+  const file = Bun.file(KEY_SECRETS_PATH)
+  if (!(await file.exists())) return { agents: {}, accounts: {} }
+  const data = await file.json().catch(() => ({}))
+  return {
+    agents: data.agents ?? {},
+    accounts: data.accounts ?? {},
+    loginSessions: data.loginSessions ?? {},
+  }
+}
+
+async function writeKeySecrets(data: KeySecrets): Promise<void> {
+  await Bun.write(KEY_SECRETS_PATH, JSON.stringify(data, null, 2))
+}
+
+function attachAgentMasked(agent: Agent): Agent {
+  return {
+    ...agent,
+    apiKeyMasked: agent.apiKeyMasked ?? (
+      agent.apiKeyPrefix && agent.apiKeySuffix
+        ? `${agent.apiKeyPrefix}••••••••${agent.apiKeySuffix}`
+        : undefined
+    ),
+  }
+}
+
+function attachAccountMasked(account: Account): Account {
+  return {
+    ...account,
+    accountKeyMasked: account.accountKeyMasked ?? (
+      account.accountKeyPrefix && account.accountKeySuffix
+        ? `${account.accountKeyPrefix}••••••••${account.accountKeySuffix}`
+        : undefined
+    ),
+  }
+}
+
+async function migratePlaintextKeys(data: DB): Promise<boolean> {
+  let changed = false
+  const secrets = await readKeySecrets()
+  const now = new Date().toISOString()
+
+  for (const agent of data.agents ?? []) {
+    if (agent.apiKey?.startsWith('agt_live_')) {
+      secrets.agents[agent.id] = {
+        apiKey: agent.apiKey,
+        masked: maskKey(agent.apiKey),
+        updatedAt: now,
+      }
+      agent.apiKeyHash = hashKey(agent.apiKey)
+      agent.apiKeyPrefix = agent.apiKey.slice(0, 13)
+      agent.apiKeySuffix = agent.apiKey.slice(-4)
+      agent.apiKeyMasked = maskKey(agent.apiKey)
+      delete agent.apiKey
+      changed = true
+    }
+  }
+
+  for (const account of data.accounts ?? []) {
+    if (account.accountKey?.startsWith('agt_user_')) {
+      secrets.accounts[account.userId] = {
+        accountKey: account.accountKey,
+        masked: maskKey(account.accountKey),
+        updatedAt: now,
+      }
+      account.accountKeyHash = hashKey(account.accountKey)
+      account.accountKeyPrefix = account.accountKey.slice(0, 13)
+      account.accountKeySuffix = account.accountKey.slice(-4)
+      account.accountKeyMasked = maskKey(account.accountKey)
+      delete account.accountKey
+      changed = true
+    }
+  }
+
+  for (const session of data.loginSessions ?? []) {
+    if (session.accountKey?.startsWith('agt_user_')) {
+      secrets.loginSessions[session.id] = {
+        accountKey: session.accountKey,
+        masked: maskKey(session.accountKey),
+        expiresAt: session.expiresAt,
+        updatedAt: now,
+      }
+      delete session.accountKey
+      changed = true
+    }
+  }
+
+  if (changed) {
+    await writeKeySecrets(secrets)
+  }
+  return changed
+}
+
 async function readDb(): Promise<DB> {
   const file = Bun.file(DB_PATH)
   const exists = await file.exists()
@@ -108,12 +232,14 @@ async function readDb(): Promise<DB> {
   if (!data.accounts) data.accounts = []
   if (!data.loginSessions) data.loginSessions = []
   if (!data.facilitators) data.facilitators = []
+  const migrated = await migratePlaintextKeys(data)
   // Migrate old tx records missing amountUsd — assume 1:1 with raw amount as fallback
   for (const agent of data.agents ?? []) {
     for (const tx of agent.transactions ?? []) {
       if (tx.amountUsd === undefined) tx.amountUsd = tx.amount
     }
   }
+  if (migrated) await Bun.write(DB_PATH, JSON.stringify(data, null, 2))
   return data
 }
 
@@ -133,23 +259,34 @@ export async function getAgentsByUser(userId: string): Promise<Agent[]> {
       transactions: a.transactions ?? [],
       monthSpend: a.monthSpend ?? { month: '', spend: 0 },
     }))
+    .map(attachAgentMasked)
 }
 
-export async function createAgent(agent: Omit<Agent, 'transactions' | 'monthSpend'>): Promise<Agent> {
+export async function createAgent(agent: Omit<Agent, 'transactions' | 'monthSpend'> & { apiKey: string }): Promise<Agent> {
   const db = await readDb()
+  const apiKey = agent.apiKey
+  const { apiKey: _apiKey, ...rest } = agent
   const full: Agent = {
-    ...agent,
+    ...rest,
+    apiKeyHash: hashKey(apiKey),
+    apiKeyPrefix: apiKey.slice(0, 13),
+    apiKeySuffix: apiKey.slice(-4),
+    apiKeyMasked: maskKey(apiKey),
     transactions: [],
     monthSpend: { month: '', spend: 0 },
   }
   db.agents.push(full)
+  const secrets = await readKeySecrets()
+  secrets.agents[full.id] = { apiKey, masked: maskKey(apiKey), updatedAt: new Date().toISOString() }
+  await writeKeySecrets(secrets)
   await writeDb(db)
-  return full
+  return { ...full, apiKey }
 }
 
 export async function getAgentById(id: string): Promise<Agent | undefined> {
   const db = await readDb()
-  return db.agents.find(a => a.id === id)
+  const agent = db.agents.find(a => a.id === id)
+  return agent ? attachAgentMasked(agent) : undefined
 }
 
 export async function updateAgent(id: string, patch: Partial<Agent>): Promise<Agent> {
@@ -200,24 +337,44 @@ export async function updateAgentApiKey(id: string, apiKey: string): Promise<Age
   const db = await readDb()
   const idx = db.agents.findIndex(a => a.id === id)
   if (idx === -1) throw new Error('Agent not found')
-  db.agents[idx] = { ...db.agents[idx]!, apiKey }
+  db.agents[idx] = {
+    ...db.agents[idx]!,
+    apiKeyHash: hashKey(apiKey),
+    apiKeyPrefix: apiKey.slice(0, 13),
+    apiKeySuffix: apiKey.slice(-4),
+    apiKeyMasked: maskKey(apiKey),
+  }
+  delete db.agents[idx]!.apiKey
+  const secrets = await readKeySecrets()
+  secrets.agents[id] = { apiKey, masked: maskKey(apiKey), updatedAt: new Date().toISOString() }
+  await writeKeySecrets(secrets)
   await writeDb(db)
-  return db.agents[idx]!
+  return { ...db.agents[idx]!, apiKey }
 }
 
 export async function getAgentByApiKey(apiKey: string): Promise<Agent | undefined> {
   const db = await readDb()
-  return db.agents.find(a => a.apiKey === apiKey)
+  const hash = hashKey(apiKey)
+  const agent = db.agents.find(a => a.apiKeyHash && safeCompare(a.apiKeyHash, hash))
+  return agent ? attachAgentMasked(agent) : undefined
+}
+
+export async function getAgentApiKeySecret(id: string): Promise<string | undefined> {
+  const secrets = await readKeySecrets()
+  return secrets.agents[id]?.apiKey
 }
 
 export async function getAccountByUserId(userId: string): Promise<Account | undefined> {
   const db = await readDb()
-  return db.accounts.find(a => a.userId === userId)
+  const account = db.accounts.find(a => a.userId === userId)
+  return account ? attachAccountMasked(account) : undefined
 }
 
 export async function getAccountByKey(accountKey: string): Promise<Account | undefined> {
   const db = await readDb()
-  return db.accounts.find(a => a.accountKey === accountKey)
+  const hash = hashKey(accountKey)
+  const account = db.accounts.find(a => a.accountKeyHash && safeCompare(a.accountKeyHash, hash))
+  return account ? attachAccountMasked(account) : undefined
 }
 
 export async function createLoginSession(id: string): Promise<LoginSession> {
@@ -242,22 +399,48 @@ export async function completeLoginSession(id: string, accountKey: string): Prom
   const db = await readDb()
   const idx = db.loginSessions.findIndex(s => s.id === id)
   if (idx === -1) throw new Error('Session not found')
-  db.loginSessions[idx] = { ...db.loginSessions[idx]!, status: 'complete', accountKey }
+  db.loginSessions[idx] = { ...db.loginSessions[idx]!, status: 'complete' }
+  const secrets = await readKeySecrets()
+  secrets.loginSessions[id] = {
+    accountKey,
+    masked: maskKey(accountKey),
+    expiresAt: db.loginSessions[idx]!.expiresAt,
+    updatedAt: new Date().toISOString(),
+  }
+  await writeKeySecrets(secrets)
   await writeDb(db)
   return db.loginSessions[idx]!
+}
+
+export async function getLoginSessionAccountKey(id: string): Promise<string | undefined> {
+  const secrets = await readKeySecrets()
+  const entry = secrets.loginSessions[id]
+  if (!entry) return undefined
+  if (new Date(entry.expiresAt) < new Date()) return undefined
+  return entry.accountKey
 }
 
 export async function createOrUpdateAccount(userId: string, accountKey: string): Promise<Account> {
   const db = await readDb()
   const existing = db.accounts.findIndex(a => a.userId === userId)
-  const account: Account = { userId, accountKey, createdAt: new Date().toISOString() }
+  const account: Account = {
+    userId,
+    accountKeyHash: hashKey(accountKey),
+    accountKeyPrefix: accountKey.slice(0, 13),
+    accountKeySuffix: accountKey.slice(-4),
+    accountKeyMasked: maskKey(accountKey),
+    createdAt: new Date().toISOString(),
+  }
   if (existing !== -1) {
     db.accounts[existing] = account
   } else {
     db.accounts.push(account)
   }
+  const secrets = await readKeySecrets()
+  secrets.accounts[userId] = { accountKey, masked: maskKey(accountKey), updatedAt: new Date().toISOString() }
+  await writeKeySecrets(secrets)
   await writeDb(db)
-  return account
+  return { ...account, accountKey }
 }
 
 export async function createFacilitator(input: Omit<FacilitatorRecord, 'createdAt' | 'updatedAt' | 'status' | 'publicUrl' | 'metrics' | 'lastHeartbeatAt'> & { publicUrl?: string | null }): Promise<FacilitatorRecord> {

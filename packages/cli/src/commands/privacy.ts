@@ -1,6 +1,5 @@
-import { AgentisClient } from '@agentis/sdk'
 import { getToken } from '../lib/keychain'
-import { API_BASE } from '../lib/config'
+import { apiFetch } from '../lib/config'
 import { resolveAccountAgent } from '../lib/account'
 
 function getFlag(args: string[], flag: string): string | undefined {
@@ -16,7 +15,7 @@ async function resolveHostedAgent(nameOrId: string, token: string): Promise<any>
   return resolveAccountAgent(nameOrId, token)
 }
 
-async function getPrivacyClient(args: string[]): Promise<AgentisClient> {
+async function getPrivacyContext(args: string[]): Promise<{ token: string; agent: any }> {
   const agentName = getFlag(args, '--agent')
   if (!agentName) {
     console.error('Missing --agent <name-or-id>')
@@ -30,10 +29,7 @@ async function getPrivacyClient(args: string[]): Promise<AgentisClient> {
   }
 
   const agent = await resolveHostedAgent(agentName, token)
-  return AgentisClient.create({
-    apiKey: agent.apiKey,
-    baseUrl: API_BASE,
-  })
+  return { token, agent }
 }
 
 function printJson(value: unknown) {
@@ -47,6 +43,21 @@ function getAmountOptions(args: string[]) {
   }
 }
 
+async function privacyFetch(context: { token: string; agent: any }, path: string, body?: Record<string, unknown>) {
+  const res = await apiFetch(`/agents/${context.agent.id}/umbra${path}`, body === undefined
+    ? {}
+    : {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }, context.token)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    console.error('Privacy request failed:', data.error ?? res.statusText)
+    process.exit(1)
+  }
+  return data
+}
+
 export async function privacyCommand(args: string[]) {
   const sub = args[0]
   const rest = args.slice(1)
@@ -56,45 +67,45 @@ export async function privacyCommand(args: string[]) {
     return
   }
 
-  const client = await getPrivacyClient(rest)
+  const context = await getPrivacyContext(rest)
 
   switch (sub) {
     case 'status':
-      printJson(await client.privacy.status())
+      printJson(await privacyFetch(context, '/status'))
       break
 
     case 'register':
-      printJson(await client.privacy.register({
+      printJson(await privacyFetch(context, '/register', {
         confidential: !hasFlag(rest, '--no-confidential'),
         anonymous: !hasFlag(rest, '--no-anonymous'),
       }))
       break
 
     case 'balance':
-      printJson(await client.privacy.balance({ mint: getFlag(rest, '--mint') }))
+      printJson(await privacyFetch(context, `/balance${getFlag(rest, '--mint') ? `?mint=${encodeURIComponent(getFlag(rest, '--mint')!)}` : ''}`))
       break
 
     case 'deposit':
-      printJson(await client.privacy.deposit(getAmountOptions(rest)))
+      printJson(await privacyFetch(context, '/deposit', getAmountOptions(rest)))
       break
 
     case 'withdraw':
-      printJson(await client.privacy.withdraw(getAmountOptions(rest)))
+      printJson(await privacyFetch(context, '/withdraw', getAmountOptions(rest)))
       break
 
     case 'create-utxo':
-      printJson(await client.privacy.createUtxo({
+      printJson(await privacyFetch(context, '/create-utxo', {
         ...getAmountOptions(rest),
         to: getFlag(rest, '--to'),
       }))
       break
 
     case 'scan':
-      printJson(await client.privacy.scan())
+      printJson(await privacyFetch(context, '/scan'))
       break
 
     case 'claim-latest':
-      printJson(await client.privacy.claimLatest())
+      printJson(await privacyFetch(context, '/claim-latest', {}))
       break
 
     default:

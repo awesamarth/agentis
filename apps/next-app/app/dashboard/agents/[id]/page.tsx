@@ -16,6 +16,7 @@ import {
 import { compileTransaction, getTransactionEncoder } from '@solana/transactions'
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { RefreshCw } from 'lucide-react'
 import Navbar from '@/components/Navbar'
 
 type Policy = {
@@ -32,7 +33,8 @@ type Agent = {
   id: string
   name: string
   walletAddress: string
-  apiKey: string
+  apiKey?: string
+  apiKeyMasked?: string
   createdAt: string
   privacyEnabled?: boolean
   umbraStatus?: 'disabled' | 'pending' | 'registered' | 'failed'
@@ -120,6 +122,36 @@ type OnchainPolicyStatus = {
   }
 }
 
+type EarnPosition = {
+  token?: {
+    address?: string
+    symbol?: string
+    uiSymbol?: string
+    decimals?: number
+    asset?: {
+      symbol?: string
+      uiSymbol?: string
+      decimals?: number
+    }
+  }
+  underlyingAssets?: string | number
+  shares?: string | number
+}
+
+type EarnPositionsResponse = {
+  network: 'mainnet'
+  walletAddress: string
+  positions: EarnPosition[]
+}
+
+type EarnBalanceResponse = {
+  network: 'mainnet'
+  asset: 'USDC'
+  walletAddress: string
+  amountAtomic: string
+  amountUi: string
+}
+
 const DEFAULT_POLICY: Policy = {
   hourlyLimit: null,
   dailyLimit: null,
@@ -177,6 +209,42 @@ function formatLamportsAsSol(value?: string | null) {
   const fraction = lamports % LAMPORTS_PER_SOL
   if (fraction === BigInt(0)) return whole.toString()
   return `${whole}.${fraction.toString().padStart(9, '0').replace(/0+$/, '')}`
+}
+
+function formatEarnAmount(value: unknown, decimals: number) {
+  const amount = Number(value ?? 0) / 10 ** decimals
+  return amount.toLocaleString(undefined, { maximumFractionDigits: 6 })
+}
+
+function getEarnPositionSymbol(position: EarnPosition) {
+  return position.token?.asset?.uiSymbol ?? position.token?.asset?.symbol ?? position.token?.symbol ?? 'UNKNOWN'
+}
+
+function getEarnShareSymbol(position: EarnPosition) {
+  return position.token?.uiSymbol ?? position.token?.symbol ?? 'jlToken'
+}
+
+function getEarnPositionUnderlying(position: EarnPosition) {
+  const decimals = Number(position.token?.asset?.decimals ?? position.token?.decimals ?? 6)
+  return formatEarnAmount(position.underlyingAssets, decimals)
+}
+
+function getEarnPositionUnderlyingAtomic(position: EarnPosition) {
+  try {
+    return BigInt(position.underlyingAssets ?? 0)
+  } catch {
+    return 0n
+  }
+}
+
+function getEarnPositionShares(position: EarnPosition) {
+  const assetDecimals = Number(position.token?.asset?.decimals ?? 6)
+  const shareDecimals = Number(position.token?.decimals ?? assetDecimals)
+  return formatEarnAmount(position.shares, shareDecimals)
+}
+
+function getErrorMessage(err: unknown, fallback: string) {
+  return err instanceof Error ? err.message : fallback
 }
 
 function LimitInput({
@@ -250,9 +318,16 @@ export default function AgentDetail() {
   const [onchainLoading, setOnchainLoading] = useState(false)
   const [onchainInitializing, setOnchainInitializing] = useState(false)
   const [onchainError, setOnchainError] = useState<string | null>(null)
+  const [earnPositions, setEarnPositions] = useState<EarnPosition[]>([])
+  const [earnAvailableUsdc, setEarnAvailableUsdc] = useState<EarnBalanceResponse | null>(null)
+  const [earnLoading, setEarnLoading] = useState(false)
+  const [earnDepositing, setEarnDepositing] = useState(false)
+  const [earnAmount, setEarnAmount] = useState('1')
+  const [earnError, setEarnError] = useState<string | null>(null)
+  const [earnMessage, setEarnMessage] = useState<string | null>(null)
 
   const [apiKey, setApiKey] = useState<string | null>(null)
-  const [apiKeyVisible, setApiKeyVisible] = useState(false)
+  const [apiKeyCanCopy, setApiKeyCanCopy] = useState(false)
   const [copiedKey, setCopiedKey] = useState(false)
   const [regenning, setRegenning] = useState(false)
   const [regenConfirm, setRegenConfirm] = useState(false)
@@ -302,28 +377,121 @@ export default function AgentDetail() {
       setAgent(data)
       setAgentName(data.name)
       setPolicy({ ...DEFAULT_POLICY, ...data.policy })
-      setApiKey(data.apiKey)
+      setApiKey(data.apiKey ?? data.apiKeyMasked ?? null)
+      setApiKeyCanCopy(Boolean(data.apiKey))
       fetchBalances(data.walletAddress)
       fetchTransactions(token)
       if (data.privacyEnabled || data.umbraStatus === 'registered') {
-        fetchUmbraSnapshot(data.apiKey)
+        fetchUmbraSnapshot()
       }
       if (data.policyMode === 'onchain') {
         fetchOnchainPolicy()
       }
+      fetchEarnSnapshot()
     } finally {
       setLoading(false)
     }
   }
 
-  async function umbraFetch<T>(path: string, init: RequestInit = {}, key = apiKey): Promise<T> {
-    if (!key) throw new Error('Missing agent API key')
+  async function fetchEarnPositions() {
+    if (!authenticated) return
+    setEarnLoading(true)
+    setEarnError(null)
+    try {
+      const token = await getAccessToken()
+      if (!token) return
+      const res = await fetch(`${API}/agents/${id}/earn/positions?network=mainnet`, {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      const body = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(body?.error ?? 'Failed to load Jupiter Earn positions')
+      const positions = Array.isArray((body as EarnPositionsResponse).positions) ? (body as EarnPositionsResponse).positions : []
+      setEarnPositions(positions)
+    } catch (err: unknown) {
+      setEarnError(getErrorMessage(err, 'Failed to load Jupiter Earn positions'))
+    } finally {
+      setEarnLoading(false)
+    }
+  }
 
-    const res = await fetch(`${API}/umbra${path}`, {
+  async function fetchEarnBalance() {
+    if (!authenticated) return
+    setEarnError(null)
+    try {
+      const token = await getAccessToken()
+      if (!token) return
+      const res = await fetch(`${API}/agents/${id}/earn/balance?network=mainnet`, {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      const body = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(body?.error ?? 'Failed to load available USDC')
+      setEarnAvailableUsdc(body)
+    } catch (err: unknown) {
+      setEarnError(getErrorMessage(err, 'Failed to load available USDC'))
+    }
+  }
+
+  async function fetchEarnSnapshot() {
+    setEarnLoading(true)
+    try {
+      await Promise.all([
+        fetchEarnPositions(),
+        fetchEarnBalance(),
+      ])
+    } finally {
+      setEarnLoading(false)
+    }
+  }
+
+  async function handleEarnDeposit() {
+    if (!authenticated) {
+      login()
+      return
+    }
+
+    const amount = Number(earnAmount)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setEarnError('Enter a valid USDC amount.')
+      return
+    }
+
+    setEarnDepositing(true)
+    setEarnError(null)
+    setEarnMessage(null)
+    try {
+      const token = await getAccessToken()
+      if (!token) return
+      const res = await fetch(`${API}/agents/${id}/earn/deposit`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ network: 'mainnet', asset: 'USDC', amount: earnAmount }),
+      })
+      const body = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(body?.error ?? 'Jupiter Earn deposit failed')
+      setEarnMessage(`deposited ${body.amount ?? earnAmount} USDC${body.signature ? ` · ${String(body.signature).slice(0, 12)}...` : ''}`)
+      await Promise.all([
+        fetchEarnSnapshot(),
+        token ? fetchTransactions(token) : Promise.resolve(),
+      ])
+    } catch (err: unknown) {
+      setEarnError(getErrorMessage(err, 'Jupiter Earn deposit failed'))
+    } finally {
+      setEarnDepositing(false)
+    }
+  }
+
+  async function umbraFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const token = await getAccessToken()
+    if (!token) throw new Error('Missing auth token')
+
+    const res = await fetch(`${API}/agents/${id}/umbra${path}`, {
       ...init,
       headers: {
         'content-type': 'application/json',
-        'x-api-key': key,
+        authorization: `Bearer ${token}`,
         ...(init.headers as Record<string, string> ?? {}),
       },
     })
@@ -332,15 +500,15 @@ export default function AgentDetail() {
     return body as T
   }
 
-  async function fetchUmbraSnapshot(key = apiKey) {
-    if (!key) return
+  async function fetchUmbraSnapshot() {
+    if (!authenticated) return
     setUmbraLoading(true)
     setUmbraError(null)
     try {
       const [status, balance, scan] = await Promise.all([
-        umbraFetch<UmbraStatus>('/status', {}, key),
-        umbraFetch<UmbraBalance>(`/balance?mint=${encodeURIComponent(UMBRA_SOL_MINT)}`, {}, key),
-        umbraFetch<UmbraScan>('/scan', {}, key).catch(() => null),
+        umbraFetch<UmbraStatus>('/status'),
+        umbraFetch<UmbraBalance>(`/balance?mint=${encodeURIComponent(UMBRA_SOL_MINT)}`),
+        umbraFetch<UmbraScan>('/scan').catch(() => null),
       ])
       setUmbraStatus(status)
       setUmbraBalance(balance)
@@ -589,7 +757,7 @@ export default function AgentDetail() {
       if (res.ok) {
         const data = await res.json()
         setApiKey(data.apiKey)
-        setApiKeyVisible(true)
+        setApiKeyCanCopy(true)
       }
     } finally {
       setRegenning(false)
@@ -608,8 +776,9 @@ export default function AgentDetail() {
       const updated = await res.json().catch(() => null)
       if (updated) {
         setAgent(updated)
-        setApiKey(updated.apiKey ?? apiKey)
-        await fetchUmbraSnapshot(updated.apiKey ?? apiKey)
+        setApiKey(updated.apiKey ?? updated.apiKeyMasked ?? apiKey)
+        setApiKeyCanCopy(Boolean(updated.apiKey))
+        await fetchUmbraSnapshot()
       }
     } finally {
       setPrivacyRegistering(false)
@@ -696,6 +865,14 @@ export default function AgentDetail() {
       </main>
     )
   }
+
+  const visibleEarnPositions = earnPositions.filter(position =>
+    Number(position.underlyingAssets ?? 0) > 0 || Number(position.shares ?? 0) > 0
+  )
+  const visibleEarnTotalUnderlying = visibleEarnPositions.reduce(
+    (sum, position) => sum + getEarnPositionUnderlyingAtomic(position),
+    0n,
+  )
 
   return (
     <main className="min-h-screen bg-beige">
@@ -1040,24 +1217,20 @@ export default function AgentDetail() {
           <h2 className="font-mono text-[0.65rem] text-ink-muted tracking-widest uppercase mb-4">API Key</h2>
           <div className="bg-white border border-beige-darker p-5">
             <p className="font-mono text-[0.6rem] text-ink-muted/70 mb-4">
-              Use this key to authenticate the Agentis SDK. Keep it secret.
+              Use this key to authenticate the Agentis SDK. Full keys are shown only once after creation or regeneration.
             </p>
             <div className="flex items-center gap-3 mb-3">
               <p className="font-mono text-sm text-black flex-1 break-all">
-                {apiKeyVisible && apiKey ? apiKey : (apiKey ? apiKey.slice(0, 12) + '••••••••••••••••••••••••••••••••' : '—')}
+                {apiKey ?? '—'}
               </p>
-              <button
-                onClick={() => setApiKeyVisible(v => !v)}
-                className="font-mono text-xs tracking-widest text-ink-muted border border-beige-darker px-3 py-1.5 hover:border-ink-muted transition-colors cursor-pointer shrink-0"
-              >
-                {apiKeyVisible ? 'hide' : 'show'}
-              </button>
-              <button
-                onClick={() => { navigator.clipboard.writeText(apiKey ?? ''); setCopiedKey(true); setTimeout(() => setCopiedKey(false), 2000) }}
-                className="font-mono text-xs tracking-widest text-ink-muted border border-beige-darker px-3 py-1.5 hover:border-ink-muted transition-colors cursor-pointer shrink-0"
-              >
-                {copiedKey ? 'copied!' : 'copy'}
-              </button>
+              {apiKeyCanCopy && (
+                <button
+                  onClick={() => { navigator.clipboard.writeText(apiKey ?? ''); setCopiedKey(true); setTimeout(() => setCopiedKey(false), 2000) }}
+                  className="font-mono text-xs tracking-widest text-ink-muted border border-beige-darker px-3 py-1.5 hover:border-ink-muted transition-colors cursor-pointer shrink-0"
+                >
+                  {copiedKey ? 'copied!' : 'copy'}
+                </button>
+              )}
             </div>
             <button
               onClick={handleRegenKey}
@@ -1281,6 +1454,117 @@ export default function AgentDetail() {
             </p>
           )}
         </div>
+
+        {/* Jupiter Earn */}
+        {authenticated && (
+          <section className="mb-10">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <img src="/jupiter-logo.png" alt="" className="h-4 w-4 rounded-full" />
+                <h2 className="font-mono text-[0.65rem] text-ink-muted tracking-widest uppercase">Jupiter Earn</h2>
+              </div>
+              <button
+                onClick={fetchEarnSnapshot}
+                disabled={earnLoading || earnDepositing}
+                className="font-mono text-[0.6rem] text-ink-muted/50 tracking-widest hover:text-ink-muted transition-colors cursor-pointer disabled:opacity-40 inline-flex items-center gap-1.5"
+              >
+                <RefreshCw size={12} className={earnLoading ? 'animate-spin' : ''} />
+                refresh
+              </button>
+            </div>
+
+            <div className="border border-[#b8d8c0] bg-[linear-gradient(115deg,#ffffff_0%,#ffffff_58%,#eefaf0_100%)] p-5">
+              <div className="flex items-start justify-between gap-5 mb-5">
+                <div>
+                  <p className="font-mono text-sm text-black mb-1">Mainnet USDC yield</p>
+                  <p className="font-mono text-[0.65rem] text-ink-muted leading-relaxed">
+                    This section is scoped to {agent?.name}. Supplied shows what is already in Jupiter Earn; available shows mainnet USDC that can be deposited.
+                  </p>
+                </div>
+                <span className="font-mono text-[0.6rem] tracking-widest uppercase border border-[#b8d8c0] bg-white/70 px-2 py-1 text-[#2f7b46] shrink-0">
+                  mainnet
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 mb-5">
+                <div className="bg-white/75 border border-[#b8d8c0]/80 px-4 py-3">
+                  <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">supplied</p>
+                  <p className="font-mono text-sm text-black">
+                    {earnLoading && earnPositions.length === 0 ? 'loading...' : `${formatEarnAmount(visibleEarnTotalUnderlying, 6)} USDC`}
+                  </p>
+                </div>
+                <div className="bg-white/75 border border-[#b8d8c0]/80 px-4 py-3">
+                  <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">available</p>
+                  <p className="font-mono text-sm text-black">
+                    {earnLoading && !earnAvailableUsdc ? 'loading...' : `${earnAvailableUsdc?.amountUi ?? '0'} USDC`}
+                  </p>
+                </div>
+                <div className="bg-white/75 border border-[#b8d8c0]/80 px-4 py-3">
+                  <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">positions</p>
+                  <p className="font-mono text-sm text-black">{visibleEarnPositions.length}</p>
+                </div>
+              </div>
+
+              <div className="bg-white/70 border border-[#b8d8c0]/80 divide-y divide-[#b8d8c0]/70 mb-5">
+                {earnLoading && earnPositions.length === 0 ? (
+                  <div className="px-4 py-3">
+                    <p className="font-mono text-[0.65rem] text-ink-muted/50 tracking-widest">loading positions...</p>
+                  </div>
+                ) : visibleEarnPositions.length === 0 ? (
+                  <div className="px-4 py-3">
+                    <p className="font-mono text-[0.65rem] text-ink-muted/50 tracking-widest">no active Earn positions</p>
+                  </div>
+                ) : (
+                  visibleEarnPositions.map(position => (
+                    <div key={position.token?.address ?? getEarnPositionSymbol(position)} className="px-4 py-3 flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="font-mono text-sm text-black">{getEarnPositionSymbol(position)}</p>
+                        <p className="font-mono text-[0.55rem] text-ink-muted/60 truncate">
+                          {position.token?.address ?? 'Jupiter Earn vault'}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="font-mono text-sm text-black">{getEarnPositionUnderlying(position)} supplied</p>
+                        <p className="font-mono text-[0.55rem] text-ink-muted/60">
+                          {getEarnPositionShares(position)} {getEarnShareSymbol(position)}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="flex-1 min-w-52">
+                  <label className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase block mb-1.5">
+                    deposit amount
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={earnAmount}
+                    onChange={e => setEarnAmount(e.target.value.replace(/[^\d.]/g, ''))}
+                    className="w-full h-[46px] bg-beige border border-beige-darker px-3 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
+                    placeholder="1"
+                  />
+                </div>
+                <button
+                  onClick={handleEarnDeposit}
+                  disabled={earnDepositing || !earnAmount}
+                  className="bg-black text-beige font-mono text-xs tracking-widest px-5 h-[46px] hover:bg-ink transition-colors cursor-pointer disabled:opacity-40"
+                >
+                  {earnDepositing ? 'depositing...' : 'deposit USDC'}
+                </button>
+              </div>
+
+              {(earnError || earnMessage) && (
+                <p className={`font-mono text-[0.65rem] mt-4 break-all ${earnError ? 'text-red-700' : 'text-ink-muted'}`}>
+                  {earnError ?? earnMessage}
+                </p>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Transaction History */}
         <section className="mb-10">

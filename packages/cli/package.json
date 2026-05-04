@@ -1,16 +1,27 @@
 {
   "name": "@agentis-hq/cli",
   "version": "0.1.0",
+  "type": "module",
   "bin": {
-    "agentis": "./src/index.ts"
+    "agentis": "./dist/index.js"
   },
   "description": "Agentis CLI",
+  "exports": {
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "package.json"
+  ],
   "scripts": {
-    "dev": "bun run src/index.ts"
+    "dev": "bun run src/index.ts",
+    "build": "tsup",
+    "check": "bun --check src/index.ts"
   },
   "dependencies": {
-    "@agentis/core": "workspace:*",
-    "@agentis/sdk": "workspace:*",
+    "@agentis-hq/core": "^0.1.0",
+    "@agentis-hq/sdk": "^0.1.0",
     "@napi-rs/keyring": "^1.2.0",
     "@noble/ciphers": "^2.2.0",
     "@noble/curves": "^2.2.0",
@@ -20,5 +31,10 @@
     "@solana-program/system": "^0.12.0",
     "@solana/kit": "^6.8.0",
     "uuid": "^14.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
   }
 }

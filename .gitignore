@@ -13,6 +13,7 @@ out/
 
 # Database
 apps/backend/data/db.json
+apps/backend/data/key-secrets*.json
 
 # Local test keys
 .agentis-test-keys/
@@ -22,3 +23,11 @@ apps/backend/data/db.json
 
 # Logs
 *.log
+
+# Local reference dumps
+GILL.md
+JUPITER.txt
+UMBRA.txt
+mpp.txt
+quasar.txt
+x402.txt

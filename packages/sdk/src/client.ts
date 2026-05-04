@@ -10,9 +10,9 @@ import type {
   UmbraRegisterOptions,
   UmbraResponse,
 } from './types'
-import type { AgentInfo, Policy, SpendRecord } from '@agentis/core'
-import { AgentisError, PaymentError } from '@agentis/core'
-import { checkPolicy } from '@agentis/core'
+import type { AgentInfo, Policy, SpendRecord } from '@agentis-hq/core'
+import { AgentisError, PaymentError } from '@agentis-hq/core'
+import { checkPolicy } from '@agentis-hq/core'
 import {
   parse402WithBody,
   tokenAmountFromRequirements,

@@ -1,5 +1,5 @@
 /**
- * @agentis/sdk/server
+ * @agentis-hq/sdk/server
  *
  * Server-side utilities — turn any endpoint into a paid endpoint.
  * Framework-agnostic core + Hono adapter (Next.js route handler compatible).
@@ -80,7 +80,7 @@ function verifyX402Payment(paymentHeader: string): boolean {
  * Usage:
  * ```ts
  * // app/api/data/route.ts
- * import { paywall } from '@agentis/sdk/server'
+ * import { paywall } from '@agentis-hq/sdk/server'
  *
  * export const GET = paywall({ fee: 0.001, receiver: 'YourWallet' }, async (req) => {
  *   return Response.json({ data: 'premium content' })
@@ -155,7 +155,7 @@ export function paywall(
  *
  * Usage in middleware.ts:
  * ```ts
- * import { paywallMiddleware } from '@agentis/sdk/server'
+ * import { paywallMiddleware } from '@agentis-hq/sdk/server'
  * export default paywallMiddleware({
  *   fee: 0.001,
  *   receiver: 'YourWallet',
@@ -181,7 +181,7 @@ export function paywallMiddleware(config: PaywallConfig & { matcher?: string[] }
  *
  * Usage:
  * ```ts
- * import { honoPaywall } from '@agentis/sdk/server'
+ * import { honoPaywall } from '@agentis-hq/sdk/server'
  * app.use('/api/data', honoPaywall({ fee: 0.001, receiver: 'YourWallet' }))
  * ```
  */

@@ -92,7 +92,7 @@ await agent.pay('freelancer-wallet-address', 0.1)
 This suggests a clean long-term split:
 
 ```txt
-@agentis/sdk
+@agentis-hq/sdk
   Runtime SDK for one agent:
   fetch, pay, balance, policy.check, privacy
 

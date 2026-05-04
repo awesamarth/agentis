@@ -1,15 +1,19 @@
 #!/usr/bin/env bun
+import { existsSync } from 'fs'
+import { readFile } from 'fs/promises'
+import { dirname, join } from 'path'
+import { fileURLToPath } from 'url'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { AgentisClient } from '@agentis/sdk'
-import { checkPolicy } from '@agentis/core'
+import { checkPolicy } from '@agentis-hq/core'
 import { address, getAddressEncoder, getProgramDerivedAddress } from '@solana/kit'
 import { z } from 'zod'
 
-const DEFAULT_API_BASE = 'http://localhost:3001'
+const DEFAULT_API_BASE = 'https://api.agentis.xyz'
 const DEFAULT_DEVNET_RPC = 'https://api.devnet.solana.com'
 const DEFAULT_MAINNET_RPC = 'https://api.mainnet-beta.solana.com'
 const USDC_MAINNET_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
+const SOL_MINT = 'So11111111111111111111111111111111111111112'
 const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
 const ASSOCIATED_TOKEN_PROGRAM = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'
 const addressEncoder = getAddressEncoder()
@@ -101,7 +105,8 @@ async function apiFetch(path: string, init: RequestInit = {}) {
 }
 
 async function runCli(args: string[], cwd = process.cwd()) {
-  const child = Bun.spawn(['bun', 'packages/cli/src/index.ts', ...args], {
+  const command = await resolveCliCommand(args, cwd)
+  const child = Bun.spawn(command, {
     cwd,
     env: {
       ...process.env,
@@ -122,6 +127,28 @@ async function runCli(args: string[], cwd = process.cwd()) {
   return { stdout, stderr }
 }
 
+async function resolveCliCommand(args: string[], cwd: string): Promise<string[]> {
+  const repoCli = join(cwd, 'packages/cli/src/index.ts')
+  if (existsSync(repoCli)) return ['bun', repoCli, ...args]
+
+  try {
+    const packageJsonUrl = import.meta.resolve('@agentis-hq/cli/package.json')
+    const packageJsonPath = fileURLToPath(packageJsonUrl)
+    const packageDir = dirname(packageJsonPath)
+    const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf8')) as {
+      bin?: string | Record<string, string>
+    }
+    const binPath = typeof packageJson.bin === 'string'
+      ? packageJson.bin
+      : packageJson.bin?.agentis
+    if (binPath) return ['bun', join(packageDir, binPath), ...args]
+  } catch {
+    // Fall through to PATH lookup for global installs.
+  }
+
+  return ['agentis', ...args]
+}
+
 async function fetchAgents(): Promise<Agent[]> {
   return apiFetch('/account/agents') as Promise<Agent[]>
 }
@@ -131,11 +158,6 @@ async function resolveAgent(nameOrId: string): Promise<Agent> {
   const agent = agents.find(candidate => candidate.id === nameOrId || candidate.name === nameOrId)
   if (!agent) throw new Error(`Agent not found: ${nameOrId}`)
   return agent
-}
-
-async function agentClient(nameOrId: string): Promise<AgentisClient> {
-  const agent = await resolveAgent(nameOrId)
-  return AgentisClient.create({ apiKey: agent.apiKey, baseUrl: apiBase })
 }
 
 async function rpc<T>(url: string, method: string, params: unknown[]): Promise<T> {
@@ -154,6 +176,67 @@ async function rpc<T>(url: string, method: string, params: unknown[]): Promise<T
     await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)))
   }
   throw new Error(`RPC ${method} failed`)
+}
+
+async function getDevnetBalance(walletAddress: string, mint?: string) {
+  const native = await rpc<{ value: number }>(DEFAULT_DEVNET_RPC, 'getBalance', [
+    walletAddress,
+    { commitment: 'confirmed' },
+  ])
+  const nativeBalance = {
+    mint: SOL_MINT,
+    rawAmount: String(native.value),
+    decimals: 9,
+    amount: native.value / 1e9,
+    symbol: 'SOL',
+  }
+  if (mint === SOL_MINT) return nativeBalance
+
+  const tokensBody = await rpc<{
+    value?: Array<{
+      account?: {
+        data?: {
+          parsed?: {
+            info?: {
+              mint?: string
+              tokenAmount?: { amount?: string; decimals?: number; uiAmount?: number | null }
+            }
+          }
+        }
+      }
+    }>
+  }>(DEFAULT_DEVNET_RPC, 'getTokenAccountsByOwner', [
+    walletAddress,
+    { programId: TOKEN_PROGRAM },
+    { encoding: 'jsonParsed', commitment: 'confirmed' },
+  ])
+
+  const tokens = (tokensBody.value ?? [])
+    .map(({ account }) => {
+      const info = account?.data?.parsed?.info
+      const tokenAmount = info?.tokenAmount
+      if (!info?.mint || !tokenAmount?.amount || tokenAmount.decimals === undefined) return null
+      return {
+        mint: info.mint,
+        rawAmount: tokenAmount.amount,
+        decimals: tokenAmount.decimals,
+        amount: tokenAmount.uiAmount ?? Number(tokenAmount.amount) / 10 ** tokenAmount.decimals,
+      }
+    })
+    .filter((balance): balance is { mint: string; rawAmount: string; decimals: number; amount: number } => Boolean(balance && balance.rawAmount !== '0'))
+
+  if (mint) return tokens.find(token => token.mint === mint) ?? { mint, rawAmount: '0', decimals: 0, amount: 0 }
+  return { walletAddress, native: nativeBalance, tokens, balances: [nativeBalance, ...tokens] }
+}
+
+async function accountUmbra(agentNameOrId: string, path: string, body?: Record<string, unknown>) {
+  const agent = await resolveAgent(agentNameOrId)
+  return apiFetch(`/agents/${agent.id}/umbra${path}`, body === undefined
+    ? {}
+    : {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
 }
 
 async function getAssociatedTokenAddress(owner: string, mint: string): Promise<string> {
@@ -325,8 +408,8 @@ server.registerTool(
     },
   },
   async ({ agent, mint }) => {
-    const client = await agentClient(agent)
-    return result(mint ? await client.balance(mint) : await client.balance())
+    const resolved = await resolveAgent(agent)
+    return result(await getDevnetBalance(resolved.walletAddress, mint))
   },
 )
 
@@ -378,14 +461,12 @@ server.registerTool(
     },
   },
   async ({ agent, url, method, headers }) => {
-    const client = await agentClient(agent)
-    const response = await client.fetch(url, { method, headers })
-    const body = await response.text()
-    return result({
-      status: response.status,
-      headers: Object.fromEntries(response.headers.entries()),
-      body,
+    const resolved = await resolveAgent(agent)
+    const data = await apiFetch(`/agents/${resolved.id}/fetch`, {
+      method: 'POST',
+      body: JSON.stringify({ url, method, headers }),
     })
+    return result(data)
   },
 )
 
@@ -567,7 +648,7 @@ server.registerTool(
     description: 'Get direct Umbra registration/status for an agent.',
     inputSchema: { agent: agentRef },
   },
-  async ({ agent }) => result(await (await agentClient(agent)).privacy.status()),
+  async ({ agent }) => result(await accountUmbra(agent, '/status')),
 )
 
 server.registerTool(
@@ -582,8 +663,7 @@ server.registerTool(
     },
   },
   async ({ agent, confidential, anonymous }) => {
-    const client = await agentClient(agent)
-    return result(await client.privacy.register({ confidential, anonymous }))
+    return result(await accountUmbra(agent, '/register', { confidential, anonymous }))
   },
 )
 
@@ -594,7 +674,7 @@ server.registerTool(
     description: 'Get Umbra encrypted balance. Defaults to devnet wSOL/SOL mint.',
     inputSchema: { agent: agentRef, mint: z.string().optional() },
   },
-  async ({ agent, mint }) => result(await (await agentClient(agent)).privacy.balance({ mint })),
+  async ({ agent, mint }) => result(await accountUmbra(agent, `/balance${mint ? `?mint=${encodeURIComponent(mint)}` : ''}`)),
 )
 
 server.registerTool(
@@ -604,7 +684,7 @@ server.registerTool(
     description: 'Deposit public token balance into Umbra encrypted balance. Amount is atomic units.',
     inputSchema: { agent: agentRef, amount: z.string(), mint: z.string().optional() },
   },
-  async ({ agent, amount, mint }) => result(await (await agentClient(agent)).privacy.deposit({ amount, mint })),
+  async ({ agent, amount, mint }) => result(await accountUmbra(agent, '/deposit', { amount, mint })),
 )
 
 server.registerTool(
@@ -614,7 +694,7 @@ server.registerTool(
     description: 'Withdraw from Umbra encrypted balance to public balance. Amount is atomic units.',
     inputSchema: { agent: agentRef, amount: z.string(), mint: z.string().optional() },
   },
-  async ({ agent, amount, mint }) => result(await (await agentClient(agent)).privacy.withdraw({ amount, mint })),
+  async ({ agent, amount, mint }) => result(await accountUmbra(agent, '/withdraw', { amount, mint })),
 )
 
 server.registerTool(
@@ -629,7 +709,7 @@ server.registerTool(
       to: z.string().optional(),
     },
   },
-  async ({ agent, amount, mint, to }) => result(await (await agentClient(agent)).privacy.createUtxo({ amount, mint, to })),
+  async ({ agent, amount, mint, to }) => result(await accountUmbra(agent, '/create-utxo', { amount, mint, to })),
 )
 
 server.registerTool(
@@ -639,7 +719,7 @@ server.registerTool(
     description: 'Scan claimable Umbra UTXOs for an agent.',
     inputSchema: { agent: agentRef },
   },
-  async ({ agent }) => result(await (await agentClient(agent)).privacy.scan()),
+  async ({ agent }) => result(await accountUmbra(agent, '/scan')),
 )
 
 server.registerTool(
@@ -649,7 +729,7 @@ server.registerTool(
     description: 'Claim newest available publicReceived Umbra UTXO into encrypted balance.',
     inputSchema: { agent: agentRef },
   },
-  async ({ agent }) => result(await (await agentClient(agent)).privacy.claimLatest()),
+  async ({ agent }) => result(await accountUmbra(agent, '/claim-latest', {})),
 )
 
 server.registerTool(

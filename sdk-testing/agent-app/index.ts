@@ -7,7 +7,7 @@
  * 3. MPP direct fetch — uses local keypair with @solana/mpp client
  */
 
-import { AgentisClient } from '@agentis/sdk'
+import { AgentisClient } from '@agentis-hq/sdk'
 import { wrapFetchWithPayment, x402Client } from '@x402/fetch'
 import { ExactSvmSchemeV1 } from '@x402/svm/exact/v1/client'
 import { Mppx, solana as solanaClient } from '@solana/mpp/client'

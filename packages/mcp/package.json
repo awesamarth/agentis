@@ -4,17 +4,31 @@
   "description": "Agentis MCP server for agent wallet, payment, policy, privacy, and yield tools",
   "type": "module",
   "bin": {
-    "agentis-mcp": "./src/index.ts"
+    "agentis-mcp": "./dist/index.js"
   },
+  "exports": {
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "package.json"
+  ],
   "scripts": {
     "dev": "bun run src/index.ts",
-    "check": "bun --check src/index.ts"
+    "check": "bun --check src/index.ts",
+    "build": "tsup"
   },
   "dependencies": {
-    "@agentis/core": "workspace:*",
-    "@agentis/sdk": "workspace:*",
+    "@agentis-hq/cli": "^0.1.0",
+    "@agentis-hq/core": "^0.1.0",
+    "@agentis-hq/sdk": "^0.1.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@solana/kit": "^6.8.0",
     "zod": "^4.4.1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
   }
 }

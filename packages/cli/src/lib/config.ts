@@ -1,4 +1,4 @@
-export const API_BASE = process.env.AGENTIS_API_URL ?? 'http://localhost:3001'
+export const API_BASE = process.env.AGENTIS_API_URL ?? 'https://api.agentis.xyz'
 
 export async function apiFetch(path: string, opts: RequestInit = {}, token?: string | null): Promise<Response> {
   const headers: Record<string, string> = {

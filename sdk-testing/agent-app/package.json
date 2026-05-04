@@ -6,8 +6,8 @@
     "dev": "bun run --watch index.ts"
   },
   "dependencies": {
-    "@agentis/core": "workspace:*",
-    "@agentis/sdk": "workspace:*",
+    "@agentis-hq/core": "workspace:*",
+    "@agentis-hq/sdk": "workspace:*",
     "@scure/base": "^2.0.0",
     "@solana/kit": "^6.8.0",
     "@solana/mpp": "^0.5.2",

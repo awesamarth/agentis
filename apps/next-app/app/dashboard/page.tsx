@@ -1,6 +1,6 @@
 'use client'
 
-import { Copy, Check, Lock, Unlock } from 'lucide-react'
+import { Copy, Check, Lock, Unlock, X, RefreshCw } from 'lucide-react'
 import { usePrivy } from '@privy-io/react-auth'
 import { useEffect, useEffectEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -10,7 +10,8 @@ type Agent = {
   id: string
   name: string
   walletAddress: string
-  apiKey: string
+  apiKey?: string
+  apiKeyMasked?: string
   createdAt: string
   privacyEnabled?: boolean
   umbraStatus?: 'disabled' | 'pending' | 'registered' | 'failed'
@@ -21,8 +22,50 @@ type Agent = {
   _secretKeyBytes?: string  // JSON array of key bytes, only for guest agents
 }
 
+type EarnSweepAgent = {
+  agent: Pick<Agent, 'id' | 'name' | 'walletAddress' | 'policyMode' | 'privacyEnabled'>
+  usdcAtomic: string
+  amountUi: string
+  action: 'sweep' | 'skip'
+}
+
+type EarnSweepPlan = {
+  network: 'mainnet'
+  asset: 'USDC'
+  totalAtomic: string
+  totalUi: string
+  agents: EarnSweepAgent[]
+}
+
+type EarnSweepDeposit = {
+  agent: Pick<Agent, 'id' | 'name' | 'walletAddress'>
+  amount: string
+  ok: boolean
+  skipped?: boolean
+  error?: string
+  result?: { signature?: string }
+}
+
+type EarnAccountPositionAgent = {
+  agent: Pick<Agent, 'id' | 'name' | 'walletAddress' | 'policyMode' | 'privacyEnabled'>
+  ok: boolean
+  totalUnderlyingAtomic: string
+  totalUnderlyingUi: string
+  positions: unknown[]
+  error?: string
+}
+
+type EarnAccountPositions = {
+  network: 'mainnet'
+  asset: 'USDC'
+  totalUnderlyingAtomic: string
+  totalUnderlyingUi: string
+  agents: EarnAccountPositionAgent[]
+}
+
 const API = process.env.NEXT_PUBLIC_BACKEND_URL
 const GUEST_STORAGE_KEY = 'agentis_guest_agents'
+const EARN_SWEEP_TIMEOUT_MS = 8000
 
 function CopyAddress({ address }: { address: string }) {
   const [copied, setCopied] = useState(false)
@@ -56,6 +99,10 @@ function saveGuestAgents(agents: Agent[]) {
   localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(agents))
 }
 
+function getErrorMessage(err: unknown, fallback: string) {
+  return err instanceof Error ? err.message : fallback
+}
+
 export default function Dashboard() {
   const { ready, authenticated, getAccessToken, login } = usePrivy()
   const router = useRouter()
@@ -67,7 +114,15 @@ export default function Dashboard() {
   const [privacyEnabled, setPrivacyEnabled] = useState(false)
   const [policyMode, setPolicyMode] = useState<'backend' | 'onchain'>('backend')
   const [creating, setCreating] = useState(false)
-  const [revealedKey, setRevealedKey] = useState<string | null>(null)
+  const [revealedKey, setRevealedKey] = useState<{ agentName: string; key: string } | null>(null)
+  const [sweepPlan, setSweepPlan] = useState<EarnSweepPlan | null>(null)
+  const [sweepDeposits, setSweepDeposits] = useState<EarnSweepDeposit[] | null>(null)
+  const [sweepLoading, setSweepLoading] = useState(false)
+  const [sweepExecuting, setSweepExecuting] = useState(false)
+  const [sweepError, setSweepError] = useState<string | null>(null)
+  const [earnPositions, setEarnPositions] = useState<EarnAccountPositions | null>(null)
+  const [earnPositionsLoading, setEarnPositionsLoading] = useState(false)
+  const [earnPositionsError, setEarnPositionsError] = useState<string | null>(null)
 
   function getAgentCardClass(agent: Agent) {
     if (agent.policyMode === 'onchain') {
@@ -113,7 +168,10 @@ export default function Dashboard() {
       })
       const data = await res.json()
       setAgents(data)
-      await fetchAllBalances(data.map((a: Agent) => a.walletAddress))
+      setLoading(false)
+      void fetchAllBalances(data.map((a: Agent) => a.walletAddress))
+      void fetchSweepPlan(token)
+      void fetchEarnAccountPositions(token)
     } finally {
       setLoading(false)
     }
@@ -150,7 +208,7 @@ export default function Dashboard() {
         })
         const agent = await res.json()
         setAgents(prev => [agent, ...prev])
-        setRevealedKey(agent.apiKey)
+        setRevealedKey({ agentName: agent.name, key: agent.apiKey })
       } else {
         // Guest mode — generate extractable wallet with gill, store keypair locally
         const { generateExtractableKeyPairSigner, extractBytesFromKeyPairSigner } = await import('gill')
@@ -179,6 +237,104 @@ export default function Dashboard() {
       setCreating(false)
     }
   }
+
+  async function fetchSweepPlan(tokenInput?: string | null) {
+    if (!authenticated) return
+    setSweepLoading(true)
+    setSweepError(null)
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), EARN_SWEEP_TIMEOUT_MS)
+    try {
+      const token = tokenInput ?? await getAccessToken()
+      if (!token) return
+      const res = await fetch(`${API}/agents/earn/sweep`, {
+        headers: { authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      })
+      const body = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(body?.error ?? 'Failed to load Earn sweep plan')
+      setSweepPlan(body)
+    } catch (err: unknown) {
+      setSweepError(
+        err instanceof DOMException && err.name === 'AbortError'
+          ? 'Jupiter Earn balance check timed out. Refresh to try again.'
+          : getErrorMessage(err, 'Failed to load Earn sweep plan'),
+      )
+    } finally {
+      window.clearTimeout(timeout)
+      setSweepLoading(false)
+    }
+  }
+
+  async function fetchEarnAccountPositions(tokenInput?: string | null) {
+    if (!authenticated) return
+    setEarnPositionsLoading(true)
+    setEarnPositionsError(null)
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), EARN_SWEEP_TIMEOUT_MS)
+    try {
+      const token = tokenInput ?? await getAccessToken()
+      if (!token) return
+      const res = await fetch(`${API}/agents/earn/positions`, {
+        headers: { authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      })
+      const body = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(body?.error ?? 'Failed to load Earn positions')
+      setEarnPositions(body)
+    } catch (err: unknown) {
+      setEarnPositionsError(
+        err instanceof DOMException && err.name === 'AbortError'
+          ? 'Jupiter Earn positions timed out. Refresh to try again.'
+          : getErrorMessage(err, 'Failed to load Earn positions'),
+      )
+    } finally {
+      window.clearTimeout(timeout)
+      setEarnPositionsLoading(false)
+    }
+  }
+
+  async function executeSweep() {
+    if (!authenticated) {
+      login()
+      return
+    }
+    setSweepExecuting(true)
+    setSweepError(null)
+    setSweepDeposits(null)
+    try {
+      const token = await getAccessToken()
+      if (!token) return
+      const res = await fetch(`${API}/agents/earn/sweep`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ network: 'mainnet', asset: 'USDC' }),
+      })
+      const body = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(body?.error ?? 'Earn sweep failed')
+      setSweepDeposits(body.deposits ?? [])
+      await Promise.all([
+        fetchSweepPlan(token),
+        fetchEarnAccountPositions(token),
+      ])
+    } catch (err: unknown) {
+      setSweepError(getErrorMessage(err, 'Earn sweep failed'))
+    } finally {
+      setSweepExecuting(false)
+    }
+  }
+
+  const sweepableAgents = sweepPlan?.agents.filter(item => item.action === 'sweep') ?? []
+  const suppliedAgents = earnPositions?.agents.filter(item => BigInt(item.totalUnderlyingAtomic || '0') > 0n) ?? []
+  const earnRows = agents.map(agent => {
+    const available = sweepPlan?.agents.find(item => item.agent.id === agent.id)
+    const supplied = earnPositions?.agents.find(item => item.agent.id === agent.id)
+    return { agent, available, supplied }
+  })
+  const earnLoading = sweepLoading || earnPositionsLoading
 
   return (
     <main className="min-h-screen bg-beige">
@@ -215,22 +371,6 @@ export default function Dashboard() {
             </button>
           )}
         </div>
-
-        {/* Revealed API key banner */}
-        {revealedKey && (
-          <div className="border border-beige-darker bg-white p-5 mb-8 flex items-center justify-between gap-4">
-            <div>
-              <p className="font-mono text-[0.65rem] text-ink-muted tracking-widest mb-1 uppercase">API Key — save this, it won&apos;t be shown again</p>
-              <p className="font-mono text-sm text-black">{revealedKey}</p>
-            </div>
-            <button
-              onClick={() => { navigator.clipboard.writeText(revealedKey); setRevealedKey(null) }}
-              className="font-mono text-xs tracking-widest text-ink-muted border border-beige-darker px-4 py-2 hover:border-ink-muted transition-colors cursor-pointer shrink-0"
-            >
-              copy & dismiss
-            </button>
-          </div>
-        )}
 
         {/* Agent list */}
         {!ready || loading ? (
@@ -307,6 +447,106 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
+        )}
+
+        {ready && authenticated && agents.length > 0 && (
+          <section className="mt-10 border border-[#b8d8c0] bg-[linear-gradient(115deg,#ffffff_0%,#ffffff_64%,#eefaf0_100%)] p-5">
+            <div className="flex items-start justify-between gap-5">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <img src="/jupiter-logo.png" alt="" className="h-5 w-5 rounded-full" />
+                  <h2 className="font-mono text-sm text-black tracking-widest uppercase">Jupiter Earn</h2>
+                </div>
+                <p className="font-mono text-[0.65rem] text-ink-muted leading-relaxed">
+                  Mainnet USDC across hosted agents can be deposited into Jupiter Earn from here.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => {
+                    void fetchSweepPlan()
+                    void fetchEarnAccountPositions()
+                  }}
+                  disabled={earnLoading || sweepExecuting}
+                  className="font-mono text-[0.6rem] text-ink-muted border border-[#b8d8c0] bg-white/60 px-3 h-9 hover:border-[#79aa86] transition-colors cursor-pointer disabled:opacity-40 inline-flex items-center gap-1.5"
+                >
+                  <RefreshCw size={12} className={earnLoading ? 'animate-spin' : ''} />
+                  refresh
+                </button>
+                <button
+                  onClick={executeSweep}
+                  disabled={sweepExecuting || sweepLoading || sweepableAgents.length === 0}
+                  className="bg-black text-beige font-mono text-xs tracking-widest px-5 h-9 hover:bg-ink transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {sweepExecuting ? 'sweeping...' : 'sweep USDC'}
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 mt-5">
+              <div className="bg-white/75 border border-[#b8d8c0]/80 px-4 py-3">
+                <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">supplied</p>
+                <p className="font-mono text-sm text-black">{earnPositionsLoading && !earnPositions ? 'loading...' : `${earnPositions?.totalUnderlyingUi ?? '0'} USDC`}</p>
+              </div>
+              <div className="bg-white/75 border border-[#b8d8c0]/80 px-4 py-3">
+                <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">available</p>
+                <p className="font-mono text-sm text-black">{sweepLoading && !sweepPlan ? 'loading...' : `${sweepPlan?.totalUi ?? '0'} USDC`}</p>
+              </div>
+              <div className="bg-white/75 border border-[#b8d8c0]/80 px-4 py-3">
+                <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">agents</p>
+                <p className="font-mono text-sm text-black">
+                  {suppliedAgents.length} supplied · {sweepableAgents.length} with USDC
+                </p>
+              </div>
+            </div>
+
+            {(sweepPlan || earnPositions) && (
+              <div className="mt-4 border-t border-[#b8d8c0]/80 pt-3 space-y-2">
+                {earnRows.slice(0, 5).map(item => (
+                  <div key={item.agent.id} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4">
+                    <div className="min-w-0">
+                      <p className="font-mono text-xs text-black truncate">{item.agent.name}</p>
+                      <p className="font-mono text-[0.55rem] text-ink-muted/60 truncate">{item.agent.walletAddress}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="font-mono text-[0.55rem] text-ink-muted/60 tracking-widest uppercase">supplied</p>
+                      <p className="font-mono text-[0.65rem] text-[#2f7b46]">{item.supplied?.totalUnderlyingUi ?? '0'} USDC</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="font-mono text-[0.55rem] text-ink-muted/60 tracking-widest uppercase">available</p>
+                      <p className={`font-mono text-[0.65rem] ${item.available?.action === 'sweep' ? 'text-black' : 'text-ink-muted/50'}`}>
+                        {item.available?.amountUi ?? '0'} USDC
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                {earnRows.length > 5 && (
+                  <p className="font-mono text-[0.55rem] text-ink-muted/50 tracking-widest uppercase">
+                    + {earnRows.length - 5} more agents
+                  </p>
+                )}
+              </div>
+            )}
+
+            {(sweepError || earnPositionsError || sweepDeposits) && (
+              <div className="mt-4 border-t border-[#b8d8c0]/80 pt-3">
+                {sweepError || earnPositionsError ? (
+                  <div className="space-y-1.5">
+                    {sweepError && <p className="font-mono text-[0.65rem] text-red-700 break-all">{sweepError}</p>}
+                    {earnPositionsError && <p className="font-mono text-[0.65rem] text-red-700 break-all">{earnPositionsError}</p>}
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {sweepDeposits?.filter(item => !item.skipped).map(item => (
+                      <p key={item.agent.id} className={`font-mono text-[0.65rem] break-all ${item.ok ? 'text-ink-muted' : 'text-red-700'}`}>
+                        {item.agent.name}: {item.ok ? `deposited ${item.amount} USDC${item.result?.signature ? ` · ${item.result.signature.slice(0, 12)}...` : ''}` : item.error}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
         )}
       </div>
 
@@ -396,6 +636,62 @@ export default function Dashboard() {
                 className="font-mono text-xs tracking-widest text-ink-muted border border-beige-darker px-6 py-3 hover:border-ink-muted transition-colors cursor-pointer"
               >
                 cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* One-time API key modal */}
+      {revealedKey && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-6"
+          onClick={() => setRevealedKey(null)}
+        >
+          <div
+            className="bg-beige border border-beige-darker p-7 w-full max-w-xl shadow-[10px_10px_0_rgba(0,0,0,0.08)]"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-6 mb-5">
+              <div>
+                <p className="font-mono text-[0.6rem] text-ink-muted tracking-widest uppercase mb-2">one-time api key</p>
+                <h2 className="font-serif font-black text-2xl text-black">Save this key now.</h2>
+                <p className="font-mono text-[0.7rem] text-ink-muted tracking-widest mt-2">
+                  agent: <span className="text-black">{revealedKey.agentName}</span>
+                </p>
+              </div>
+              <button
+                onClick={() => setRevealedKey(null)}
+                className="text-ink-muted hover:text-black transition-colors cursor-pointer"
+                aria-label="close API key modal"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="font-mono text-[0.7rem] text-ink-muted leading-relaxed mb-5">
+              Agentis stores only a hash. This full key won&apos;t be shown again after you close this modal.
+            </p>
+
+            <div className="bg-white border border-beige-darker p-4 mb-5">
+              <p className="font-mono text-xs text-black break-all">{revealedKey.key}</p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(revealedKey.key)
+                  setRevealedKey(null)
+                }}
+                className="bg-black text-beige font-mono text-xs tracking-widest px-5 py-3 hover:bg-ink transition-colors cursor-pointer"
+              >
+                copy & close
+              </button>
+              <button
+                onClick={() => setRevealedKey(null)}
+                className="font-mono text-xs tracking-widest text-ink-muted border border-beige-darker px-5 py-3 hover:border-ink-muted transition-colors cursor-pointer"
+              >
+                close
               </button>
             </div>
           </div>

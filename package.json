@@ -6,9 +6,16 @@
     "packages/*",
     "sdk-testing/*"
   ],
+  "scripts": {
+    "build:packages": "bun run --filter @agentis-hq/core build && bun run --filter @agentis-hq/sdk build && bun run --filter @agentis-hq/cli build && bun run --filter @agentis-hq/mcp build",
+    "check:packages": "bun --check packages/cli/src/index.ts && bun --check packages/mcp/src/index.ts"
+  },
   "dependencies": {
     "@solana-program/compute-budget": "^0.15.0",
     "@solana/mpp": "^0.5.2",
     "mppx": "^0.5.17"
+  },
+  "devDependencies": {
+    "pptxgenjs": "^4.0.1"
   }
 }

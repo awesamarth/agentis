@@ -1,8 +1,9 @@
 import { Hono } from 'hono'
 import { privy } from '../lib/privy'
 import { PrivyClient as NodePrivyClient } from '@privy-io/node'
-import { createAgent, getAgentsByUser, getAgentById, updateAgent, updateAgentApiKey, recordTransaction, getAccountByKey } from '../lib/db'
+import { createAgent, getAgentsByUser, getAgentById, updateAgent, updateAgentApiKey, recordTransaction, getAccountByKey, getAgentApiKeySecret } from '../lib/db'
 import { randomBytes } from 'crypto'
+import { AgentisClient } from '@agentis-hq/sdk'
 import {
   Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL
 } from '@solana/web3.js'
@@ -25,6 +26,10 @@ const MAINNET_RPC = process.env.MAINNET_RPC_URL ?? 'https://api.mainnet-beta.sol
 const MAINNET_CAIP2 = 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'
 const JUPITER_LEND_API = 'https://api.jup.ag/lend/v1'
 const USDC_MAINNET_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
+const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')
+const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
+const MAINNET_RPC_TIMEOUT_MS = 7000
+const JUPITER_API_TIMEOUT_MS = 8000
 const privyNode = new NodePrivyClient({
   appId: process.env.PRIVY_APP_ID!,
   appSecret: process.env.PRIVY_APP_SECRET!,
@@ -47,6 +52,74 @@ function uiAmountToAtomic(amount: unknown, decimals = 6): string | null {
   const paddedFraction = fraction.padEnd(decimals, '0')
   const atomic = BigInt(whole) * 10n ** BigInt(decimals) + BigInt(paddedFraction || '0')
   return atomic > 0n ? atomic.toString() : null
+}
+
+function atomicToUiString(amount: bigint, decimals = 6): string {
+  const base = 10n ** BigInt(decimals)
+  const whole = amount / base
+  const fraction = amount % base
+  if (fraction === 0n) return whole.toString()
+  return `${whole}.${fraction.toString().padStart(decimals, '0').replace(/0+$/, '')}`
+}
+
+function readSplTokenAmountFromBase64(data: string): bigint {
+  const bytes = Buffer.from(data, 'base64')
+  if (bytes.length < 72) return 0n
+  return bytes.readBigUInt64LE(64)
+}
+
+function getAssociatedTokenAddress(owner: string, mint: string): string {
+  const [ata] = PublicKey.findProgramAddressSync(
+    [
+      new PublicKey(owner).toBuffer(),
+      TOKEN_PROGRAM_ID.toBuffer(),
+      new PublicKey(mint).toBuffer(),
+    ],
+    ASSOCIATED_TOKEN_PROGRAM_ID,
+  )
+  return ata.toBase58()
+}
+
+async function getMainnetUsdcBalancesAtomic(walletAddresses: string[]): Promise<Map<string, bigint>> {
+  const balances = new Map<string, bigint>()
+  const entries = walletAddresses.map(wallet => ({
+    wallet,
+    ata: getAssociatedTokenAddress(wallet, USDC_MAINNET_MINT),
+  }))
+
+  for (let i = 0; i < entries.length; i += 100) {
+    const chunk = entries.slice(i, i + 100)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), MAINNET_RPC_TIMEOUT_MS)
+    const res = await fetch(MAINNET_RPC, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getMultipleAccounts',
+        params: [
+          chunk.map(entry => entry.ata),
+          { encoding: 'base64', commitment: 'confirmed' },
+        ],
+      }),
+    }).finally(() => clearTimeout(timeout))
+    const data = await res.json() as {
+      error?: { message?: string }
+      result?: { value?: ({ data: [string, string] } | null)[] }
+    }
+    if (!res.ok || data.error) {
+      throw new Error(data.error?.message ?? `Mainnet RPC failed (${res.status})`)
+    }
+
+    for (let j = 0; j < chunk.length; j++) {
+      const account = data.result?.value?.[j]
+      balances.set(chunk[j]!.wallet, account ? readSplTokenAmountFromBase64(account.data[0]) : 0n)
+    }
+  }
+
+  return balances
 }
 
 async function buildJupiterEarnTransaction(input: {
@@ -81,12 +154,89 @@ async function fetchJupiterEarnPositions(user: string) {
   const url = new URL(`${JUPITER_LEND_API}/earn/positions`)
   url.searchParams.set('users', user)
 
-  const res = await fetch(url, { headers })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), JUPITER_API_TIMEOUT_MS)
+  const res = await fetch(url, { headers, signal: controller.signal }).finally(() => clearTimeout(timeout))
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
     throw new Error(data.message ?? data.error ?? `Jupiter Earn positions failed (${res.status})`)
   }
   return data
+}
+
+function getEarnPositionUnderlyingAtomic(position: any): bigint {
+  try {
+    return BigInt(position?.underlyingAssets ?? 0)
+  } catch {
+    return 0n
+  }
+}
+
+function getEarnPositionSharesAtomic(position: any): bigint {
+  try {
+    return BigInt(position?.shares ?? 0)
+  } catch {
+    return 0n
+  }
+}
+
+function summarizeEarnPositions(positions: any[]) {
+  const visible = positions.filter(position =>
+    getEarnPositionUnderlyingAtomic(position) > 0n || getEarnPositionSharesAtomic(position) > 0n
+  )
+  const totalUnderlyingAtomic = visible.reduce(
+    (sum, position) => sum + getEarnPositionUnderlyingAtomic(position),
+    0n,
+  )
+  return {
+    positions,
+    visiblePositions: visible,
+    totalUnderlyingAtomic,
+    totalUnderlyingUi: atomicToUiString(totalUnderlyingAtomic, 6),
+  }
+}
+
+async function depositAgentUsdcIntoEarn(agent: any, amountUi: number | string) {
+  const amountAtomic = uiAmountToAtomic(amountUi, 6)
+  if (!amountAtomic) {
+    throw new Error('amount must fit USDC decimals')
+  }
+
+  const connection = new Connection(MAINNET_RPC, 'confirmed')
+  const encoded = await buildJupiterEarnTransaction({
+    asset: USDC_MAINNET_MINT,
+    signer: agent.walletAddress,
+    amountAtomic,
+  })
+
+  const tx = await preparePrivyTransaction(
+    connection,
+    agent.walletAddress,
+    Transaction.from(Buffer.from(encoded, 'base64')),
+  )
+  const result = await privy.walletApi.solana.signAndSendTransaction({
+    walletId: agent.walletId,
+    transaction: tx,
+    caip2: MAINNET_CAIP2,
+  })
+  await confirmTransactionOrThrow(connection, result.hash, tx)
+
+  const amountNumber = Number(amountUi)
+  await recordTransaction(agent.id, {
+    txHash: result.hash,
+    amount: amountNumber,
+    amountUsd: amountNumber,
+    recipient: `jupiter-earn:${USDC_MAINNET_MINT}`,
+    timestamp: new Date().toISOString(),
+  })
+
+  return {
+    signature: result.hash,
+    network: 'mainnet',
+    asset: USDC_MAINNET_MINT,
+    amount: amountNumber,
+    amountAtomic,
+  }
 }
 
 // Middleware: verify Privy JWT or account key (agt_user_xxx)
@@ -154,6 +304,151 @@ agents.post('/', async (c) => {
   })
 
   return c.json(agent, 201)
+})
+
+// GET /agents/earn/sweep — plan sweeping all hosted agents' mainnet USDC into Jupiter Earn
+agents.get('/earn/sweep', async (c) => {
+  const userId = c.get('userId')
+  const userAgents = await getAgentsByUser(userId)
+
+  try {
+    const balances = await getMainnetUsdcBalancesAtomic(userAgents.map(agent => agent.walletAddress))
+    const agents = userAgents.map(agent => {
+      const usdcAtomic = balances.get(agent.walletAddress) ?? 0n
+      return {
+        agent: {
+          id: agent.id,
+          name: agent.name,
+          walletAddress: agent.walletAddress,
+          policyMode: agent.policyMode,
+          privacyEnabled: agent.privacyEnabled,
+        },
+        usdcAtomic: usdcAtomic.toString(),
+        amountUi: atomicToUiString(usdcAtomic, 6),
+        action: usdcAtomic > 0n ? 'sweep' : 'skip',
+      }
+    })
+    const totalAtomic = agents.reduce((sum, item) => sum + BigInt(item.usdcAtomic), 0n)
+
+    return c.json({
+      network: 'mainnet',
+      asset: 'USDC',
+      totalAtomic: totalAtomic.toString(),
+      totalUi: atomicToUiString(totalAtomic, 6),
+      agents,
+    })
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 500)
+  }
+})
+
+// POST /agents/earn/sweep — execute sweeping all hosted agents' mainnet USDC into Jupiter Earn
+agents.post('/earn/sweep', async (c) => {
+  const userId = c.get('userId')
+  const userAgents = await getAgentsByUser(userId)
+
+  try {
+    const balances = await getMainnetUsdcBalancesAtomic(userAgents.map(agent => agent.walletAddress))
+    const deposits = []
+
+    for (const agent of userAgents) {
+      const usdcAtomic = balances.get(agent.walletAddress) ?? 0n
+      if (usdcAtomic <= 0n) {
+        deposits.push({
+          agent: { id: agent.id, name: agent.name, walletAddress: agent.walletAddress },
+          amount: '0',
+          ok: true,
+          skipped: true,
+        })
+        continue
+      }
+
+      const amountUi = atomicToUiString(usdcAtomic, 6)
+      try {
+        const result = await depositAgentUsdcIntoEarn(agent, amountUi)
+        deposits.push({
+          agent: { id: agent.id, name: agent.name, walletAddress: agent.walletAddress },
+          amount: amountUi,
+          ok: true,
+          result,
+        })
+      } catch (err) {
+        deposits.push({
+          agent: { id: agent.id, name: agent.name, walletAddress: agent.walletAddress },
+          amount: amountUi,
+          ok: false,
+          error: formatSolanaTransactionError(err),
+        })
+      }
+    }
+
+    const totalAtomic = deposits.reduce((sum, item) => sum + (item.skipped ? 0n : BigInt(uiAmountToAtomic(item.amount, 6) ?? '0')), 0n)
+    return c.json({
+      network: 'mainnet',
+      asset: 'USDC',
+      totalUi: atomicToUiString(totalAtomic, 6),
+      deposits,
+    })
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 500)
+  }
+})
+
+// GET /agents/earn/positions — summarize Jupiter Earn positions across all hosted agents
+agents.get('/earn/positions', async (c) => {
+  const userId = c.get('userId')
+  const userAgents = await getAgentsByUser(userId)
+
+  const results = await Promise.all(
+    userAgents.map(async (agent) => {
+      try {
+        const positionsData = await fetchJupiterEarnPositions(agent.walletAddress)
+        const positions = Array.isArray(positionsData) ? positionsData : []
+        const summary = summarizeEarnPositions(positions)
+        return {
+          agent: {
+            id: agent.id,
+            name: agent.name,
+            walletAddress: agent.walletAddress,
+            policyMode: agent.policyMode,
+            privacyEnabled: agent.privacyEnabled,
+          },
+          ok: true,
+          totalUnderlyingAtomic: summary.totalUnderlyingAtomic.toString(),
+          totalUnderlyingUi: summary.totalUnderlyingUi,
+          positions: summary.visiblePositions,
+        }
+      } catch (err) {
+        return {
+          agent: {
+            id: agent.id,
+            name: agent.name,
+            walletAddress: agent.walletAddress,
+            policyMode: agent.policyMode,
+            privacyEnabled: agent.privacyEnabled,
+          },
+          ok: false,
+          totalUnderlyingAtomic: '0',
+          totalUnderlyingUi: '0',
+          positions: [],
+          error: formatSolanaTransactionError(err),
+        }
+      }
+    }),
+  )
+
+  const totalUnderlyingAtomic = results.reduce(
+    (sum, item) => sum + BigInt(item.totalUnderlyingAtomic),
+    0n,
+  )
+
+  return c.json({
+    network: 'mainnet',
+    asset: 'USDC',
+    totalUnderlyingAtomic: totalUnderlyingAtomic.toString(),
+    totalUnderlyingUi: atomicToUiString(totalUnderlyingAtomic, 6),
+    agents: results,
+  })
 })
 
 // POST /agents/:id/privacy/register — register a funded agent wallet with Umbra
@@ -315,6 +610,73 @@ agents.get('/:id/transactions', async (c) => {
   return c.json(agent.transactions ?? [])
 })
 
+// POST /agents/:id/fetch — account/JWT-auth paid fetch without exposing the agent API key
+agents.post('/:id/fetch', async (c) => {
+  const userId = c.get('userId')
+  const agent = await getAgentById(c.req.param('id'))
+  if (!agent || agent.userId !== userId) {
+    return c.json({ error: 'Not found' }, 404)
+  }
+
+  const apiKey = await getAgentApiKeySecret(agent.id)
+  if (!apiKey) return c.json({ error: 'Agent API key secret is missing. Regenerate the agent key.' }, 409)
+
+  const { url, method, headers, body } = await c.req.json()
+  if (!url) return c.json({ error: 'url is required' }, 400)
+
+  try {
+    const origin = new URL(c.req.url).origin
+    const client = await AgentisClient.create({ apiKey, baseUrl: origin })
+    const response = await client.fetch(url, {
+      method: method ?? 'GET',
+      headers: headers ?? {},
+      ...(body ? { body: typeof body === 'string' ? body : JSON.stringify(body) } : {}),
+    })
+    const responseBody = await response.text()
+    return c.json({
+      status: response.status,
+      headers: Object.fromEntries(response.headers.entries()),
+      body: responseBody,
+    })
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? 'Fetch failed' }, 500)
+  }
+})
+
+// /agents/:id/umbra/* — account/JWT-auth Umbra proxy without exposing the agent API key
+agents.all('/:id/umbra/*', async (c) => {
+  const userId = c.get('userId')
+  const id = c.req.param('id')
+  const agent = await getAgentById(id)
+  if (!agent || agent.userId !== userId) {
+    return c.json({ error: 'Not found' }, 404)
+  }
+
+  const apiKey = await getAgentApiKeySecret(agent.id)
+  if (!apiKey) return c.json({ error: 'Agent API key secret is missing. Regenerate the agent key.' }, 409)
+
+  const url = new URL(c.req.url)
+  const marker = `/agents/${id}/umbra`
+  const path = `${url.pathname.slice(url.pathname.indexOf(marker) + marker.length)}${url.search}`
+  const origin = url.origin
+  const method = c.req.method
+  const body = method === 'GET' || method === 'HEAD' ? undefined : await c.req.text()
+
+  const res = await fetch(`${origin}/umbra${path}`, {
+    method,
+    headers: {
+      'content-type': c.req.header('content-type') ?? 'application/json',
+      'x-api-key': apiKey,
+    },
+    body,
+  })
+  const text = await res.text()
+  return new Response(text, {
+    status: res.status,
+    headers: { 'content-type': res.headers.get('content-type') ?? 'application/json' },
+  })
+})
+
 // POST /agents/:id/earn/deposit — mainnet Jupiter Earn deposit
 agents.post('/:id/earn/deposit', async (c) => {
   const userId = c.get('userId')
@@ -345,41 +707,36 @@ agents.post('/:id/earn/deposit', async (c) => {
   if (!amountAtomic) {
     return c.json({ error: 'amount must fit USDC decimals' }, 400)
   }
-  const connection = new Connection(MAINNET_RPC, 'confirmed')
 
   try {
-    const encoded = await buildJupiterEarnTransaction({
-      asset,
-      signer: agent.walletAddress,
-      amountAtomic,
-    })
+    return c.json(await depositAgentUsdcIntoEarn(agent, body.amount))
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 500)
+  }
+})
 
-    const tx = await preparePrivyTransaction(
-      connection,
-      agent.walletAddress,
-      Transaction.from(Buffer.from(encoded, 'base64')),
-    )
-    const result = await privy.walletApi.solana.signAndSendTransaction({
-      walletId: agent.walletId,
-      transaction: tx,
-      caip2: MAINNET_CAIP2,
-    })
-    await confirmTransactionOrThrow(connection, result.hash, tx)
+// GET /agents/:id/earn/balance — mainnet USDC available for Jupiter Earn
+agents.get('/:id/earn/balance', async (c) => {
+  const userId = c.get('userId')
+  const agent = await getAgentById(c.req.param('id'))
+  if (!agent || agent.userId !== userId) {
+    return c.json({ error: 'Not found' }, 404)
+  }
 
-    await recordTransaction(agent.id, {
-      txHash: result.hash,
-      amount: amountUi,
-      amountUsd: amountUi,
-      recipient: `jupiter-earn:${asset}`,
-      timestamp: new Date().toISOString(),
-    })
+  const network = c.req.query('network') ?? 'mainnet'
+  if (network !== 'mainnet') {
+    return c.json({ error: 'Jupiter Earn is mainnet-only for now' }, 400)
+  }
 
+  try {
+    const balances = await getMainnetUsdcBalancesAtomic([agent.walletAddress])
+    const amountAtomic = balances.get(agent.walletAddress) ?? 0n
     return c.json({
-      signature: result.hash,
       network: 'mainnet',
-      asset,
-      amount: amountUi,
-      amountAtomic,
+      asset: 'USDC',
+      walletAddress: agent.walletAddress,
+      amountAtomic: amountAtomic.toString(),
+      amountUi: atomicToUiString(amountAtomic, 6),
     })
   } catch (err) {
     return c.json({ error: formatSolanaTransactionError(err) }, 500)

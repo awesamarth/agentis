@@ -13,5 +13,5 @@ export type {
   UmbraRegisterOptions,
   UmbraResponse,
 } from './types'
-export type { Policy, AgentInfo } from '@agentis/core'
-export { KillSwitchError, PolicyError, InsufficientFundsError, PaymentError, AgentisError } from '@agentis/core'
+export type { Policy, AgentInfo } from '@agentis-hq/core'
+export { KillSwitchError, PolicyError, InsufficientFundsError, PaymentError, AgentisError } from '@agentis-hq/core'

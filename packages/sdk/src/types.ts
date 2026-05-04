@@ -1,6 +1,6 @@
 // Re-export from core for SDK consumers
-export type { Policy, AgentInfo, TxRecord, SpendRecord } from '@agentis/core'
-export { AgentisError, KillSwitchError, PolicyError, InsufficientFundsError, PaymentError } from '@agentis/core'
+export type { Policy, AgentInfo, TxRecord, SpendRecord } from '@agentis-hq/core'
+export { AgentisError, KillSwitchError, PolicyError, InsufficientFundsError, PaymentError } from '@agentis-hq/core'
 
 // SDK-specific types
 export type AgentisConfig = {

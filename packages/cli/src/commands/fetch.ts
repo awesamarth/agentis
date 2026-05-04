@@ -1,6 +1,5 @@
-import { AgentisClient } from '@agentis/sdk'
 import { getToken } from '../lib/keychain'
-import { API_BASE } from '../lib/config'
+import { apiFetch } from '../lib/config'
 import { resolveAccountAgent } from '../lib/account'
 
 function getFlag(args: string[], flag: string): string | undefined {
@@ -29,17 +28,17 @@ export async function paidFetch(args: string[]) {
   }
 
   const agent = await resolveHostedAgent(agentName, token)
-  const client = await AgentisClient.create({
-    apiKey: agent.apiKey,
-    baseUrl: API_BASE,
-    onPayment: (payment) => {
-      console.log(`paid ${payment.amount} ${payment.currency} via ${payment.protocol}`)
-    },
-  })
+  const res = await apiFetch(`/agents/${agent.id}/fetch`, {
+    method: 'POST',
+    body: JSON.stringify({ url, method }),
+  }, token)
+  const data = await res.json().catch(() => ({}))
 
-  const response = await client.fetch(url, { method })
-  const body = await response.text()
+  if (!res.ok) {
+    console.error('Fetch failed:', data.error ?? res.statusText)
+    process.exit(1)
+  }
 
-  console.log(`status ${response.status}`)
-  if (body) console.log(body)
+  console.log(`status ${data.status}`)
+  if (data.body) console.log(data.body)
 }

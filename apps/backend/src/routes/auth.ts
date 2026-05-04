@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { privy } from '../lib/privy'
-import { createLoginSession, getLoginSession, completeLoginSession, createOrUpdateAccount } from '../lib/db'
+import { createLoginSession, getLoginSession, completeLoginSession, createOrUpdateAccount, getLoginSessionAccountKey } from '../lib/db'
 import { randomBytes } from 'crypto'
 
 const auth = new Hono()
@@ -27,7 +27,9 @@ auth.get('/session/:id', async (c) => {
   }
 
   if (session.status === 'complete') {
-    return c.json({ status: 'complete', accountKey: session.accountKey })
+    const accountKey = await getLoginSessionAccountKey(session.id)
+    if (!accountKey) return c.json({ error: 'Session key expired' }, 410)
+    return c.json({ status: 'complete', accountKey })
   }
 
   return c.json({ status: 'pending' })

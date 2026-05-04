@@ -72,6 +72,20 @@ async function renderTemplateDir(sourceDir: string, targetDir: string, values: R
   }
 }
 
+function facilitatorTemplateDir(): string {
+  const candidates = [
+    // Source layout: packages/cli/src/commands -> packages/cli/templates
+    join(import.meta.dir, '../../templates/facilitator'),
+    // Published layout: packages/cli/dist -> packages/cli/templates
+    join(import.meta.dir, '../templates/facilitator'),
+  ]
+  const found = candidates.find(candidate => existsSync(candidate))
+  if (!found) {
+    throw new Error('Could not locate facilitator template directory in the Agentis CLI package')
+  }
+  return found
+}
+
 export async function facilitatorCommand(args: string[]) {
   const sub = args[0]
   switch (sub) {
@@ -125,7 +139,7 @@ async function facilitatorCreate(args: string[]) {
   }
 
   const facilitator = await res.json()
-  const templateDir = join(import.meta.dir, '../../templates/facilitator')
+  const templateDir = facilitatorTemplateDir()
   const koraApiKey = 'kora_' + randomBytes(24).toString('hex')
 
   await renderTemplateDir(templateDir, targetDir, {

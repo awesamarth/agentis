@@ -1,4 +1,4 @@
-import { AgentisClient } from '@agentis/sdk'
+import { AgentisClient } from '@agentis-hq/sdk'
 
 const BURN_ADDRESS = '5yDpyuSofQARocCtzkrHaEeRjSBTuYTPPna1aeZjqUB6'
 const API_KEY = process.env.AGENTIS_API_KEY!

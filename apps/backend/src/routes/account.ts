@@ -48,8 +48,7 @@ account.get('/key', async (c) => {
   const userId = c.get('userId')
   const acc = await getAccountByUserId(userId)
   if (!acc) return c.json({ accountKey: null })
-  const masked = acc.accountKey.slice(0, 13) + '••••••••' + acc.accountKey.slice(-4)
-  return c.json({ accountKey: masked })
+  return c.json({ accountKey: acc.accountKeyMasked ?? null })
 })
 
 // POST /account/key — generate or regenerate account key — JWT only
