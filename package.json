@@ -7,6 +7,8 @@
     "sdk-testing/*"
   ],
   "scripts": {
+    "build:backend-deps": "bun run --filter @agentis-hq/core build && bun run --filter @agentis-hq/sdk build",
+    "backend:start": "bun run build:backend-deps && cd apps/backend && bun run index.ts",
     "build:packages": "bun run --filter @agentis-hq/core build && bun run --filter @agentis-hq/sdk build && bun run --filter @agentis-hq/cli build && bun run --filter @agentis-hq/mcp build",
     "check:packages": "bun --check packages/cli/src/index.ts && bun --check packages/mcp/src/index.ts"
   },

@@ -4,7 +4,7 @@ import { usePrivy } from '@privy-io/react-auth'
 import { useSearchParams } from 'next/navigation'
 import { Suspense, useEffect, useState } from 'react'
 
-const API = process.env.NEXT_PUBLIC_BACKEND_URL
+const API = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'https://api.agentis.systems'
 
 function CliAuthContent() {
   const { ready, authenticated, login, getAccessToken } = usePrivy()

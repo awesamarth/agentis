@@ -31,3 +31,6 @@ UMBRA.txt
 mpp.txt
 quasar.txt
 x402.txt
+
+# Local MCP config
+.mcp.json

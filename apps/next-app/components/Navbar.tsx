@@ -2,11 +2,9 @@
 
 import { usePrivy } from '@privy-io/react-auth'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 
 export default function Navbar({ showCrumb }: { showCrumb?: string }) {
   const { ready, authenticated, user, login, logout } = usePrivy()
-  const router = useRouter()
 
   return (
     <nav className="flex items-center justify-between px-12 py-6 border-b border-beige-darker">
@@ -23,6 +21,12 @@ export default function Navbar({ showCrumb }: { showCrumb?: string }) {
       </div>
 
       <div className="flex items-center gap-6">
+        <Link href="/dashboard" className="font-mono text-xs text-ink-muted tracking-widest hover:text-ink transition-colors">
+          dashboard
+        </Link>
+        <Link href="/facilitators" className="font-mono text-xs text-ink-muted tracking-widest hover:text-ink transition-colors">
+          facilitators
+        </Link>
         {ready && authenticated ? (
           <>
             <Link href="/dashboard/profile" className="font-mono text-xs text-ink-muted tracking-wide hover:text-ink transition-colors">

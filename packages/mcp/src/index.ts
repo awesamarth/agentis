@@ -9,7 +9,7 @@ import { checkPolicy } from '@agentis-hq/core'
 import { address, getAddressEncoder, getProgramDerivedAddress } from '@solana/kit'
 import { z } from 'zod'
 
-const DEFAULT_API_BASE = 'https://api.agentis.xyz'
+const DEFAULT_API_BASE = 'https://api.agentis.systems'
 const DEFAULT_DEVNET_RPC = 'https://api.devnet.solana.com'
 const DEFAULT_MAINNET_RPC = 'https://api.mainnet-beta.solana.com'
 const USDC_MAINNET_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'

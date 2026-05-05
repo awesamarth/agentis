@@ -20,7 +20,7 @@ import {
   SOL_MINT,
 } from './payment'
 
-const DEFAULT_BASE_URL = 'https://api.agentis.xyz'
+const DEFAULT_BASE_URL = 'https://api.agentis.systems'
 const SOLANA_DEVNET_RPC = 'https://api.devnet.solana.com'
 const UMBRA_SOL_MINT = SOL_MINT
 const TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'

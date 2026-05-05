@@ -20,8 +20,8 @@
     "check": "bun --check src/index.ts"
   },
   "dependencies": {
-    "@agentis-hq/core": "^0.1.0",
-    "@agentis-hq/sdk": "^0.1.0",
+    "@agentis-hq/core": "workspace:*",
+    "@agentis-hq/sdk": "workspace:*",
     "@napi-rs/keyring": "^1.2.0",
     "@noble/ciphers": "^2.2.0",
     "@noble/curves": "^2.2.0",

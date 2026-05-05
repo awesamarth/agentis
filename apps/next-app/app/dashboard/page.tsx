@@ -63,7 +63,7 @@ type EarnAccountPositions = {
   agents: EarnAccountPositionAgent[]
 }
 
-const API = process.env.NEXT_PUBLIC_BACKEND_URL
+const API = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'https://api.agentis.systems'
 const GUEST_STORAGE_KEY = 'agentis_guest_agents'
 const EARN_SWEEP_TIMEOUT_MS = 8000
 

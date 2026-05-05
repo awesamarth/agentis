@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 
-const API = process.env.NEXT_PUBLIC_BACKEND_URL
+const API = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'https://api.agentis.systems'
 const DEVNET_RPC = 'https://api.devnet.solana.com'
 const DEVNET_EXPLORER = 'https://explorer.solana.com/tx'
 const GUEST_STORAGE_KEY = 'agentis_guest_agents'

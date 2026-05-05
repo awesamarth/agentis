@@ -19,9 +19,9 @@
     "build": "tsup"
   },
   "dependencies": {
-    "@agentis-hq/cli": "^0.1.0",
-    "@agentis-hq/core": "^0.1.0",
-    "@agentis-hq/sdk": "^0.1.0",
+    "@agentis-hq/cli": "workspace:*",
+    "@agentis-hq/core": "workspace:*",
+    "@agentis-hq/sdk": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@solana/kit": "^6.8.0",
     "zod": "^4.4.1"

@@ -10,7 +10,7 @@ import {
   PieChart, Pie, Cell, Legend,
 } from 'recharts'
 
-const API = process.env.NEXT_PUBLIC_BACKEND_URL
+const API = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'https://api.agentis.systems'
 
 type TxRecord = {
   txHash: string

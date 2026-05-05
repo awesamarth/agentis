@@ -77,8 +77,8 @@
         "agentis": "./dist/index.js",
       },
       "dependencies": {
-        "@agentis-hq/core": "^0.1.0",
-        "@agentis-hq/sdk": "^0.1.0",
+        "@agentis-hq/core": "workspace:*",
+        "@agentis-hq/sdk": "workspace:*",
         "@napi-rs/keyring": "^1.2.0",
         "@noble/ciphers": "^2.2.0",
         "@noble/curves": "^2.2.0",
@@ -110,9 +110,9 @@
         "agentis-mcp": "./dist/index.js",
       },
       "dependencies": {
-        "@agentis-hq/cli": "^0.1.0",
-        "@agentis-hq/core": "^0.1.0",
-        "@agentis-hq/sdk": "^0.1.0",
+        "@agentis-hq/cli": "workspace:*",
+        "@agentis-hq/core": "workspace:*",
+        "@agentis-hq/sdk": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.29.0",
         "@solana/kit": "^6.8.0",
         "zod": "^4.4.1",
@@ -127,7 +127,7 @@
       "name": "@agentis-hq/sdk",
       "version": "0.1.0",
       "dependencies": {
-        "@agentis-hq/core": "^0.1.0",
+        "@agentis-hq/core": "workspace:*",
         "@solana/kit": "^2.1.0",
         "@solana/mpp": "^0.5.2",
         "gill": "^0.14.0",

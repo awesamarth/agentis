@@ -162,7 +162,7 @@ const DEFAULT_POLICY: Policy = {
   killSwitch: false,
 }
 
-const API = process.env.NEXT_PUBLIC_BACKEND_URL
+const API = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'https://api.agentis.systems'
 const UMBRA_SOL_MINT = 'So11111111111111111111111111111111111111112'
 const DEVNET_RPC = 'https://api.devnet.solana.com'
 const SYSTEM_PROGRAM_ADDRESS = '11111111111111111111111111111111'

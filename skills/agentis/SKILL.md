@@ -14,7 +14,7 @@ Use Agentis when the task involves agent wallets, autonomous payments, x402/MPP 
 The default hosted API is:
 
 ```txt
-https://api.agentis.xyz
+https://api.agentis.systems
 ```
 
 For local development, set:
