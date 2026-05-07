@@ -9,6 +9,7 @@ import {
 } from '@solana/web3.js'
 import { solToUsd } from '../lib/price'
 import { registerPrivyWalletWithUmbra } from '../lib/umbra-registration'
+import umbra from './umbra'
 import {
   createCheckAndRecordSpendInstruction,
   confirmTransactionOrThrow,
@@ -604,6 +605,8 @@ agents.post('/:id/privacy/register', async (c) => {
 })
 
 async function proxyUmbraForAgent(c: any, id: string, path: string, method: 'GET' | 'POST') {
+  console.log('[agents/umbra/proxy]', { id, path, method })
+
   const userId = c.get('userId')
   const agent = await getAgentById(id)
   if (!agent || agent.userId !== userId) {
@@ -613,17 +616,18 @@ async function proxyUmbraForAgent(c: any, id: string, path: string, method: 'GET
   const apiKey = await getAgentApiKeySecret(agent.id)
   if (!apiKey) return c.json({ error: 'Agent API key secret is missing. Regenerate the agent key.' }, 409)
 
-  const url = new URL(c.req.url)
-  const body = method === 'GET' || method === 'HEAD' ? undefined : await c.req.text()
+  const sourceUrl = new URL(c.req.url)
+  const body = method === 'GET' ? undefined : await c.req.text()
+  const internalUrl = new URL(`${path}${sourceUrl.search}`, 'http://agentis.internal')
 
-  const res = await fetch(`${url.origin}/umbra${path}${url.search}`, {
+  const res = await umbra.fetch(new Request(internalUrl, {
     method,
     headers: {
       'content-type': c.req.header('content-type') ?? 'application/json',
       'x-api-key': apiKey,
     },
     body,
-  })
+  }))
   const text = await res.text()
   return new Response(text, {
     status: res.status,
