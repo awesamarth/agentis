@@ -603,7 +603,7 @@ agents.post('/:id/privacy/register', async (c) => {
   }
 })
 
-async function proxyUmbraForAgent(c: any, id: string, path: string) {
+async function proxyUmbraForAgent(c: any, id: string, path: string, method: 'GET' | 'POST') {
   const userId = c.get('userId')
   const agent = await getAgentById(id)
   if (!agent || agent.userId !== userId) {
@@ -614,7 +614,6 @@ async function proxyUmbraForAgent(c: any, id: string, path: string) {
   if (!apiKey) return c.json({ error: 'Agent API key secret is missing. Regenerate the agent key.' }, 409)
 
   const url = new URL(c.req.url)
-  const method = c.req.raw.method
   const body = method === 'GET' || method === 'HEAD' ? undefined : await c.req.text()
 
   const res = await fetch(`${url.origin}/umbra${path}${url.search}`, {
@@ -632,14 +631,14 @@ async function proxyUmbraForAgent(c: any, id: string, path: string) {
   })
 }
 
-agents.get('/:id/umbra/status', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/status'))
-agents.post('/:id/umbra/register', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/register'))
-agents.get('/:id/umbra/balance', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/balance'))
-agents.post('/:id/umbra/deposit', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/deposit'))
-agents.post('/:id/umbra/withdraw', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/withdraw'))
-agents.post('/:id/umbra/create-utxo', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/create-utxo'))
-agents.get('/:id/umbra/scan', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/scan'))
-agents.post('/:id/umbra/claim-latest', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/claim-latest'))
+agents.get('/:id/umbra/status', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/status', 'GET'))
+agents.post('/:id/umbra/register', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/register', 'POST'))
+agents.get('/:id/umbra/balance', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/balance', 'GET'))
+agents.post('/:id/umbra/deposit', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/deposit', 'POST'))
+agents.post('/:id/umbra/withdraw', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/withdraw', 'POST'))
+agents.post('/:id/umbra/create-utxo', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/create-utxo', 'POST'))
+agents.get('/:id/umbra/scan', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/scan', 'GET'))
+agents.post('/:id/umbra/claim-latest', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/claim-latest', 'POST'))
 
 // GET /agents/:id — get single agent (owner only)
 agents.get('/:id', async (c) => {
@@ -793,40 +792,6 @@ agents.post('/:id/fetch', async (c) => {
   } catch (err: any) {
     return c.json({ error: err?.message ?? 'Fetch failed' }, 500)
   }
-})
-
-// /agents/:id/umbra/* — account/JWT-auth Umbra proxy without exposing the agent API key
-agents.all('/:id/umbra/*', async (c) => {
-  const userId = c.get('userId')
-  const id = c.req.param('id')
-  const agent = await getAgentById(id)
-  if (!agent || agent.userId !== userId) {
-    return c.json({ error: 'Not found' }, 404)
-  }
-
-  const apiKey = await getAgentApiKeySecret(agent.id)
-  if (!apiKey) return c.json({ error: 'Agent API key secret is missing. Regenerate the agent key.' }, 409)
-
-  const url = new URL(c.req.url)
-  const marker = `/agents/${id}/umbra`
-  const path = `${url.pathname.slice(url.pathname.indexOf(marker) + marker.length)}${url.search}`
-  const origin = url.origin
-  const method = c.req.raw.method
-  const body = method === 'GET' || method === 'HEAD' ? undefined : await c.req.text()
-
-  const res = await fetch(`${origin}/umbra${path}`, {
-    method,
-    headers: {
-      'content-type': c.req.header('content-type') ?? 'application/json',
-      'x-api-key': apiKey,
-    },
-    body,
-  })
-  const text = await res.text()
-  return new Response(text, {
-    status: res.status,
-    headers: { 'content-type': res.headers.get('content-type') ?? 'application/json' },
-  })
 })
 
 // POST /agents/:id/earn/deposit — mainnet Jupiter Earn deposit
