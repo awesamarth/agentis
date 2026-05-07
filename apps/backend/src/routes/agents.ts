@@ -614,7 +614,7 @@ async function proxyUmbraForAgent(c: any, id: string, path: string) {
   if (!apiKey) return c.json({ error: 'Agent API key secret is missing. Regenerate the agent key.' }, 409)
 
   const url = new URL(c.req.url)
-  const method = c.req.method
+  const method = c.req.raw.method
   const body = method === 'GET' || method === 'HEAD' ? undefined : await c.req.text()
 
   const res = await fetch(`${url.origin}/umbra${path}${url.search}`, {
@@ -811,7 +811,7 @@ agents.all('/:id/umbra/*', async (c) => {
   const marker = `/agents/${id}/umbra`
   const path = `${url.pathname.slice(url.pathname.indexOf(marker) + marker.length)}${url.search}`
   const origin = url.origin
-  const method = c.req.method
+  const method = c.req.raw.method
   const body = method === 'GET' || method === 'HEAD' ? undefined : await c.req.text()
 
   const res = await fetch(`${origin}/umbra${path}`, {
