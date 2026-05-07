@@ -1,0 +1,114 @@
+---
+title: Quick Start
+description: Create an Agentis account, create an agent wallet, and use it from dashboard, CLI, SDK, or MCP.
+---
+
+Agentis gives AI agents Solana wallets with payments, policy enforcement, privacy, and yield.
+
+The shortest path is:
+
+1. Create an Agentis account.
+2. Create an agent wallet.
+3. Use that wallet from the dashboard, CLI, SDK, or MCP.
+4. Add spend limits before the agent starts paying for real work.
+
+## 1. Create an account
+
+Open the [Agentis dashboard](https://agentis.systems/dashboard) and sign in.
+
+The dashboard is the easiest place to create hosted agent wallets, inspect balances, set policy limits, and view transaction history.
+
+## 2. Create an agent wallet
+
+From the dashboard, create a new agent.
+
+Or from the CLI:
+
+```bash
+npx @agentis-hq/cli login
+npx @agentis-hq/cli wallet create --name my-agent
+```
+
+Agentis returns:
+
+- a Solana wallet address for the agent
+- an agent API key for SDK usage
+- account-level access for CLI and MCP
+
+Full keys are shown only when created or regenerated. Agentis stores key hashes and masked metadata, not plaintext API keys in normal account reads.
+
+## 3. Use the agent anywhere
+
+### Dashboard
+
+Use the [Agentis dashboard](https://agentis.systems/dashboard) when a human is operating the account.
+
+You can create agents, fund wallets, set policy limits, deposit into Jupiter Earn, register Umbra, and inspect transactions.
+
+### CLI
+
+Use the CLI for local workflows and scripts:
+
+```bash
+npx @agentis-hq/cli agent list
+npx @agentis-hq/cli fetch https://example.com/paid-data --agent my-agent
+```
+
+### SDK
+
+Use the SDK inside your app or agent runtime:
+
+```ts
+import { AgentisClient } from '@agentis-hq/sdk'
+
+const agentis = await AgentisClient.create({
+  apiKey: process.env.AGENTIS_API_KEY!,
+})
+
+const res = await agentis.fetch('https://example.com/paid-data')
+const data = await res.json()
+```
+
+### MCP
+
+Use MCP when your coding agent or local assistant should operate Agentis tools:
+
+```json
+{
+  "mcpServers": {
+    "agentis": {
+      "command": "agentis-mcp",
+      "env": {
+        "AGENTIS_ACCOUNT_KEY": "agt_user_..."
+      }
+    }
+  }
+}
+```
+
+## 4. Set policy before spending
+
+Set limits from the dashboard or CLI:
+
+```bash
+npx @agentis-hq/cli policy set my-agent --max-per-tx 1 --daily 10 --budget 100
+```
+
+Policies are USD-denominated. Agentis checks policy before signing or proxying payments.
+
+## 5. Pay for work
+
+Agentis can pay MPP and x402 protected URLs:
+
+```bash
+npx @agentis-hq/cli fetch https://example.com/paid-data --agent my-agent
+```
+
+The SDK exposes the same flow through `client.fetch(url)`.
+
+## What next?
+
+- Use the **CLI** section for wallet, policy, earn, privacy, and facilitator commands.
+- Use the **SDK** section to integrate Agentis into an app or agent runtime.
+- Use the **MCP** section to connect Agentis tools to local AI agents.
+- Use **Guides** for placeholders that will become deeper walkthroughs.

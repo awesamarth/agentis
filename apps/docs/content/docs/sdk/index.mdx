@@ -1,0 +1,82 @@
+---
+title: SDK
+description: Use the Agentis SDK to let apps and agents pay, send, update policy, and use privacy routes.
+---
+
+The SDK is for apps and agent runtimes that need programmatic access to an Agentis wallet.
+
+## Install
+
+```bash
+npm install @agentis-hq/sdk
+```
+
+## Create a client
+
+```ts
+import { AgentisClient } from '@agentis-hq/sdk'
+
+const agentis = await AgentisClient.create({
+  apiKey: process.env.AGENTIS_API_KEY!,
+})
+```
+
+Agent API keys are available from the dashboard when you create or regenerate an agent.
+
+## Paid fetch
+
+```ts
+const res = await agentis.fetch('https://example.com/paid-data')
+const data = await res.json()
+```
+
+Agentis detects MPP and x402 payment requests, checks policy, and pays through the backend signing path.
+
+## Direct send
+
+```ts
+const signature = await agentis.send(
+  'recipient-solana-wallet',
+  0.01,
+)
+```
+
+For on-chain policy agents, direct SOL sends route through the backend Quasar policy path.
+
+## Policy
+
+```ts
+const policy = await agentis.policy.get()
+
+await agentis.policy.update({
+  maxPerTx: 1,
+  dailyLimit: 10,
+  allowedDomains: ['example.com'],
+})
+```
+
+Policy amounts are USD-denominated.
+
+## Privacy
+
+```ts
+await agentis.privacy.status()
+await agentis.privacy.register()
+await agentis.privacy.balance()
+await agentis.privacy.deposit({ amount: '1000000' })
+await agentis.privacy.scan()
+await agentis.privacy.claimLatest()
+```
+
+Umbra support is scoped to hosted agent wallets.
+
+## API URL
+
+The SDK defaults to the hosted Agentis API. Use `baseUrl` for local or staging backends:
+
+```ts
+const agentis = await AgentisClient.create({
+  apiKey: process.env.AGENTIS_API_KEY!,
+  baseUrl: 'http://localhost:3001',
+})
+```

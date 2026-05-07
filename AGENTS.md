@@ -352,20 +352,18 @@ Do not casually mutate `leno` privacy flags; it is useful as a stable funded tes
 ## What Is Left
 
 Near-term:
-1. Backend persistence: current JSON DB + key secret files are the biggest deployment risk. For Railway, either use a persistent volume as a short-term bridge or move to Postgres before public launch. Proper answer is Postgres.
-2. Backend deployment config: Railway-ready env vars, stable `PORT`, CORS with dashboard domains, Privy config, stable `API_KEY_HASH_SECRET`, RPC URLs, Jupiter key, Umbra assumptions, and data storage path.
-3. Dashboard deployment config: `NEXT_PUBLIC_BACKEND_URL` must point to the deployed backend. Privy app settings/callback origins need the deployed dashboard URL.
-4. Facilitator network page: backend already exposes public `GET /facilitators/explore`. Add frontend `/facilitators` or `/network` showing listed facilitators, heartbeat/status, URL, fee, network, and mint.
-5. Package publishing: package setup is publish-ready, but actual npm publish still needs org/access check for `@agentis-hq`, publish order `core -> sdk -> cli -> mcp`, likely `--access public`, then test `bunx @agentis-hq/cli` / `npx @agentis-hq/cli` after publish.
-6. Skill install path: `skills/agentis/SKILL.md` exists. Test from GitHub once pushed, likely with `npx skills add agentis-hq/agentis --skill agentis` or the repo-specific equivalent.
-7. CLI login/deployed API flow: after backend deploy, verify `agentis login`, `wallet create`, `agent list`, `fetch`, and `earn positions` against the deployed API.
-8. MCP installed package flow: verify `agentis-mcp` from npm works with only `AGENTIS_ACCOUNT_KEY=agt_user_...` and has no local repo path assumptions.
-9. CORS/security hardening: dashboard/account routes should allow deployed frontend origin, localhost dev, and possibly preview URLs. SDK/public routes need intentional broader CORS. Avoid global `*` on authenticated dashboard/account routes.
-10. Production API defaults: CLI/MCP default to `https://api.agentis.xyz`; that domain must exist or defaults must temporarily point to the deployed Railway backend.
+1. Vercel/dashboard production check: backend is live at `https://api.agentis.systems`; make sure the deployed dashboard has `NEXT_PUBLIC_BACKEND_URL=https://api.agentis.systems`, then verify login, agent list, agent detail, Jupiter Earn, Umbra controls, and `/facilitators`.
+2. Package publishing: package setup is publish-ready, but actual npm publish still needs org/access check for `@agentis-hq`, publish order `core -> sdk -> cli -> mcp`, likely `--access public`, then test `bun x @agentis-hq/cli` / `npx @agentis-hq/cli` after publish.
+3. Skill install path: `skills/agentis/SKILL.md` exists. Test from GitHub once pushed, likely with `npx skills add agentis-hq/agentis --skill agentis` or the repo-specific equivalent.
+4. CLI deployed API flow: defaults now point to `https://api.agentis.systems`; verify `agentis login`, `wallet create`, `agent list`, `fetch`, and `earn positions` against production.
+5. MCP installed package flow: verify `agentis-mcp` from npm works with only `AGENTIS_ACCOUNT_KEY=agt_user_...` and has no local repo path assumptions.
+6. Facilitator live demo polish: public `/facilitators` page exists and backend exposes `GET /facilitators/explore`; remaining work is a hosted facilitator, docs polish, and seller onboarding/top-up UX.
+7. Demo scripting: lock the Colosseum pitch/demo path for Earn, facilitator discovery, on-chain policy, Umbra, CLI/MCP, and fallback flows.
 
 Medium-term:
 - Add richer on-chain policy visibility, including current configured limits decoded from the policy PDA.
-- DB admin/ops tooling and observability.
+- Replace Railway JSON-volume storage with a real database, plus DB admin/ops tooling and observability.
+- Exportable self-custodial agent wallets using Privy key quorums, so users can export agent wallet private keys while Agentis can still authorize agent actions server-side.
 - x402 facilitator deeper hardening.
 - Jupiter Earn withdraw support.
 - Swaps.
@@ -373,12 +371,11 @@ Medium-term:
 - On-chain policy for x402/MPP is post-Colosseum. Do not prioritize before Colosseum unless the product direction changes.
 
 Recommended next build order:
-1. Backend persistence/deploy env/CORS.
-2. Deploy backend.
-3. Deploy dashboard pointing to backend.
-4. Add facilitator network page.
-5. Publish packages.
-6. Test skill install from GitHub.
+1. Redeploy/check dashboard with production backend env.
+2. Publish packages.
+3. Verify CLI and MCP from installed packages against production.
+4. Test skill install from GitHub.
+5. Script the demo/pitch flow.
 
 ## Reference Files
 - `JUPITER.txt`: Jupiter docs dump.

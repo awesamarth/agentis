@@ -1,0 +1,62 @@
+---
+title: MCP
+description: Configure the Agentis MCP server for local AI agents and coding assistants.
+---
+
+The Agentis MCP server exposes account-level tools over local stdio. It lets AI agents list wallets, create agents, fetch paid URLs, update policy, inspect balances, run privacy flows, and use Jupiter Earn.
+
+## Install
+
+```bash
+npm install -g @agentis-hq/mcp
+```
+
+Or use the package directly from an MCP client.
+
+## Configure
+
+```json
+{
+  "mcpServers": {
+    "agentis": {
+      "command": "agentis-mcp",
+      "env": {
+        "AGENTIS_ACCOUNT_KEY": "agt_user_..."
+      }
+    }
+  }
+}
+```
+
+Use `AGENTIS_API_URL` only when targeting a local or staging backend:
+
+```json
+{
+  "env": {
+    "AGENTIS_ACCOUNT_KEY": "agt_user_...",
+    "AGENTIS_API_URL": "http://localhost:3001"
+  }
+}
+```
+
+## Account key
+
+MCP uses an account API key, not an individual agent API key.
+
+You can generate an account key from the dashboard or through the CLI login flow.
+
+## What MCP can do
+
+MCP tools include:
+
+- list and create hosted agents
+- read balances and transactions
+- send SOL
+- fetch MPP and x402 paid URLs
+- read and update policies
+- initialize and read on-chain policy state
+- deposit and inspect Jupiter Earn positions
+- run Umbra status, registration, balance, deposit, withdraw, scan, UTXO, and claim flows
+- scaffold and publish x402 facilitators
+
+Local encrypted-wallet vault operations are intentionally CLI-only for v1.

@@ -5,6 +5,7 @@ node_modules/
 dist/
 .next/
 out/
+.source/
 
 # Environment variables
 .env
@@ -25,6 +26,7 @@ apps/backend/data/key-secrets*.json
 *.log
 
 # Local reference dumps
+reference-dumps
 GILL.md
 JUPITER.txt
 UMBRA.txt

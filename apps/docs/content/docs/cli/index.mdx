@@ -1,0 +1,154 @@
+---
+title: CLI
+description: Install the Agentis CLI and operate agent wallets from your terminal.
+---
+
+The Agentis CLI is the fastest way to create wallets, inspect agents, set policies, pay MPP or x402 URLs, use Jupiter Earn, run Umbra privacy flows, and scaffold facilitators.
+
+## Install
+
+Install the CLI globally:
+
+<CodeBlockTabs defaultValue="npm" groupId="package-manager">
+  <CodeBlockTabsList>
+    <CodeBlockTabsTrigger value="npm">
+      npm
+    </CodeBlockTabsTrigger>
+
+    <CodeBlockTabsTrigger value="yarn">
+      yarn
+    </CodeBlockTabsTrigger>
+
+    <CodeBlockTabsTrigger value="pnpm">
+      pnpm
+    </CodeBlockTabsTrigger>
+
+    <CodeBlockTabsTrigger value="bun">
+      bun
+    </CodeBlockTabsTrigger>
+  </CodeBlockTabsList>
+
+  <CodeBlockTab value="npm">
+    ```bash
+    npm install -g @agentis-hq/cli
+    agentis
+    ```
+  </CodeBlockTab>
+
+  <CodeBlockTab value="yarn">
+    ```bash
+    yarn global add @agentis-hq/cli
+    agentis
+    ```
+  </CodeBlockTab>
+
+  <CodeBlockTab value="pnpm">
+    ```bash
+    pnpm add -g @agentis-hq/cli
+    agentis
+    ```
+  </CodeBlockTab>
+
+  <CodeBlockTab value="bun">
+    ```bash
+    bun add -g @agentis-hq/cli
+    agentis
+    ```
+  </CodeBlockTab>
+</CodeBlockTabs>
+
+## Login
+
+```bash
+agentis login
+agentis whoami
+agentis logout
+```
+
+The CLI stores your account key in the OS keychain.
+
+## Wallets and agents
+
+Create a hosted wallet:
+
+```bash
+agentis wallet create --name my-agent
+```
+
+Create a local encrypted wallet:
+
+```bash
+agentis wallet create --name local-agent --local
+```
+
+List wallets and hosted agents:
+
+```bash
+agentis wallet list
+agentis agent list
+```
+
+Create a hosted agent with on-chain policy mode:
+
+```bash
+agentis agent create policy-agent --onchain-policy
+```
+
+## Paid fetch
+
+```bash
+agentis fetch https://example.com/paid-data --agent my-agent
+```
+
+Agentis detects MPP and x402 payment requests and pays through the selected hosted agent wallet.
+
+## Policy
+
+```bash
+agentis policy get my-agent
+agentis policy set my-agent --max-per-tx 1 --daily 10 --budget 100
+agentis policy set my-agent --kill
+agentis policy set my-agent --resume
+```
+
+## Jupiter Earn
+
+Jupiter Earn commands are mainnet-only and require `--mainnet`.
+
+```bash
+agentis earn positions my-agent --mainnet
+agentis earn deposit my-agent --asset USDC --amount 1 --mainnet
+agentis earn sweep --dry-run
+```
+
+## Umbra privacy
+
+```bash
+agentis privacy register --agent private-agent
+agentis privacy status --agent private-agent
+agentis privacy balance --agent private-agent
+agentis privacy deposit --agent private-agent --amount 1000000
+agentis privacy scan --agent private-agent
+agentis privacy claim-latest --agent private-agent
+```
+
+## Facilitators
+
+```bash
+agentis facilitator create my-facilitator
+agentis facilitator list
+agentis facilitator publish my-facilitator --url https://facilitator.example.com --listed
+```
+
+## Help
+
+Use `--help` when you need command-specific options:
+
+```bash
+agentis --help
+agentis wallet create --help
+agentis agent send --help
+agentis earn deposit --help
+agentis privacy create-utxo --help
+agentis facilitator publish --help
+```

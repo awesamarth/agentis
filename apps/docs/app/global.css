@@ -1,0 +1,89 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700;1,900&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap');
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+:root {
+  --font-sans: 'DM Sans', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+  --font-serif: 'Playfair Display', serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.prose code,
+.prose pre,
+kbd {
+  font-family: var(--font-mono);
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: 0;
+}
+
+.agentis-docs-prose {
+  font-family: var(--font-sans);
+  font-size: 1.11rem;
+  line-height: 1.75;
+}
+
+.agentis-docs-prose :where(h2, h3, h4):not(:where([class~='not-prose'] *)) {
+  font-family: var(--font-sans);
+  letter-spacing: -0.01em;
+}
+
+.agentis-docs-prose :where(h2):not(:where([class~='not-prose'] *)) {
+  margin-top: 1.15rem !important;
+  margin-bottom: 0.45rem !important;
+}
+
+.agentis-docs-prose :where(h3):not(:where([class~='not-prose'] *)) {
+  margin-top: 1rem !important;
+  margin-bottom: 0.4rem !important;
+}
+
+.agentis-docs-prose :where(p):not(:where([class~='not-prose'] *)) {
+  margin-top: 0.45rem !important;
+  margin-bottom: 0.2rem !important;
+}
+
+.agentis-docs-prose :where(ul, ol):not(:where([class~='not-prose'] *)) {
+  margin-top: 0.45rem !important;
+  margin-bottom: 0.65rem !important;
+}
+
+.agentis-docs-prose :where(li):not(:where([class~='not-prose'] *)) {
+  margin-top: 0.12rem !important;
+  margin-bottom: 0.12rem !important;
+}
+
+.agentis-docs-prose :where(pre):not(:where([class~='not-prose'] *)) {
+  margin-top: 0.25rem !important;
+  margin-bottom: 0.65rem !important;
+}
+
+.agentis-docs-prose :where(p + pre):not(:where([class~='not-prose'] *)) {
+  margin-top: 0.15rem !important;
+}
+
+.dark,
+:root {
+  --fd-background: #11100e;
+  --fd-foreground: #f5f0e8;
+  --fd-muted: #1c1a17;
+  --fd-muted-foreground: #a8a095;
+  --fd-card: #171511;
+  --fd-card-foreground: #f5f0e8;
+  --fd-border: #2c2821;
+  --fd-primary: #f5f0e8;
+  --fd-primary-foreground: #11100e;
+  --fd-accent: #242118;
+  --fd-accent-foreground: #f5f0e8;
+  --fd-secondary: #1b1915;
+  --fd-secondary-foreground: #f5f0e8;
+}

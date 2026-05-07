@@ -1,0 +1,7 @@
+{
+  "title": "CLI",
+  "description": "Operate Agentis from your terminal.",
+  "icon": "TerminalIcon",
+  "root": true,
+  "pages": ["index"]
+}

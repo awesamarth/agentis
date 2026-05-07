@@ -29,7 +29,7 @@
     "dev": "tsup --watch"
   },
   "dependencies": {
-    "@agentis-hq/core": "workspace:*",
+    "@agentis-hq/core": "^0.1.0",
     "@solana/kit": "^2.1.0",
     "@solana/mpp": "^0.5.2",
     "gill": "^0.14.0",

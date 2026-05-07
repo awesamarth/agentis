@@ -1,0 +1,7 @@
+{
+  "title": "MCP",
+  "description": "Connect Agentis tools to local AI agents.",
+  "icon": "BlocksIcon",
+  "root": true,
+  "pages": ["index"]
+}
