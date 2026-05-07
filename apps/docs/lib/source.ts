@@ -1,5 +1,5 @@
 import { docs } from 'collections'
-import type { Root } from 'fumadocs-core/server'
+import type { Root } from 'fumadocs-core/page-tree'
 import { loader } from 'fumadocs-core/source'
 import {
   BlocksIcon,
