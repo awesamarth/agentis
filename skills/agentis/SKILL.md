@@ -1,120 +1,139 @@
 ---
 name: agentis
-description: Use when an AI agent needs to operate Agentis, the Solana financial infrastructure for AI agents: hosted/local agent wallets, MPP/x402 paid fetches, policy limits, Umbra privacy, Jupiter Earn, dashboard, CLI, SDK, or MCP tools.
+description: Use when an AI agent needs to operate Agentis, the Solana financial infrastructure for AI agents: agent wallets, x402/MPP paid fetches, policy limits, Umbra privacy, Jupiter Earn, dashboard, CLI, SDK, or MCP tools.
 ---
 
 # Agentis
 
-Agentis is financial infrastructure for AI agents on Solana. It lets agents hold funds, pay APIs or wallets, obey spending policies, move privately through Umbra, and earn yield through Jupiter Earn.
+Agentis is financial infrastructure for AI agents on Solana. It gives agents wallets, payment rails, spending policies, privacy flows, and Jupiter Earn access.
 
-Use Agentis when the task involves agent wallets, autonomous payments, x402/MPP paid APIs, spend controls, Solana agent operations, privacy transfers, or agent-readable financial tooling.
+Use Agentis when the user wants an agent to hold funds, pay an API or wallet, inspect balances, obey spend controls, move privately, or manage yield.
 
-## API Targets
+## Pick The Interface
 
-The default hosted API is:
+Use the interface that matches the current environment:
 
-```txt
-https://api.agentis.systems
-```
+- **CLI**: best default when shell access is available. It is the broadest interface and supports hosted wallets, local wallets, paid fetches, policy, Umbra, Jupiter Earn, and facilitator scaffolding.
+- **MCP**: best when Agentis tools are already connected to the host agent. Prefer MCP for structured state/action calls from an AI assistant because results come back as JSON.
+- **SDK**: best when writing app code or agent runtime code that needs Agentis programmatically.
+- **Dashboard**: best when a human should review agents, balances, policy, privacy, or Jupiter Earn state visually.
 
-For local development, set:
-
-```sh
-export AGENTIS_API_URL=http://localhost:3001
-```
-
-For MCP, also set:
-
-```sh
-export AGENTIS_ACCOUNT_KEY=agt_user_...
-```
+Do not assume the repo is present or that a local backend is running. Normal users should use the hosted Agentis service through the published CLI, MCP server, SDK, or dashboard.
 
 ## CLI
 
-Run the CLI with:
+Run:
 
 ```sh
 agentis
 ```
 
-Core commands:
+If unsure about syntax, ask the CLI:
+
+```sh
+agentis --help
+agentis agent create --help
+agentis earn withdraw --help
+agentis privacy create-utxo --help
+```
+
+Common commands:
 
 ```sh
 agentis login
+agentis whoami
+
 agentis wallet create --name my-agent
+agentis wallet create --name my-agent --local
 agentis wallet list
+
 agentis agent list
 agentis agent create my-agent
-agentis fetch <url> --agent <name-or-id>
-agentis policy get <name-or-id>
-agentis policy set <name-or-id> --daily 5 --max-per-tx 1
-agentis earn positions <agent> --mainnet
+agentis agent create my-agent --onchain-policy
+agentis agent balance my-agent
+agentis agent send my-agent <to-wallet> 0.001 --sol
+
+agentis fetch <url> --agent my-agent
+
+agentis policy get my-agent
+agentis policy set my-agent --daily 5 --max-per-tx 1
+
+agentis earn positions my-agent --mainnet
+agentis earn deposit my-agent --asset USDC --amount 1 --mainnet
+agentis earn withdraw my-agent --asset USDC --mainnet
+agentis earn withdraw my-agent --asset USDC --amount 1 --mainnet
 agentis earn sweep --dry-run
-agentis privacy status --agent <name-or-id>
-agentis facilitator create <name>
+
+agentis privacy status --agent my-agent
+agentis privacy balance --agent my-agent
+agentis privacy scan --agent my-agent
+agentis privacy claim-latest --agent my-agent
+
+agentis facilitator create my-facilitator
+agentis facilitator list
+agentis facilitator publish <name-or-id> --url <public-url> --listed
 ```
 
-Use `agentis` with no arguments to inspect the full command list before attempting an unfamiliar operation.
-
-## SDK
-
-Use the SDK when writing application code:
-
-```ts
-import { AgentisClient } from '@agentis-hq/sdk'
-
-const agent = await AgentisClient.create({
-  apiKey: process.env.AGENTIS_API_KEY!,
-  baseUrl: process.env.AGENTIS_API_URL,
-})
-
-const response = await agent.fetch('https://example.com/paid-data')
-```
-
-`agent.fetch()` detects MPP/x402 `402 Payment Required` responses, checks policy, and routes payment through the Agentis backend.
+For Jupiter Earn, `--mainnet` is required. Omitting `--amount` on `earn withdraw` redeems the full USDC Earn position.
 
 ## MCP
 
-Use the MCP server when the host agent should call Agentis tools directly.
+Use MCP if the host environment has an Agentis MCP server configured. It requires an Agentis account key, usually named `AGENTIS_ACCOUNT_KEY`, in the MCP server environment.
 
-Example config:
-
-```json
-{
-  "mcpServers": {
-    "agentis": {
-      "command": "agentis-mcp",
-      "env": {
-        "AGENTIS_ACCOUNT_KEY": "agt_user_..."
-      }
-    }
-  }
-}
-```
-
-Important tools include:
+Important tools:
 
 ```txt
+agentis_cli_help
 agentis_list_agents
 agentis_create_agent
 agentis_agent_balance
 agentis_send_sol
 agentis_fetch_paid_url
 agentis_policy_get
+agentis_policy_check
 agentis_policy_update
+agentis_policy_init_onchain
+agentis_policy_read_onchain
+agentis_earn_deposit
 agentis_earn_positions
 agentis_earn_sweep
+agentis_privacy_status
+agentis_privacy_register
+agentis_privacy_balance
+agentis_privacy_deposit
+agentis_privacy_withdraw
 agentis_privacy_create_utxo
+agentis_privacy_scan
 agentis_privacy_claim_latest
 agentis_scaffold_facilitator
+agentis_list_facilitators
+agentis_register_facilitator
 agentis_publish_facilitator
 ```
 
-Prefer MCP for agent-native workflows where the calling agent should inspect state, choose an Agentis action, and receive structured JSON results.
+MCP currently supports Earn deposit, positions, and sweep. Use the CLI for Jupiter Earn withdraw unless an MCP withdraw tool is added.
+
+## SDK
+
+Use the SDK when writing code:
+
+```ts
+import { AgentisClient } from '@agentis-hq/sdk'
+
+const agent = await AgentisClient.create({
+  apiKey: process.env.AGENTIS_API_KEY!,
+})
+
+const response = await agent.fetch('https://example.com/paid-data')
+const signature = await agent.pay('<wallet>', 0.001)
+const policy = await agent.policy.get()
+```
+
+`agent.fetch()` detects MPP/x402 `402 Payment Required` responses, checks policy, and routes payment through Agentis. Use `agent.policy.update(...)` for policy changes and `agent.privacy.*` for Umbra flows.
 
 ## Policy
 
-Agentis policy amounts are USD-denominated. Check or update limits before spending when possible.
+Agentis policy amounts are USD-denominated.
 
 Common controls:
 
@@ -128,58 +147,72 @@ maxBudget
 allowedDomains
 ```
 
-If a policy rejects a spend, do not retry with altered values unless the user explicitly authorizes the change.
+Before a spend, check policy when possible. If a policy rejects an action, do not retry by weakening limits unless the user explicitly authorizes it.
 
 ## Privacy
 
-Umbra privacy is available for private-agent flows.
+Umbra privacy is for private-agent flows.
 
-Safer demo/default actions:
+Safer read/default actions:
 
 ```sh
 agentis privacy status --agent <agent>
 agentis privacy balance --agent <agent>
 agentis privacy scan --agent <agent>
+```
+
+State-changing actions:
+
+```sh
+agentis privacy register --agent <agent>
+agentis privacy deposit --agent <agent> --amount <atomic>
+agentis privacy withdraw --agent <agent> --amount <atomic>
+agentis privacy create-utxo --agent <agent> --to <wallet> --amount <atomic>
 agentis privacy claim-latest --agent <agent>
 ```
 
-UTXO creation and claiming can hide sender-recipient links but depends on the Umbra devnet relayer/indexer. If stale UTXOs appear, try newest claimable UTXOs first and skip already-burnt entries.
+Amounts are atomic token units. UTXO/private-transfer flows can hide sender-recipient links but may depend on relayer/indexer availability.
 
 ## Jupiter Earn
 
-Jupiter Earn support is mainnet-only in Agentis.
+Jupiter Earn support in Agentis is mainnet-only and currently focused on USDC.
 
-Use:
+Read first:
 
 ```sh
 agentis earn positions <agent> --mainnet
+```
+
+Deposit:
+
+```sh
 agentis earn deposit <agent> --asset USDC --amount 1 --mainnet
+```
+
+Withdraw all supplied USDC:
+
+```sh
+agentis earn withdraw <agent> --asset USDC --mainnet
+```
+
+Withdraw a specific UI amount:
+
+```sh
+agentis earn withdraw <agent> --asset USDC --amount 1 --mainnet
+```
+
+Sweep should be dry-run first:
+
+```sh
 agentis earn sweep --dry-run
 ```
 
 Do not attempt a devnet Jupiter Earn transaction path.
 
-## Safety Rules
+## Safety
 
-- Never expose full API keys except at creation/regeneration time.
-- Prefer dry-run sweeps before executing Jupiter Earn deposits.
-- Do not mutate stable demo agents unless the user asks.
-- For local development, ensure the backend is running from `apps/backend` so its `.env` is loaded.
-- For paid API demos, confirm the agent has enough devnet SOL/USDC or mainnet USDC as needed.
-
-## Local Runbook
-
-```sh
-cd apps/backend && bun run index.ts
-cd apps/next-app && bun dev
-cd packages/cli && bun src/index.ts
-```
-
-Default ports:
-
-```txt
-backend: 3001
-dashboard: 3000
-x402 test: 4000
-MPP test: 4001
-```
+- Never expose full Agentis API keys except when the product explicitly returns them during creation/regeneration.
+- Prefer read commands before write commands.
+- Confirm with the user before moving mainnet funds unless they already gave clear approval.
+- Prefer `earn sweep --dry-run` before executing a sweep.
+- Treat `--mainnet` commands as real-money actions.

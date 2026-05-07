@@ -147,6 +147,56 @@ async function buildJupiterEarnTransaction(input: {
   return String(data.transaction)
 }
 
+async function buildJupiterEarnWithdrawTransaction(input: {
+  asset: string
+  signer: string
+  amountAtomic: string
+}) {
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (process.env.JUPITER_API_KEY) headers['x-api-key'] = process.env.JUPITER_API_KEY
+
+  const res = await fetch(`${JUPITER_LEND_API}/earn/withdraw`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      asset: input.asset,
+      signer: input.signer,
+      amount: input.amountAtomic,
+    }),
+  })
+
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok || !data.transaction) {
+    throw new Error(data.message ?? data.error ?? `Jupiter Earn withdraw build failed (${res.status})`)
+  }
+  return String(data.transaction)
+}
+
+async function buildJupiterEarnRedeemTransaction(input: {
+  asset: string
+  signer: string
+  shares: string
+}) {
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (process.env.JUPITER_API_KEY) headers['x-api-key'] = process.env.JUPITER_API_KEY
+
+  const res = await fetch(`${JUPITER_LEND_API}/earn/redeem`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      asset: input.asset,
+      signer: input.signer,
+      shares: input.shares,
+    }),
+  })
+
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok || !data.transaction) {
+    throw new Error(data.message ?? data.error ?? `Jupiter Earn redeem build failed (${res.status})`)
+  }
+  return String(data.transaction)
+}
+
 async function fetchJupiterEarnPositions(user: string) {
   const headers: Record<string, string> = {}
   if (process.env.JUPITER_API_KEY) headers['x-api-key'] = process.env.JUPITER_API_KEY
@@ -196,6 +246,12 @@ function summarizeEarnPositions(positions: any[]) {
   }
 }
 
+async function getAgentUsdcEarnPosition(agent: any) {
+  const positions = await fetchJupiterEarnPositions(agent.walletAddress)
+  const list = Array.isArray(positions) ? positions : []
+  return list.find((position: any) => position?.token?.assetAddress === USDC_MAINNET_MINT) ?? null
+}
+
 async function depositAgentUsdcIntoEarn(agent: any, amountUi: number | string) {
   const amountAtomic = uiAmountToAtomic(amountUi, 6)
   if (!amountAtomic) {
@@ -236,6 +292,64 @@ async function depositAgentUsdcIntoEarn(agent: any, amountUi: number | string) {
     asset: USDC_MAINNET_MINT,
     amount: amountNumber,
     amountAtomic,
+  }
+}
+
+async function withdrawAgentUsdcFromEarn(agent: any, amountUi?: number | string) {
+  const amountAtomic = amountUi === undefined ? null : uiAmountToAtomic(amountUi, 6)
+  if (amountUi !== undefined && !amountAtomic) {
+    throw new Error('amount must fit USDC decimals')
+  }
+
+  const position = await getAgentUsdcEarnPosition(agent)
+  const shares = getEarnPositionSharesAtomic(position)
+  const underlying = getEarnPositionUnderlyingAtomic(position)
+  if (shares <= 0n || underlying <= 0n) {
+    throw new Error('No USDC Jupiter Earn position found for this agent')
+  }
+
+  const connection = new Connection(MAINNET_RPC, 'confirmed')
+  const encoded = amountAtomic
+    ? await buildJupiterEarnWithdrawTransaction({
+      asset: USDC_MAINNET_MINT,
+      signer: agent.walletAddress,
+      amountAtomic,
+    })
+    : await buildJupiterEarnRedeemTransaction({
+      asset: USDC_MAINNET_MINT,
+      signer: agent.walletAddress,
+      shares: shares.toString(),
+    })
+
+  const tx = await preparePrivyTransaction(
+    connection,
+    agent.walletAddress,
+    Transaction.from(Buffer.from(encoded, 'base64')),
+  )
+  const result = await privy.walletApi.solana.signAndSendTransaction({
+    walletId: agent.walletId,
+    transaction: tx,
+    caip2: MAINNET_CAIP2,
+  })
+  await confirmTransactionOrThrow(connection, result.hash, tx)
+
+  const amountNumber = Number(amountAtomic ? amountUi : atomicToUiString(underlying, 6))
+  await recordTransaction(agent.id, {
+    txHash: result.hash,
+    amount: amountNumber,
+    amountUsd: amountNumber,
+    recipient: `${amountAtomic ? 'jupiter-earn-withdraw' : 'jupiter-earn-redeem'}:${USDC_MAINNET_MINT}`,
+    timestamp: new Date().toISOString(),
+  })
+
+  return {
+    signature: result.hash,
+    network: 'mainnet',
+    asset: USDC_MAINNET_MINT,
+    mode: amountAtomic ? 'withdraw' : 'redeem',
+    amount: amountNumber,
+    amountAtomic: amountAtomic ?? underlying.toString(),
+    shares: amountAtomic ? undefined : shares.toString(),
   }
 }
 
@@ -489,6 +603,44 @@ agents.post('/:id/privacy/register', async (c) => {
   }
 })
 
+async function proxyUmbraForAgent(c: any, id: string, path: string) {
+  const userId = c.get('userId')
+  const agent = await getAgentById(id)
+  if (!agent || agent.userId !== userId) {
+    return c.json({ error: 'Not found' }, 404)
+  }
+
+  const apiKey = await getAgentApiKeySecret(agent.id)
+  if (!apiKey) return c.json({ error: 'Agent API key secret is missing. Regenerate the agent key.' }, 409)
+
+  const url = new URL(c.req.url)
+  const method = c.req.method
+  const body = method === 'GET' || method === 'HEAD' ? undefined : await c.req.text()
+
+  const res = await fetch(`${url.origin}/umbra${path}${url.search}`, {
+    method,
+    headers: {
+      'content-type': c.req.header('content-type') ?? 'application/json',
+      'x-api-key': apiKey,
+    },
+    body,
+  })
+  const text = await res.text()
+  return new Response(text, {
+    status: res.status,
+    headers: { 'content-type': res.headers.get('content-type') ?? 'application/json' },
+  })
+}
+
+agents.get('/:id/umbra/status', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/status'))
+agents.post('/:id/umbra/register', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/register'))
+agents.get('/:id/umbra/balance', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/balance'))
+agents.post('/:id/umbra/deposit', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/deposit'))
+agents.post('/:id/umbra/withdraw', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/withdraw'))
+agents.post('/:id/umbra/create-utxo', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/create-utxo'))
+agents.get('/:id/umbra/scan', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/scan'))
+agents.post('/:id/umbra/claim-latest', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/claim-latest'))
+
 // GET /agents/:id — get single agent (owner only)
 agents.get('/:id', async (c) => {
   const userId = c.get('userId')
@@ -710,6 +862,40 @@ agents.post('/:id/earn/deposit', async (c) => {
 
   try {
     return c.json(await depositAgentUsdcIntoEarn(agent, body.amount))
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 500)
+  }
+})
+
+// POST /agents/:id/earn/withdraw — mainnet Jupiter Earn withdraw/redeem
+agents.post('/:id/earn/withdraw', async (c) => {
+  const userId = c.get('userId')
+  const agent = await getAgentById(c.req.param('id'))
+  if (!agent || agent.userId !== userId) {
+    return c.json({ error: 'Not found' }, 404)
+  }
+
+  const body = await c.req.json()
+  const network = body.network ?? 'mainnet'
+  if (network !== 'mainnet') {
+    return c.json({ error: 'Jupiter Earn is mainnet-only for now' }, 400)
+  }
+
+  const assetInput = String(body.asset ?? 'USDC')
+  const asset = assetInput.toUpperCase() === 'USDC' ? USDC_MAINNET_MINT : assetInput
+  if (asset !== USDC_MAINNET_MINT) {
+    return c.json({ error: 'Only mainnet USDC Earn withdrawals are supported right now' }, 400)
+  }
+
+  const amount = body.amount === undefined || body.amount === null || body.amount === ''
+    ? undefined
+    : body.amount
+  if (amount !== undefined && !getFlaggedTokenAmountUi(amount)) {
+    return c.json({ error: 'amount must be a positive UI amount' }, 400)
+  }
+
+  try {
+    return c.json(await withdrawAgentUsdcFromEarn(agent, amount))
   } catch (err) {
     return c.json({ error: formatSolanaTransactionError(err) }, 500)
   }

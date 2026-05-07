@@ -103,6 +103,15 @@ function getErrorMessage(err: unknown, fallback: string) {
   return err instanceof Error ? err.message : fallback
 }
 
+function formatEarnRowAmount(value: string | undefined) {
+  const amount = Number(value ?? 0)
+  if (!Number.isFinite(amount) || amount === 0) return '0'
+  return amount.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })
+}
+
 export default function Dashboard() {
   const { ready, authenticated, getAccessToken, login } = usePrivy()
   const router = useRouter()
@@ -510,12 +519,12 @@ export default function Dashboard() {
                     </div>
                     <div className="text-right shrink-0">
                       <p className="font-mono text-[0.55rem] text-ink-muted/60 tracking-widest uppercase">supplied</p>
-                      <p className="font-mono text-[0.65rem] text-[#2f7b46]">{item.supplied?.totalUnderlyingUi ?? '0'} USDC</p>
+                      <p className="font-mono text-[0.65rem] text-[#2f7b46]">{formatEarnRowAmount(item.supplied?.totalUnderlyingUi)} USDC</p>
                     </div>
                     <div className="text-right shrink-0">
                       <p className="font-mono text-[0.55rem] text-ink-muted/60 tracking-widest uppercase">available</p>
                       <p className={`font-mono text-[0.65rem] ${item.available?.action === 'sweep' ? 'text-black' : 'text-ink-muted/50'}`}>
-                        {item.available?.amountUi ?? '0'} USDC
+                        {formatEarnRowAmount(item.available?.amountUi)} USDC
                       </p>
                     </div>
                   </div>

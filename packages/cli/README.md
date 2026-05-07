@@ -169,6 +169,13 @@ Deposit USDC into Jupiter Earn:
 agentis earn deposit research-agent --asset USDC --amount 1 --mainnet
 ```
 
+Withdraw USDC from Jupiter Earn. Omit `--amount` to redeem the full USDC Earn position:
+
+```bash
+agentis earn withdraw research-agent --asset USDC --mainnet
+agentis earn withdraw research-agent --asset USDC --amount 1 --mainnet
+```
+
 Show positions:
 
 ```bash
@@ -253,6 +260,7 @@ agentis wallet create --help
 agentis agent send --help
 agentis fetch --help
 agentis earn deposit --help
+agentis earn withdraw --help
 agentis privacy create-utxo --help
 agentis facilitator publish --help
 ```

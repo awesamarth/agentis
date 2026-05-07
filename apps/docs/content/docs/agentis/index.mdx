@@ -54,6 +54,58 @@ npx @agentis-hq/cli agent list
 npx @agentis-hq/cli fetch https://example.com/paid-data --agent my-agent
 ```
 
+Install it globally if you use Agentis often:
+
+<CodeBlockTabs defaultValue="npm" groupId="package-manager">
+  <CodeBlockTabsList>
+    <CodeBlockTabsTrigger value="npm">
+      npm
+    </CodeBlockTabsTrigger>
+
+    <CodeBlockTabsTrigger value="yarn">
+      yarn
+    </CodeBlockTabsTrigger>
+
+    <CodeBlockTabsTrigger value="pnpm">
+      pnpm
+    </CodeBlockTabsTrigger>
+
+    <CodeBlockTabsTrigger value="bun">
+      bun
+    </CodeBlockTabsTrigger>
+  </CodeBlockTabsList>
+
+  <CodeBlockTab value="npm">
+    ```bash
+    npm install -g @agentis-hq/cli
+    agentis --help
+    ```
+  </CodeBlockTab>
+
+  <CodeBlockTab value="yarn">
+    ```bash
+    yarn global add @agentis-hq/cli
+    agentis --help
+    ```
+  </CodeBlockTab>
+
+  <CodeBlockTab value="pnpm">
+    ```bash
+    pnpm add -g @agentis-hq/cli
+    agentis --help
+    ```
+  </CodeBlockTab>
+
+  <CodeBlockTab value="bun">
+    ```bash
+    bun add -g @agentis-hq/cli
+    agentis --help
+    ```
+  </CodeBlockTab>
+</CodeBlockTabs>
+
+See the [CLI docs](/docs/cli) for install options and the full command set.
+
 ### SDK
 
 Use the SDK inside your app or agent runtime:

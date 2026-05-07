@@ -112,6 +112,7 @@ const helpSpecs: Record<string, HelpSpec> = {
     description: 'Manage Jupiter Earn deposits and positions for hosted agent wallets.',
     commands: [
       ['deposit <agent> --asset USDC --amount <amount> --mainnet', 'deposit mainnet USDC into Jupiter Earn'],
+      ['withdraw <agent> --asset USDC [--amount <amount>] --mainnet', 'withdraw mainnet USDC from Jupiter Earn'],
       ['positions <agent> --mainnet [--all]', 'show Jupiter Earn positions'],
       ['sweep [--dry-run|--no-dry-run]', 'sweep all hosted agents mainnet USDC into Jupiter Earn'],
     ],
@@ -122,6 +123,16 @@ const helpSpecs: Record<string, HelpSpec> = {
     options: [
       ['--asset USDC', 'asset to deposit; currently USDC'],
       ['--amount <amount>', 'UI amount, for example 1 for 1 USDC'],
+      ['--mainnet', 'required safety flag'],
+      ['-h, --help', 'display help for command'],
+    ],
+  },
+  'earn withdraw': {
+    usage: 'agentis earn withdraw <agent> --asset USDC [--amount <amount>] --mainnet',
+    description: 'Withdraw mainnet USDC from Jupiter Earn back to a hosted agent wallet. Omitting --amount redeems the full USDC Earn position.',
+    options: [
+      ['--asset USDC', 'asset to withdraw; currently USDC'],
+      ['--amount <amount>', 'optional UI amount, for example 1 for 1 USDC'],
       ['--mainnet', 'required safety flag'],
       ['-h, --help', 'display help for command'],
     ],
@@ -310,6 +321,8 @@ ${green}${bold}Commands:${reset}
     --asset USDC                           asset to deposit
     --amount <amount>                      UI amount, e.g. 1 for 1 USDC
     --mainnet                              required safety flag
+  earn withdraw <agent> --mainnet          withdraw all USDC from Jupiter Earn
+    --amount <amount>                      optional UI amount, e.g. 1 for 1 USDC
   earn positions <agent> --mainnet         show Jupiter Earn positions
   earn sweep [--dry-run|--no-dry-run]      sweep all agents' mainnet USDC into Earn
 

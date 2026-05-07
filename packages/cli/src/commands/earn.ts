@@ -29,6 +29,9 @@ export async function earnCommand(args: string[]) {
     case 'deposit':
       await earnDeposit(args.slice(1))
       break
+    case 'withdraw':
+      await earnWithdraw(args.slice(1))
+      break
     case 'positions':
       await earnPositions(args.slice(1))
       break
@@ -36,7 +39,7 @@ export async function earnCommand(args: string[]) {
       await earnSweep(args.slice(1))
       break
     default:
-      console.log('Usage: agentis earn <deposit|positions|sweep>')
+      console.log('Usage: agentis earn <deposit|withdraw|positions|sweep>')
   }
 }
 
@@ -80,6 +83,53 @@ async function earnDeposit(args: string[]) {
   console.log('\nEarn deposit submitted.')
   console.log(`  Signature: ${data.signature}`)
   console.log(`  Amount:    ${data.amount} ${asset.toUpperCase()}`)
+  console.log(`  Explorer:  https://solscan.io/tx/${data.signature}\n`)
+}
+
+async function earnWithdraw(args: string[]) {
+  const agentName = args[0]
+  const asset = getFlag(args, '--asset') ?? 'USDC'
+  const amount = getFlag(args, '--amount')
+  const mainnet = args.includes('--mainnet')
+
+  if (!agentName || !mainnet) {
+    console.error('Usage: agentis earn withdraw <agent> --asset USDC [--amount <amount>] --mainnet')
+    process.exit(1)
+  }
+
+  if (amount !== undefined) {
+    const amountNum = Number(amount)
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      console.error('Invalid amount')
+      process.exit(1)
+    }
+  }
+
+  const token = await requireAuth()
+  const agent = await resolveAccountAgent(agentName, token)
+  const amountLabel = amount === undefined ? 'all supplied' : `${amount} ${asset.toUpperCase()}`
+
+  console.log(`\nWithdrawing ${amountLabel} from Jupiter Earn to ${agent.name} on mainnet...`)
+
+  const res = await apiFetch(`/agents/${agent.id}/earn/withdraw`, {
+    method: 'POST',
+    body: JSON.stringify({
+      network: 'mainnet',
+      asset,
+      amount,
+    }),
+  }, token)
+
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    console.error('Earn withdraw failed:', data.error ?? res.statusText)
+    process.exit(1)
+  }
+
+  console.log('\nEarn withdraw submitted.')
+  console.log(`  Signature: ${data.signature}`)
+  console.log(`  Amount:    ${data.amount} ${asset.toUpperCase()}`)
+  console.log(`  Mode:      ${data.mode}`)
   console.log(`  Explorer:  https://solscan.io/tx/${data.signature}\n`)
 }
 
