@@ -3,13 +3,13 @@ import { privy } from '../lib/privy'
 import { PrivyClient as NodePrivyClient } from '@privy-io/node'
 import { createAgent, getAgentsByUser, getAgentById, updateAgent, updateAgentApiKey, recordTransaction, getAccountByKey, getAgentApiKeySecret } from '../lib/db'
 import { randomBytes } from 'crypto'
-import { AgentisClient } from '@agentis-hq/sdk'
 import {
   Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL
 } from '@solana/web3.js'
 import { solToUsd } from '../lib/price'
 import { registerPrivyWalletWithUmbra } from '../lib/umbra-registration'
 import umbra from './umbra'
+import sdk from './sdk'
 import {
   createCheckAndRecordSpendInstruction,
   confirmTransactionOrThrow,
@@ -780,18 +780,43 @@ agents.post('/:id/fetch', async (c) => {
   if (!url) return c.json({ error: 'url is required' }, 400)
 
   try {
-    const origin = new URL(c.req.url).origin
-    const client = await AgentisClient.create({ apiKey, baseUrl: origin })
-    const response = await client.fetch(url, {
+    const initialResponse = await fetch(url, {
       method: method ?? 'GET',
       headers: headers ?? {},
       ...(body ? { body: typeof body === 'string' ? body : JSON.stringify(body) } : {}),
     })
-    const responseBody = await response.text()
-    return c.json({
-      status: response.status,
-      headers: Object.fromEntries(response.headers.entries()),
-      body: responseBody,
+
+    if (initialResponse.status !== 402) {
+      const responseBody = await initialResponse.text()
+      return c.json({
+        status: initialResponse.status,
+        headers: Object.fromEntries(initialResponse.headers.entries()),
+        body: responseBody,
+      })
+    }
+
+    const paymentHeader = initialResponse.headers.get('payment-required')
+    const isX402 = Boolean(paymentHeader)
+    const internalPath = isX402 ? '/agent/fetch-paid' : '/agent/fetch-paid-mpp'
+
+    const res = await sdk.fetch(new Request(`http://agentis.internal${internalPath}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+      },
+      body: JSON.stringify({
+        url,
+        method: method ?? 'GET',
+        headers: headers ?? {},
+        body,
+      }),
+    }))
+
+    const text = await res.text()
+    return new Response(text, {
+      status: res.status,
+      headers: { 'content-type': res.headers.get('content-type') ?? 'application/json' },
     })
   } catch (err: any) {
     return c.json({ error: err?.message ?? 'Fetch failed' }, 500)
