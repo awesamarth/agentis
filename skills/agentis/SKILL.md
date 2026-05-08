@@ -1,6 +1,6 @@
 ---
 name: agentis
-description: Use when an AI agent needs to operate Agentis, the Solana financial infrastructure for AI agents: agent wallets, x402/MPP paid fetches, policy limits, Umbra privacy, Jupiter Earn, dashboard, CLI, SDK, or MCP tools.
+description: "Use when an AI agent needs to operate Agentis, the Solana financial infrastructure for AI agents: agent wallets, x402/MPP paid fetches, policy limits, Umbra privacy, Jupiter Earn, dashboard, CLI, SDK, or MCP tools."
 ---
 
 # Agentis

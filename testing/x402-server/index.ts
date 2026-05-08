@@ -47,13 +47,7 @@ app.get('/', (c) => c.json({ status: 'ok', service: 'x402-test-server', port: PO
 app.get('/free', (c) => c.json({ message: 'This endpoint is free. No payment needed.' }))
 
 app.get('/paid-data', (c) => c.json({
-  data: {
-    message: 'You unlocked secret alpha data!',
-    solanaPrice: '$142.00',
-    topDEX: 'Raydium',
-    volume24h: '$1.2B',
-    timestamp: new Date().toISOString(),
-  },
+  message: 'you found the hidden treasure',
 }))
 
 app.get('/premium-data', (c) => c.json({
