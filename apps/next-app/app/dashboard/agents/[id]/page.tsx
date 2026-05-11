@@ -312,6 +312,8 @@ export default function AgentDetail() {
   const [umbraBalance, setUmbraBalance] = useState<UmbraBalance | null>(null)
   const [umbraScan, setUmbraScan] = useState<UmbraScan | null>(null)
   const [umbraAmount, setUmbraAmount] = useState('0.01')
+  const [umbraUtxoAmount, setUmbraUtxoAmount] = useState('0.01')
+  const [umbraUtxoRecipient, setUmbraUtxoRecipient] = useState('')
   const [umbraError, setUmbraError] = useState<string | null>(null)
   const [umbraMessage, setUmbraMessage] = useState<string | null>(null)
   const [onchainStatus, setOnchainStatus] = useState<OnchainPolicyStatus | null>(null)
@@ -560,17 +562,42 @@ export default function AgentDetail() {
         return
       }
 
-      const amount = parseSolAmountToLamports(umbraAmount.trim()).toString()
+      if (action === 'create-utxo') {
+        const recipient = umbraUtxoRecipient.trim()
+        if (!recipient) {
+          throw new Error('Enter a recipient wallet address')
+        }
+        try {
+          address(recipient)
+        } catch {
+          throw new Error('Enter a valid Solana recipient address')
+        }
 
+        const amount = parseSolAmountToLamports(umbraUtxoAmount.trim()).toString()
+        const result = await umbraFetch<Record<string, unknown>>('/create-utxo', {
+          method: 'POST',
+          body: JSON.stringify({ amount, mint: UMBRA_SOL_MINT, to: recipient }),
+        })
+        setUmbraMessage(
+          `UTXO created for ${umbraUtxoAmount.trim()} SOL to ${shortAddr(recipient)}${
+            result.createUtxoSignature ? `: ${String(result.createUtxoSignature).slice(0, 12)}...` : ''
+          }`,
+        )
+        await Promise.all([
+          fetchUmbraSnapshot(),
+          agent ? fetchBalances(agent.walletAddress) : Promise.resolve(),
+        ])
+        return
+      }
+
+      const amount = parseSolAmountToLamports(umbraAmount.trim()).toString()
       const result = await umbraFetch<Record<string, unknown>>(`/${action}`, {
         method: 'POST',
         body: JSON.stringify({ amount, mint: UMBRA_SOL_MINT }),
       })
       const signature = result.callbackSignature ?? result.queueSignature
       setUmbraMessage(
-        action === 'create-utxo'
-          ? `UTXO created for ${umbraAmount.trim()} SOL${result.createUtxoSignature ? `: ${String(result.createUtxoSignature).slice(0, 12)}...` : ''}`
-          : `${action} submitted${signature ? `: ${String(signature).slice(0, 12)}...` : ''}`,
+        `${action} submitted${signature ? `: ${String(signature).slice(0, 12)}...` : ''}`,
       )
       await Promise.all([
         fetchUmbraSnapshot(),
@@ -1144,20 +1171,20 @@ export default function AgentDetail() {
                     </div>
                   </div>
 
-                  <div>
+                  <div className="space-y-5">
                     <div className="flex flex-wrap items-end gap-3">
                       <div className="flex-1 min-w-52">
-                      <label className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase block mb-1.5">
-                        amount
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={umbraAmount}
-                        onChange={e => setUmbraAmount(e.target.value.replace(/[^\d.]/g, ''))}
-                        className="w-full h-[46px] bg-beige border border-beige-darker px-3 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
-                        placeholder="0.001"
-                      />
+                        <label className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase block mb-1.5">
+                          encrypted balance amount
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={umbraAmount}
+                          onChange={e => setUmbraAmount(e.target.value.replace(/[^\d.]/g, ''))}
+                          className="w-full h-[46px] bg-beige border border-beige-darker px-3 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
+                          placeholder="0.001"
+                        />
                       </div>
                       <button
                         onClick={() => handleUmbraAction('deposit')}
@@ -1181,13 +1208,6 @@ export default function AgentDetail() {
                         {umbraWorking === 'scan' ? 'scanning...' : 'scan'}
                       </button>
                       <button
-                        onClick={() => handleUmbraAction('create-utxo')}
-                        disabled={umbraWorking !== null || !umbraAmount}
-                        className="font-mono text-xs tracking-widest text-ink-muted border border-[#b7cce5] px-5 h-[46px] hover:border-[#7fa7d6] transition-colors cursor-pointer disabled:opacity-40"
-                      >
-                        {umbraWorking === 'create-utxo' ? 'creating...' : 'create UTXO'}
-                      </button>
-                      <button
                         onClick={() => handleUmbraAction('claim-latest')}
                         disabled={umbraWorking !== null}
                         className="font-mono text-xs tracking-widest text-beige bg-[#315a8a] px-5 h-[46px] hover:bg-[#25476f] transition-colors cursor-pointer disabled:opacity-40"
@@ -1196,8 +1216,48 @@ export default function AgentDetail() {
                       </button>
                     </div>
                     <p className="font-mono text-[0.55rem] text-ink-muted/50 mt-1">
-                      amount in SOL units. Direct deposit/withdraw uses encrypted balance; UTXO create + claim uses Umbra mixer flow. 1 SOL = 1,000,000,000 lamports.
+                      amount in SOL units. Direct deposit/withdraw uses encrypted balance. Claim latest pulls the newest receiver-claimable UTXO into this agent's encrypted balance.
                     </p>
+
+                    <div className="border border-beige-darker bg-white/55 p-4">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                        <div className="w-full lg:w-40">
+                          <label className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase block mb-1.5">
+                            UTXO amount
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={umbraUtxoAmount}
+                            onChange={e => setUmbraUtxoAmount(e.target.value.replace(/[^\d.]/g, ''))}
+                            className="w-full h-[46px] bg-beige border border-beige-darker px-3 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
+                            placeholder="0.001"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <label className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase block mb-1.5">
+                            recipient wallet
+                          </label>
+                          <input
+                            type="text"
+                            value={umbraUtxoRecipient}
+                            onChange={e => setUmbraUtxoRecipient(e.target.value.trim())}
+                            className="w-full h-[46px] bg-beige border border-beige-darker px-3 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
+                            placeholder="Solana address"
+                          />
+                        </div>
+                        <button
+                          onClick={() => handleUmbraAction('create-utxo')}
+                          disabled={umbraWorking !== null || !umbraUtxoAmount || !umbraUtxoRecipient.trim()}
+                          className="font-mono text-xs tracking-widest text-ink-muted border border-[#b7cce5] px-5 h-[46px] hover:border-[#7fa7d6] transition-colors cursor-pointer disabled:opacity-40"
+                        >
+                          {umbraWorking === 'create-utxo' ? 'creating...' : 'create UTXO'}
+                        </button>
+                      </div>
+                      <p className="font-mono text-[0.55rem] text-ink-muted/50 mt-2">
+                        creates a receiver-claimable Umbra UTXO from this agent's public SOL balance.
+                      </p>
+                    </div>
                   </div>
 
                   {(umbraError || umbraMessage) && (
