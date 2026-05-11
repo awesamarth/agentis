@@ -64,7 +64,7 @@ Core routes:
 - `/facilitators/*`: public facilitator heartbeat and discovery routes.
 - `/sol-price`: cached SOL/USD price from Jupiter Price API.
 
-DB is still JSON at `apps/backend/data/db.json` and should be replaced later.
+DB is still JSON at and should be replaced later.
 
 On-chain policy notes:
 - On-chain policy agents use Quasar program `EGZKucpjMmAHvqUP3hLSBCccs4uAQyCAvQ8ikSNCryhM` on devnet.
@@ -349,33 +349,6 @@ Hosted agents:
 
 Do not casually mutate `leno` privacy flags; it is useful as a stable funded test agent.
 
-## What Is Left
-
-Near-term:
-1. Vercel/dashboard production check: backend is live at `https://api.agentis.systems`; make sure the deployed dashboard has `NEXT_PUBLIC_BACKEND_URL=https://api.agentis.systems`, then verify login, agent list, agent detail, Jupiter Earn, Umbra controls, and `/facilitators`.
-2. Package publishing: package setup is publish-ready, but actual npm publish still needs org/access check for `@agentis-hq`, publish order `core -> sdk -> cli -> mcp`, likely `--access public`, then test `bun x @agentis-hq/cli` / `npx @agentis-hq/cli` after publish.
-3. Skill install path: `skills/agentis/SKILL.md` exists. Test from GitHub once pushed, likely with `npx skills add agentis-hq/agentis --skill agentis` or the repo-specific equivalent.
-4. CLI deployed API flow: defaults now point to `https://api.agentis.systems`; verify `agentis login`, `wallet create`, `agent list`, `fetch`, and `earn positions` against production.
-5. MCP installed package flow: verify `agentis-mcp` from npm works with only `AGENTIS_ACCOUNT_KEY=agt_user_...` and has no local repo path assumptions.
-6. Facilitator live demo polish: public `/facilitators` page exists and backend exposes `GET /facilitators/explore`; remaining work is a hosted facilitator, docs polish, and seller onboarding/top-up UX.
-7. Demo scripting: lock the Colosseum pitch/demo path for Earn, facilitator discovery, on-chain policy, Umbra, CLI/MCP, and fallback flows.
-
-Medium-term:
-- Add richer on-chain policy visibility, including current configured limits decoded from the policy PDA.
-- Replace Railway JSON-volume storage with a real database, plus DB admin/ops tooling and observability.
-- Exportable self-custodial agent wallets using Privy key quorums, so users can export agent wallet private keys while Agentis can still authorize agent actions server-side.
-- x402 facilitator deeper hardening.
-- Jupiter Earn withdraw support.
-- Swaps.
-- Richer SDK docs.
-- On-chain policy for x402/MPP is post-Colosseum. Do not prioritize before Colosseum unless the product direction changes.
-
-Recommended next build order:
-1. Redeploy/check dashboard with production backend env.
-2. Publish packages.
-3. Verify CLI and MCP from installed packages against production.
-4. Test skill install from GitHub.
-5. Script the demo/pitch flow.
 
 ## Reference Files
 - `JUPITER.txt`: Jupiter docs dump.

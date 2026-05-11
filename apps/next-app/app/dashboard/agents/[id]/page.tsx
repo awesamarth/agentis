@@ -579,7 +579,7 @@ export default function AgentDetail() {
           body: JSON.stringify({ amount, mint: UMBRA_SOL_MINT, to: recipient }),
         })
         setUmbraMessage(
-          `UTXO created for ${umbraUtxoAmount.trim()} SOL to ${shortAddr(recipient)}${
+          `UTXO created for ${umbraUtxoAmount.trim()} SOL to ${recipient.slice(0, 4)}...${recipient.slice(-4)}${
             result.createUtxoSignature ? `: ${String(result.createUtxoSignature).slice(0, 12)}...` : ''
           }`,
         )
