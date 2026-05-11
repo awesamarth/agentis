@@ -22,6 +22,8 @@ Do not assume the repo is present or that a local backend is running. Normal use
 
 ## CLI
 
+Use the installed `agentis` command by default. Do not run repo-local commands like `bun packages/cli/src/index.ts` unless the user is explicitly developing Agentis itself inside the Agentis repository.
+
 Run:
 
 ```sh
