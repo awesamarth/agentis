@@ -22,7 +22,24 @@ Do not assume the repo is present or that a local backend is running. Normal use
 
 ## CLI
 
-Use the installed `agentis` command by default. Do not run repo-local commands like `bun packages/cli/src/index.ts` unless the user is explicitly developing Agentis itself inside the Agentis repository.
+Use the installed `agentis` command by default. If it is not installed, run the published CLI package:
+
+```sh
+npx @agentis-hq/cli --help
+```
+
+For frequent use, install the CLI globally:
+
+```sh
+npm install -g @agentis-hq/cli
+agentis --help
+```
+
+Or with Bun:
+
+```sh
+bun x @agentis-hq/cli --help
+```
 
 Run:
 
@@ -80,7 +97,36 @@ For Jupiter Earn, `--mainnet` is required. Omitting `--amount` on `earn withdraw
 
 ## MCP
 
-Use MCP if the host environment has an Agentis MCP server configured. It requires an Agentis account key, usually named `AGENTIS_ACCOUNT_KEY`, in the MCP server environment.
+Use MCP if the host environment has an Agentis MCP server configured.
+
+Install the MCP server globally:
+
+```sh
+npm install -g @agentis-hq/mcp
+```
+
+Or run it through the published package from an MCP client command:
+
+```sh
+npx @agentis-hq/mcp
+```
+
+MCP requires an Agentis account key, usually named `AGENTIS_ACCOUNT_KEY`, in the MCP server environment. The default API is `https://api.agentis.systems`.
+
+Example MCP config:
+
+```json
+{
+  "mcpServers": {
+    "agentis": {
+      "command": "agentis-mcp",
+      "env": {
+        "AGENTIS_ACCOUNT_KEY": "agt_user_..."
+      }
+    }
+  }
+}
+```
 
 Important tools:
 
