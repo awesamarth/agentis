@@ -999,7 +999,7 @@ agents.post('/:id/send', async (c) => {
         .filter(t => now - new Date(t.timestamp).getTime() < 60 * 60 * 1000)
         .reduce((sum, t) => sum + t.amount, 0)
       if (hourSpend + amountSol > policy.hourlyLimit) {
-        return c.json({ error: `Hourly spend limit exceeded (${policy.hourlyLimit} SOL)` }, 403)
+        return c.json({ error: `Hourly spend limit exceeded (${policy.hourlyLimit})` }, 403)
       }
     }
 
@@ -1008,7 +1008,7 @@ agents.post('/:id/send', async (c) => {
         .filter(t => now - new Date(t.timestamp).getTime() < 24 * 60 * 60 * 1000)
         .reduce((sum, t) => sum + t.amount, 0)
       if (daySpend + amountSol > policy.dailyLimit) {
-        return c.json({ error: `Daily spend limit exceeded (${policy.dailyLimit} SOL)` }, 403)
+        return c.json({ error: `Daily spend limit exceeded (${policy.dailyLimit})` }, 403)
       }
     }
 
@@ -1016,14 +1016,14 @@ agents.post('/:id/send', async (c) => {
       const currentMonth = new Date().toISOString().slice(0, 7)
       const monthSpend = agent.monthSpend?.month === currentMonth ? agent.monthSpend.spend : 0
       if (monthSpend + amountSol > policy.monthlyLimit) {
-        return c.json({ error: `Monthly spend limit exceeded (${policy.monthlyLimit} SOL)` }, 403)
+        return c.json({ error: `Monthly spend limit exceeded (${policy.monthlyLimit})` }, 403)
       }
     }
 
     if (policy.maxBudget !== null) {
       const totalSpend = txns.reduce((sum, t) => sum + t.amount, 0)
       if (totalSpend + amountSol > policy.maxBudget) {
-        return c.json({ error: `Total budget cap exceeded (${policy.maxBudget} SOL)` }, 403)
+        return c.json({ error: `Total budget cap exceeded (${policy.maxBudget})` }, 403)
       }
     }
   }

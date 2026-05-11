@@ -79,6 +79,18 @@ npx @agentis-hq/cli policy set my-agent --max-per-tx 1 --daily 10 --budget 100
 
 See the [quick start docs](https://docs.agentis.systems/docs/agentis) for the full path.
 
+## Agent Skill
+
+Agentis includes an installable `SKILL.md` for compatible coding agents. The skill tells an AI agent how to choose between the dashboard, CLI, SDK, and MCP server, and how to operate Agentis safely.
+
+Install it with the Vercel Agent Skills CLI:
+
+```bash
+npx skills add awesamarth/agentis
+```
+
+The skill lives at [`skills/agentis/SKILL.md`](skills/agentis/SKILL.md).
+
 ## CLI
 
 Install globally:
@@ -166,12 +178,6 @@ Example MCP config:
 The MCP server exposes account-level tools for listing agents, creating agents, reading balances, sending SOL, fetching paid URLs, updating policy, using Jupiter Earn, and operating Umbra privacy flows.
 
 Read the [MCP docs](https://docs.agentis.systems/docs/mcp) or the package README at [`packages/mcp`](packages/mcp).
-
-## Agent Skill
-
-Agentis includes an installable `SKILL.md` for compatible coding agents. It tells an AI agent when to use the dashboard, CLI, SDK, or MCP server, and how to operate Agentis safely.
-
-The skill lives at [`skills/agentis/SKILL.md`](skills/agentis/SKILL.md).
 
 ## Packages
 

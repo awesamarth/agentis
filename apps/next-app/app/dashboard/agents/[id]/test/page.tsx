@@ -174,7 +174,7 @@ export default function AgentTestConsole() {
         .filter(t => now - new Date(t.timestamp).getTime() < 60 * 60 * 1000)
         .reduce((sum, t) => sum + t.amount, 0)
       if (hourSpend + amountSol > policy.hourlyLimit) {
-        return `Hourly spend limit exceeded (${policy.hourlyLimit} SOL)`
+        return `Hourly spend limit exceeded (${policy.hourlyLimit})`
       }
     }
 
@@ -183,7 +183,7 @@ export default function AgentTestConsole() {
         .filter(t => now - new Date(t.timestamp).getTime() < 24 * 60 * 60 * 1000)
         .reduce((sum, t) => sum + t.amount, 0)
       if (daySpend + amountSol > policy.dailyLimit) {
-        return `Daily spend limit exceeded (${policy.dailyLimit} SOL)`
+        return `Daily spend limit exceeded (${policy.dailyLimit})`
       }
     }
 
@@ -193,14 +193,14 @@ export default function AgentTestConsole() {
         .filter(t => t.timestamp.slice(0, 7) === currentMonth)
         .reduce((sum, t) => sum + t.amount, 0)
       if (monthSpend + amountSol > policy.monthlyLimit) {
-        return `Monthly spend limit exceeded (${policy.monthlyLimit} SOL)`
+        return `Monthly spend limit exceeded (${policy.monthlyLimit})`
       }
     }
 
     if (policy.maxBudget !== null) {
       const totalSpend = txns.reduce((sum, t) => sum + t.amount, 0)
       if (totalSpend + amountSol > policy.maxBudget) {
-        return `Total budget cap exceeded (${policy.maxBudget} SOL)`
+        return `Total budget cap exceeded (${policy.maxBudget})`
       }
     }
 
