@@ -55,27 +55,33 @@ Agentis can be operated from:
 
 ## Quick Start
 
-Create an account on the [Agentis dashboard](https://agentis.systems/dashboard), then create an agent wallet.
+Create an account on the [Agentis dashboard](https://agentis.systems/dashboard), then create and fund an agent wallet.
 
-You can also start from the CLI:
+Set policy limits before giving an AI agent control:
 
-```bash
-npx @agentis-hq/cli login
-npx @agentis-hq/cli wallet create --name my-agent
-npx @agentis-hq/cli agent list
-```
+- max per transaction
+- daily or monthly budget
+- allowed domains
+- kill switch
 
-Fetch a paid URL through an agent wallet:
-
-```bash
-npx @agentis-hq/cli fetch https://example.com/paid-data --agent my-agent
-```
-
-Set policy limits before the agent spends:
+Then install the Agentis skill in your AI agent environment:
 
 ```bash
-npx @agentis-hq/cli policy set my-agent --max-per-tx 1 --daily 10 --budget 100
+npx skills add awesamarth/agentis
 ```
+
+The intended flow is: a human creates an agent wallet, applies policy, then an AI agent operates that wallet through Agentis while staying inside those limits. You can control the same wallet from the dashboard, CLI, SDK, MCP server, or through an AI agent using the Agentis skill.
+
+For local assistants and coding agents with shell access, install the CLI first. The Agentis skill gives the agent enough context to use `agentis --help`, pick the right commands, and operate wallets through the CLI:
+
+```bash
+npm install -g @agentis-hq/cli
+agentis login
+agentis agent list
+agentis fetch https://example.com/paid-data --agent my-agent
+```
+
+Use MCP as the secondary path when you do not want a global CLI installed, or when your AI agent host already has Agentis MCP tools connected.
 
 See the [quick start docs](https://docs.agentis.systems/docs/agentis) for the full path.
 
@@ -98,12 +104,6 @@ Install globally:
 ```bash
 npm install -g @agentis-hq/cli
 agentis
-```
-
-Or run directly:
-
-```bash
-npx @agentis-hq/cli --help
 ```
 
 Common commands:

@@ -1,60 +1,90 @@
 ---
 title: Quick Start
-description: Create an Agentis account, create an agent wallet, and use it from dashboard, CLI, SDK, or MCP.
+description: Create an Agentis wallet, install the Agentis skill, and let your AI agent operate within policy.
 ---
 
-Agentis gives AI agents Solana wallets with payments, policy enforcement, privacy, and yield.
+Agentis is built for humans who want AI agents to hold and spend money without handing them raw wallet access.
 
-The shortest path is:
+The intended path is:
 
-1. Create an Agentis account.
+1. Sign in to the Agentis dashboard.
 2. Create an agent wallet.
-3. Use that wallet from the dashboard, CLI, SDK, or MCP.
-4. Add spend limits before the agent starts paying for real work.
+3. Fund it and set policy limits.
+4. Install the Agentis skill in your AI agent environment.
+5. Ask your agent to use Agentis for paid fetches, transfers, policy checks, privacy, or yield.
 
-## 1. Create an account
+The dashboard is the fastest place to start. The CLI, SDK, MCP server, and skill let you keep controlling the same agent wallets from terminals, apps, and AI agent environments.
+
+## 1. Sign in
 
 Open the [Agentis dashboard](https://agentis.systems/dashboard) and sign in.
 
-The dashboard is the easiest place to create hosted agent wallets, inspect balances, set policy limits, and view transaction history.
+Use the dashboard to get the first wallet and policy in place:
+
+- create hosted agent wallets
+- inspect balances and transaction history
+- fund an agent wallet from your connected wallet
+- set spend limits and kill switches
+- enable privacy flows for private agents
+- review Jupiter Earn positions
 
 ## 2. Create an agent wallet
 
-From the dashboard, create a new agent.
+Create a new hosted agent from the dashboard.
 
-Or from the CLI:
+Give it a name you will also use when talking to your AI agent, for example `research-agent`, `buyer-agent`, or `dev-agent`.
 
-```bash
-npx @agentis-hq/cli login
-npx @agentis-hq/cli wallet create --name my-agent
-```
+Agentis creates a Solana wallet for that agent. You can fund it, cap what it is allowed to spend, and turn it off from the dashboard at any time.
 
-Agentis returns:
+## 3. Set policy before handoff
 
-- a Solana wallet address for the agent
-- an agent API key for SDK usage
-- account-level access for CLI and MCP
+Set limits before your AI agent starts spending.
 
-Full keys are shown only when created or regenerated. Agentis stores key hashes and masked metadata, not plaintext API keys in normal account reads.
+Common first policies:
 
-## 3. Use the agent anywhere
+- a max amount per transaction
+- a daily budget
+- a monthly or total budget
+- an allowed-domain list for paid API calls
+- a kill switch you can turn on instantly
 
-### Dashboard
+Policy amounts are USD-denominated. Agentis checks policy before signing or proxying payments.
 
-Use the [Agentis dashboard](https://agentis.systems/dashboard) when a human is operating the account.
+## 4. Install the Agentis skill
 
-You can create agents, fund wallets, set policy limits, deposit into Jupiter Earn, register Umbra, and inspect transactions.
-
-### CLI
-
-Use the CLI for local workflows and scripts:
+Install the Agentis skill in the AI agent environment you use for coding or automation:
 
 ```bash
-npx @agentis-hq/cli agent list
-npx @agentis-hq/cli fetch https://example.com/paid-data --agent my-agent
+npx skills add awesamarth/agentis
 ```
 
-Install it globally if you use Agentis often:
+The skill teaches your agent when to use the dashboard, CLI, SDK, MCP server, policy checks, Umbra privacy, Jupiter Earn, and paid MPP/x402 fetches.
+
+After installing it, tell your agent what you want it to do:
+
+```txt
+Log me into Agentis and list my wallets.
+```
+
+```txt
+Fetch this paid endpoint via one of my wallets with enough balance.
+```
+
+```txt
+Put all my agents' available USDC balances into Jupiter Earn.
+```
+
+```txt
+Put 0.05 SOL from dev-wallet into Umbra encrypted balance.
+```
+
+## 5. Install the CLI
+
+For most coding agents with shell access, the Agentis CLI is the best execution path.
+
+Install the CLI once, then your agent can use the `agentis` command directly. The skill gives it the context it needs to discover commands with `agentis --help`, pick the right interface, and operate wallets without you memorizing syntax.
+
+Install:
 
 <CodeBlockTabs defaultValue="npm" groupId="package-manager">
   <CodeBlockTabsList>
@@ -78,89 +108,62 @@ Install it globally if you use Agentis often:
   <CodeBlockTab value="npm">
     ```bash
     npm install -g @agentis-hq/cli
-    agentis --help
     ```
   </CodeBlockTab>
 
   <CodeBlockTab value="yarn">
     ```bash
     yarn global add @agentis-hq/cli
-    agentis --help
     ```
   </CodeBlockTab>
 
   <CodeBlockTab value="pnpm">
     ```bash
     pnpm add -g @agentis-hq/cli
-    agentis --help
     ```
   </CodeBlockTab>
 
   <CodeBlockTab value="bun">
     ```bash
     bun add -g @agentis-hq/cli
-    agentis --help
     ```
   </CodeBlockTab>
 </CodeBlockTabs>
 
-See the [CLI docs](/docs/cli) for install options and the full command set.
+Then ask your AI agent to use Agentis. It can log you in, list wallets, check balances, select a funded wallet, run paid fetches, update policies, use Umbra, or deposit into Jupiter Earn through the CLI.
 
-### SDK
+Use the [CLI docs](/docs/cli) when you want to see the full command set yourself.
 
-Use the SDK inside your app or agent runtime:
+## 6. Use MCP only when you do not want the CLI
 
-```ts
-import { AgentisClient } from '@agentis-hq/sdk'
+MCP is the secondary path for AI agent environments where you do not want a global CLI installed, or where the host already has Agentis MCP tools connected.
 
-const agentis = await AgentisClient.create({
-  apiKey: process.env.AGENTIS_API_KEY!,
-})
+Use the [MCP docs](/docs/mcp) when you want a local assistant to call Agentis tools through stdio instead of shelling out to `agentis`.
 
-const res = await agentis.fetch('https://example.com/paid-data')
-const data = await res.json()
-```
+Use the [SDK docs](/docs/sdk) when you are building Agentis into an app backend or custom agent runtime.
 
-### MCP
+## What your agent can do
 
-Use MCP when your coding agent or local assistant should operate Agentis tools:
+Once the agent wallet, policy, skill, and interface are in place, your AI agent can use Agentis to:
 
-```json
-{
-  "mcpServers": {
-    "agentis": {
-      "command": "agentis-mcp",
-      "env": {
-        "AGENTIS_ACCOUNT_KEY": "agt_user_..."
-      }
-    }
-  }
-}
-```
+- check balances and transaction history
+- pay MPP and x402 protected URLs
+- send SOL through a policy-checked wallet
+- update or read spend policy
+- use Umbra privacy actions for private agents
+- inspect or deposit into Jupiter Earn
+- scaffold or publish x402 facilitators
 
-## 4. Set policy before spending
+You keep control through Agentis. Your agent gets a constrained financial tool it can actually use.
 
-Set limits from the dashboard or CLI:
+## Manual paths
 
-```bash
-npx @agentis-hq/cli policy set my-agent --max-per-tx 1 --daily 10 --budget 100
-```
+The CLI, SDK, and MCP server are still first-class Agentis surfaces, but they are not the best first step for most users.
 
-Policies are USD-denominated. Agentis checks policy before signing or proxying payments.
+Use them when you need direct control:
 
-## 5. Pay for work
+- **CLI**: terminal workflows, scripts, local encrypted wallets, and manual operations
+- **SDK**: app backends and custom agent runtimes
+- **MCP**: local AI assistants and coding agents that should call Agentis tools directly
 
-Agentis can pay MPP and x402 protected URLs:
-
-```bash
-npx @agentis-hq/cli fetch https://example.com/paid-data --agent my-agent
-```
-
-The SDK exposes the same flow through `client.fetch(url)`.
-
-## What next?
-
-- Use the **CLI** section for wallet, policy, earn, privacy, and facilitator commands.
-- Use the **SDK** section to integrate Agentis into an app or agent runtime.
-- Use the **MCP** section to connect Agentis tools to local AI agents.
-- Use **Guides** for placeholders that will become deeper walkthroughs.
+For day one, create the agent wallet, install the skill, connect an Agentis interface, and let your agent operate with policy in place.
