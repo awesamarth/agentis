@@ -463,11 +463,6 @@ export async function getFacilitatorsByUser(userId: string): Promise<Facilitator
   return db.facilitators.filter(f => f.ownerUserId === userId)
 }
 
-export async function getFacilitatorById(id: string): Promise<FacilitatorRecord | undefined> {
-  const db = await readDb()
-  return db.facilitators.find(f => f.id === id)
-}
-
 export async function updateFacilitator(id: string, ownerUserId: string, patch: Partial<Pick<FacilitatorRecord, 'name' | 'publicUrl' | 'listed' | 'feeBps' | 'acceptedMint' | 'network'>>): Promise<FacilitatorRecord> {
   const db = await readDb()
   const idx = db.facilitators.findIndex(f => f.id === id && f.ownerUserId === ownerUserId)
@@ -507,15 +502,4 @@ export async function recordFacilitatorHeartbeat(id: string, heartbeatSecret: st
   }
   await writeDb(db)
   return db.facilitators[idx]!
-}
-
-export async function getListedFacilitators(): Promise<FacilitatorRecord[]> {
-  const db = await readDb()
-  const cutoff = Date.now() - 2 * 60 * 1000
-  return db.facilitators
-    .filter(f => f.listed && f.publicUrl)
-    .map(f => {
-      const lastSeen = f.lastHeartbeatAt ? new Date(f.lastHeartbeatAt).getTime() : 0
-      return { ...f, status: lastSeen >= cutoff ? 'live' : 'offline' }
-    })
 }

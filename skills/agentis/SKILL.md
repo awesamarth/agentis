@@ -153,10 +153,6 @@ agentis_privacy_withdraw
 agentis_privacy_create_utxo
 agentis_privacy_scan
 agentis_privacy_claim_latest
-agentis_scaffold_facilitator
-agentis_list_facilitators
-agentis_register_facilitator
-agentis_publish_facilitator
 ```
 
 MCP currently supports Earn deposit, positions, and sweep. Use the CLI for Jupiter Earn withdraw unless an MCP withdraw tool is added.

@@ -24,9 +24,6 @@ export default function Navbar({ showCrumb }: { showCrumb?: string }) {
         <Link href="/dashboard" className="font-mono text-xs text-ink-muted tracking-widest hover:text-ink transition-colors">
           dashboard
         </Link>
-        <Link href="/facilitators" className="font-mono text-xs text-ink-muted tracking-widest hover:text-ink transition-colors">
-          facilitators
-        </Link>
         {ready && authenticated ? (
           <>
             <Link href="/dashboard/profile" className="font-mono text-xs text-ink-muted tracking-wide hover:text-ink transition-colors">

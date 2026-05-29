@@ -204,7 +204,7 @@ Mainnet actions, including Jupiter Earn, move real funds. Review agent policies 
 
 Agentis is early, live, and actively changing. The current product supports hosted agent wallets, local CLI wallets, policy controls, x402/MPP paid fetches, Umbra privacy flows, Jupiter Earn, the dashboard, CLI, SDK, MCP server, and agent skill instructions.
 
-Swaps, deeper facilitator tooling, richer production observability, and exportable self-custodial hosted wallets are planned next steps.
+Swaps, richer production observability, and exportable self-custodial hosted wallets are planned next steps.
 
 ## Links
 

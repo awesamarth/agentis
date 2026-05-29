@@ -5,6 +5,20 @@ Agentis is financial infrastructure for AI agents on Solana: wallets, payments, 
 
 Positioning for the current demo: a hosted + local agent wallet platform where agents can hold funds, make MPP/x402 payments, obey spending policies, and optionally use Umbra privacy.
 
+## Product Direction
+Agentis should stay focused on controlled financial operations for agent wallets, not generic Solana actions or agent marketplaces. The useful expansion path is: give agents more safe ways to use money on Solana while keeping the user/team in control.
+
+Near-term feature direction:
+- Jupiter Swap: let agents convert assets before paying, rebalance SOL/USDC, and move incoming tokens into preferred assets.
+- Jupiter Portfolio: richer agent and account-level portfolio views, including token balances and Jupiter positions.
+- Jupiter Earn improvements: withdraw from Earn, improve Earn UI, and keep position display reliable.
+- Transaction tags and accounting: reason/category per transaction, CSV export, per-agent spend reports, and eventually API/accounting integrations.
+- Jupiter Trigger/limit orders: policy-controlled orders like "swap if SOL drops below X" or take-profit/stop-loss style actions.
+- Jupiter Recurring/DCA: scheduled treasury conversion and recurring buy/sell flows.
+- Jupiter Lend/Borrow later: borrow, repay, and manage collateral with strict risk policies.
+
+Policy depth becomes more important as these actions are added: token allowlists, protocol/action allowlists, max slippage, max borrow/LTV, max daily swap volume, and stablecoin-only modes. Do not prioritize unrelated marketplace, identity/reputation, escrow, disputes, or agent-job flows unless the product direction explicitly changes.
+
 ## Builder Context
 - Solo dev, full time. Ethereum background; Solana still newer.
 - Direct, low-fluff collaboration preferred. Hinglish is fine.
@@ -61,7 +75,7 @@ Core routes:
 - `/account/*`: account key auth for CLI; list/create hosted agents.
 - `/auth/*`: CLI browser login session flow.
 - `/umbra/*`: API-key Umbra privacy routes.
-- `/facilitators/*`: public facilitator heartbeat and discovery routes.
+- `/facilitators/*`: facilitator heartbeat route used by CLI-generated facilitator scaffolds.
 - `/sol-price`: cached SOL/USD price from Jupiter Price API.
 
 DB is still JSON at and should be replaced later.
@@ -134,13 +148,12 @@ Implemented tools:
 - `agentis_policy_get`, `agentis_policy_check`, `agentis_policy_update`, `agentis_policy_init_onchain`, `agentis_policy_read_onchain`.
 - `agentis_earn_deposit`, `agentis_earn_positions`, `agentis_earn_sweep`.
 - `agentis_privacy_status/register/balance/deposit/withdraw/create_utxo/scan/claim_latest`.
-- `agentis_scaffold_facilitator`, `agentis_list_facilitators`, `agentis_register_facilitator`, `agentis_publish_facilitator`.
 
 MCP auth is account-key only. It resolves agent API keys internally from the account-owned agent list when it needs to call SDK/Umbra routes. Local encrypted-wallet vault commands are intentionally CLI-only for v1.
 
 Tested MCP:
 - `bun --check packages/mcp/src/index.ts`.
-- Real stdio MCP client listed 27 tools, listed agents, read `leno` policy/balance/transactions, checked policy, fetched `https://example.com` via `agentis_fetch_paid_url`, read `agent-p` Umbra status, read `leno` Earn positions, ran Earn sweep dry-run, listed facilitator records, and returned CLI help.
+- Real stdio MCP client listed agents, read `leno` policy/balance/transactions, checked policy, fetched `https://example.com` via `agentis_fetch_paid_url`, read `agent-p` Umbra status, read `leno` Earn positions, ran Earn sweep dry-run, and returned CLI help.
 - MCP paid fetch executed real devnet payments through local x402 and MPP servers: `http://localhost:4000/paid-data` and `http://localhost:4001/mpp-data` both returned `200`.
 - MCP write tests created fresh hosted agents, sent devnet SOL from `leno`, initialized and updated a Quasar on-chain policy, and decoded/read the on-chain policy state.
 - MCP Umbra write test on `mcp-umbra-1777639104167`: registered, deposited `1_000_000` lamports, withdrew `500_000`, created a `10_000_000` lamport UTXO, claimed UTXO `0:566`, and ended with encrypted balance `10_457_322` lamports.
@@ -165,7 +178,7 @@ Implemented provider-side scaffold path:
 - Generated facilitator uses Kora as an external binary/service. Agentis does not fork or vendor Kora.
 - Generated facilitator keeps a local SQLite seller ledger using Node's SQLite API and charges facilitator fees from prepaid seller balances.
 - Generated facilitator sends heartbeat metrics to `/facilitators/:id/heartbeat`.
-- `agentis facilitator publish <name-or-id> --url <url> --listed` opts a live facilitator into public discovery via `/facilitators/explore`.
+- `agentis facilitator publish <name-or-id> --url <url> --listed` stores public URL/listing metadata for a generated facilitator.
 
 Facilitator model:
 - Sellers advertise a gross x402 price that already accounts for facilitator fees.
@@ -339,6 +352,7 @@ Tested Jupiter Earn:
 Useful Jupiter docs in this repo:
 - `JUPITER.txt` is the local full docs dump; search it, do not read all at once.
 - Relevant sections: Lend/Earn API, Earn deposit/withdraw, Privy Earn guide, program addresses.
+- For new Jupiter work, prioritize Swap, Portfolio, Earn withdraw, Trigger/limit orders, Recurring/DCA, then Lend/Borrow. Ignore Prediction, Studio token creation, Lock/vesting, Perps, and Jupiter Plugin unless explicitly requested.
 
 ## Known Working Test Assets
 

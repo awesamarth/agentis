@@ -47,8 +47,8 @@ const productSections = [
   {
     kicker: 'interfaces',
     title: 'Use the same wallet from dashboard, CLI, SDK, and MCP.',
-    body: 'Humans can operate through the dashboard. Agents can call through the SDK or MCP server. Builders can also publish x402 facilitators into the public network page.',
-    items: ['dashboard', 'CLI and SDK', 'MCP and facilitators'],
+    body: 'Humans can operate through the dashboard. Agents can call through the SDK or MCP server, while the CLI works for both scripts and manual operations.',
+    items: ['dashboard', 'CLI and SDK', 'MCP'],
   },
 ]
 
@@ -278,7 +278,7 @@ export default function LandingPage() {
             </Link>
           </div>
           <div className="grid gap-3 font-mono text-xs uppercase tracking-[0.18em] sm:grid-cols-2 lg:w-80">
-            {['dashboard', 'CLI', 'SDK', 'MCP', 'facilitators', 'SKILL.md'].map(label => (
+            {['dashboard', 'CLI', 'SDK', 'MCP', 'SKILL.md'].map(label => (
               <div key={label} className="border border-beige/25 px-5 py-4 text-beige/80">
                 {label}
               </div>

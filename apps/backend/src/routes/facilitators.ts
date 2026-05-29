@@ -1,12 +1,7 @@
 import { Hono } from 'hono'
-import { getListedFacilitators, recordFacilitatorHeartbeat } from '../lib/db'
+import { recordFacilitatorHeartbeat } from '../lib/db'
 
 const facilitators = new Hono()
-
-facilitators.get('/explore', async (c) => {
-  const listed = await getListedFacilitators()
-  return c.json(listed.map(({ heartbeatSecret, ownerUserId, ...safe }) => safe))
-})
 
 facilitators.post('/:id/heartbeat', async (c) => {
   const id = c.req.param('id')
