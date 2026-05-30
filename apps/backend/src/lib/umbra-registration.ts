@@ -32,28 +32,28 @@ export async function registerPrivyWalletWithUmbra(
   const signatures = await register({
     confidential,
     anonymous,
-    callbacks: {
-      userAccountInitialisation: {
-        pre: async () => {
+    hooks: {
+      initUserAccount: {
+        onPreSend: async () => {
           console.log('[umbra/register] userAccountInitialisation pre')
         },
-        post: async (_tx: any, signature: string) => {
+        onPostSend: async ({ signature }) => {
           console.log('[umbra/register] userAccountInitialisation post', signature)
         },
       },
       registerX25519PublicKey: {
-        pre: async () => {
+        onPreSend: async () => {
           console.log('[umbra/register] registerX25519PublicKey pre')
         },
-        post: async (_tx: any, signature: string) => {
+        onPostSend: async ({ signature }) => {
           console.log('[umbra/register] registerX25519PublicKey post', signature)
         },
       },
-      registerUserForAnonymousUsage: {
-        pre: async () => {
+      registerAnonymousUsage: {
+        onPreSend: async () => {
           console.log('[umbra/register] registerUserForAnonymousUsage pre')
         },
-        post: async (_tx: any, signature: string) => {
+        onPostSend: async ({ signature }) => {
           console.log('[umbra/register] registerUserForAnonymousUsage post', signature)
         },
       },

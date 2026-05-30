@@ -58,6 +58,7 @@ Umbra is the active workstream. The backend has been moved to `@umbra-privacy/sd
 
 Current Umbra migration state:
 - `GET /umbra/scan`, direct encrypted-balance deposit/withdraw, encrypted-balance-sourced UTXO creation, and `claim-latest` were retested locally against the backend on May 30, 2026.
+- Live hosted CLI demo passed on May 31, 2026 with fresh agents `live-umbra-rc-0531` and `live-umbra-rc-recv-0531`: register, wSOL encrypted deposit, withdraw, self UTXO create/scan/claim, cross-agent receiver UTXO create/scan/claim, and stale already-claimed retry handling all succeeded.
 - Scan must not call `ensureUmbraMintKey`; repair/rotation is unrelated to scanning and caused misleading logs.
 - The RC SDK scanner failed on devnet indexer absolute row `0` with `Failed to parse String to BigInt`; `apps/backend/src/routes/umbra.ts` now injects `fetchStealthPoolNoteDataForScan(...)` to skip index `0` for scan only.
 - `create-utxo` now uses encrypted balance as the source (`ETA -> stealth pool`) instead of public ATA. Self UTXO and cross-agent receiver UTXO flows both claimed successfully through the local backend.
@@ -325,6 +326,9 @@ Important Umbra facts:
 - dUSDC direct encrypted-balance deposit was confirmed working locally: `scan-fresh-1780145672` deposited `1_000_000` atomic dUSDC and encrypted balance became `shared`, `1000000`.
 - wSOL self UTXO claim was confirmed locally: `scan-fresh-1780145672` created a `100_000` atomic wSOL self UTXO and claim-latest credited `99_574` atomic wSOL back to encrypted balance.
 - wSOL cross-agent UTXO claim was confirmed locally: `scan-fresh-1780145672` sent a `100_000` atomic wSOL receiver UTXO to `umbra-rc-test-177`; receiver scan showed `received: 1`, and claim-latest credited `99_574` atomic wSOL.
+- Live hosted demo agents:
+  - `live-umbra-rc-0531` (`7jdbxG4cmQcqwpXJLuXygmGitexJ5wJ3kAs4y3LbENB8`) final encrypted wSOL after tests: `799_574` atomic.
+  - `live-umbra-rc-recv-0531` (`4XSQbVz6jckcLQSk2RYQHgHD3K3o7KpmitZ5VEqJasnt`) final encrypted wSOL after receiver claim: `99_574` atomic.
 
 Encrypted balance vs UTXO:
 - Encrypted balance hides amount but not linkability.

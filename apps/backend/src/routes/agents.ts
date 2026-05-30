@@ -620,7 +620,7 @@ async function proxyUmbraForAgent(c: any, id: string, path: string, method: 'GET
   const body = method === 'GET' ? undefined : await c.req.text()
   const internalUrl = new URL(`${path}${sourceUrl.search}`, 'http://agentis.internal')
 
-  const res = await umbra.fetch(new Request(internalUrl, {
+  const res = await umbra.fetch(new Request(internalUrl.toString(), {
     method,
     headers: {
       'content-type': c.req.header('content-type') ?? 'application/json',

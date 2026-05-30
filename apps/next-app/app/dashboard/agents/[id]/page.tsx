@@ -212,6 +212,20 @@ function formatLamportsAsSol(value?: string | null) {
   return `${whole}.${fraction.toString().padStart(9, '0').replace(/0+$/, '')}`
 }
 
+function getUmbraMintBalance(payload: unknown, mint: string) {
+  if (!payload || typeof payload !== 'object') return null
+  const entry = (payload as Record<string, unknown>)[mint]
+  if (!entry || typeof entry !== 'object') return null
+  const balance = (entry as Record<string, unknown>).balance
+  return typeof balance === 'string' ? balance : null
+}
+
+function getUmbraMintDelta(payload: unknown, mint: string) {
+  if (!payload || typeof payload !== 'object') return '0'
+  const value = (payload as Record<string, unknown>)[mint]
+  return typeof value === 'string' ? value : '0'
+}
+
 function formatEarnAmount(value: unknown, decimals: number) {
   const amount = Number(value ?? 0) / 10 ** decimals
   return amount.toLocaleString(undefined, { maximumFractionDigits: 6 })
@@ -573,11 +587,12 @@ export default function AgentDetail() {
         await fetchUmbraSnapshot()
 
         if (result.alreadyClaimed) {
-          setUmbraMessage(`stale UTXO already claimed · balance unchanged at ${formatLamportsAsSol(String(result.balanceAfter ?? '0'))} SOL`)
+          const balanceAfter = getUmbraMintBalance(result.balanceAfter, UMBRA_SOL_MINT)
+          setUmbraMessage(`stale UTXO already claimed · balance unchanged at ${formatLamportsAsSol(balanceAfter)} SOL`)
           return
         }
 
-        const delta = String(result.balanceDelta ?? '0')
+        const delta = getUmbraMintDelta(result.balanceDeltas, UMBRA_SOL_MINT)
         const success = Boolean(result.success)
         setUmbraMessage(
           success
@@ -603,9 +618,10 @@ export default function AgentDetail() {
           method: 'POST',
           body: JSON.stringify({ amount, mint: UMBRA_SOL_MINT, to: recipient }),
         })
+        const signature = result.callbackSignature ?? result.queueSignature ?? result.populateProofAccountSignature
         setUmbraMessage(
           `UTXO created for ${umbraUtxoAmount.trim()} SOL to ${recipient.slice(0, 4)}...${recipient.slice(-4)}${
-            result.createUtxoSignature ? `: ${String(result.createUtxoSignature).slice(0, 12)}...` : ''
+            signature ? `: ${String(signature).slice(0, 12)}...` : ''
           }`,
         )
         await Promise.all([
@@ -1280,7 +1296,7 @@ export default function AgentDetail() {
                         </button>
                       </div>
                       <p className="font-mono text-[0.55rem] text-ink-muted/50 mt-2">
-                        creates a receiver-claimable Umbra UTXO from this agent's public SOL balance.
+                        creates a receiver-claimable Umbra UTXO from this agent's encrypted balance.
                       </p>
                     </div>
                   </div>

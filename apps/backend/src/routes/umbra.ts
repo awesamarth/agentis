@@ -133,7 +133,7 @@ async function fetchStealthPoolNoteDataForScan(
   startIndex: bigint,
   endIndex?: bigint,
   limit?: bigint | number,
-) {
+): Promise<any> {
   const safeStartIndex = startIndex === 0n ? 1n : startIndex
   if (endIndex !== undefined && endIndex < safeStartIndex) {
     return {
@@ -153,47 +153,63 @@ async function fetchStealthPoolNoteDataForScan(
     limit: limit === undefined ? undefined : BigInt(limit),
   })
   const cols = response.columns
-  const rowCount = cols !== null ? cols.absolute_index.length : 0
+  if (!cols) {
+    return {
+      items: new Map(),
+      hasMore: response.has_more,
+      nextCursor: response.next_cursor ?? undefined,
+      totalCount: response.total_count,
+    }
+  }
+
+  const rowCount = cols.absolute_index.length
   const items = new Map()
+  const getRow = <T>(values: readonly T[], rowIndex: number, name: string) => {
+    const value = values[rowIndex]
+    if (value === undefined) {
+      throw new Error(`Indexer response missing ${name} at row ${rowIndex}`)
+    }
+    return value
+  }
   const decodeU128Base64 = (value: string) =>
     BigInt(readU128LeFromBytes(Uint8Array.from(Buffer.from(value, 'base64'))))
 
   for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
-    const senderAddress = splitBase64Address(cols.h1_sender_address[rowIndex])
-    const mintAddress = splitBase64Address(cols.h1_mint_address[rowIndex])
+    const senderAddress = splitBase64Address(getRow(cols.h1_sender_address, rowIndex, 'h1_sender_address'))
+    const mintAddress = splitBase64Address(getRow(cols.h1_mint_address, rowIndex, 'h1_mint_address'))
     const item = {
-      absoluteIndex: cols.absolute_index[rowIndex],
-      treeIndex: cols.tree_index[rowIndex],
-      insertionIndex: cols.insertion_index[rowIndex],
-      finalCommitment: decodeBase64ToU256LeBytes(cols.final_commitment[rowIndex]),
+      absoluteIndex: getRow(cols.absolute_index, rowIndex, 'absolute_index'),
+      treeIndex: getRow(cols.tree_index, rowIndex, 'tree_index'),
+      insertionIndex: getRow(cols.insertion_index, rowIndex, 'insertion_index'),
+      finalCommitment: decodeBase64ToU256LeBytes(getRow(cols.final_commitment, rowIndex, 'final_commitment')),
       h1Components: {
-        version: decodeU128Base64(cols.h1_version[rowIndex]),
-        commitmentIndex: decodeU128Base64(cols.h1_commitment_index[rowIndex]),
+        version: decodeU128Base64(getRow(cols.h1_version, rowIndex, 'h1_version')),
+        commitmentIndex: decodeU128Base64(getRow(cols.h1_commitment_index, rowIndex, 'h1_commitment_index')),
         senderAddressLow: senderAddress.low,
         senderAddressHigh: senderAddress.high,
-        relayerFixedSolFees: BigInt(cols.h1_relayer_fixed_sol_fees[rowIndex]),
+        relayerFixedSolFees: BigInt(getRow(cols.h1_relayer_fixed_sol_fees, rowIndex, 'h1_relayer_fixed_sol_fees')),
         mintAddressLow: mintAddress.low,
         mintAddressHigh: mintAddress.high,
         timestamp: {
-          year: cols.h1_year[rowIndex],
-          month: cols.h1_month[rowIndex],
-          day: cols.h1_day[rowIndex],
-          hour: cols.h1_hour[rowIndex],
-          minute: cols.h1_minute[rowIndex],
-          second: cols.h1_second[rowIndex],
+          year: getRow(cols.h1_year, rowIndex, 'h1_year'),
+          month: getRow(cols.h1_month, rowIndex, 'h1_month'),
+          day: getRow(cols.h1_day, rowIndex, 'h1_day'),
+          hour: getRow(cols.h1_hour, rowIndex, 'h1_hour'),
+          minute: getRow(cols.h1_minute, rowIndex, 'h1_minute'),
+          second: getRow(cols.h1_second, rowIndex, 'h1_second'),
         },
-        poolVolumeSpl: BigInt(cols.h1_pool_volume_spl[rowIndex]),
-        poolVolumeSol: BigInt(cols.h1_pool_volume_sol[rowIndex]),
+        poolVolumeSpl: BigInt(getRow(cols.h1_pool_volume_spl, rowIndex, 'h1_pool_volume_spl')),
+        poolVolumeSol: BigInt(getRow(cols.h1_pool_volume_sol, rowIndex, 'h1_pool_volume_sol')),
       },
-      h1Hash: decodeBase64ToU256LeBytes(cols.h1_hash[rowIndex]),
-      h2Hash: decodeBase64ToU256LeBytes(cols.h2_hash[rowIndex]),
-      aesEncryptedData: decodeBase64ToAesCiphertext(cols.aes_encrypted_data[rowIndex]),
-      depositorX25519PublicKey: decodeBase64ToX25519PublicKey(cols.depositor_x25519_public_key[rowIndex]),
-      timestamp: cols.timestamp[rowIndex],
-      slot: cols.slot[rowIndex],
-      eventType: cols.event_type[rowIndex],
+      h1Hash: decodeBase64ToU256LeBytes(getRow(cols.h1_hash, rowIndex, 'h1_hash')),
+      h2Hash: decodeBase64ToU256LeBytes(getRow(cols.h2_hash, rowIndex, 'h2_hash')),
+      aesEncryptedData: decodeBase64ToAesCiphertext(getRow(cols.aes_encrypted_data, rowIndex, 'aes_encrypted_data')),
+      depositorX25519PublicKey: decodeBase64ToX25519PublicKey(getRow(cols.depositor_x25519_public_key, rowIndex, 'depositor_x25519_public_key')),
+      timestamp: getRow(cols.timestamp, rowIndex, 'timestamp'),
+      slot: getRow(cols.slot, rowIndex, 'slot'),
+      eventType: getRow(cols.event_type, rowIndex, 'event_type'),
     }
-    items.set(cols.insertion_index[rowIndex], item)
+    items.set(item.insertionIndex, item)
   }
 
   return {

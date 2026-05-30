@@ -133,7 +133,7 @@ function safeCompare(a: string, b: string): boolean {
 
 async function readKeySecrets(): Promise<KeySecrets> {
   const file = Bun.file(KEY_SECRETS_PATH)
-  if (!(await file.exists())) return { agents: {}, accounts: {} }
+  if (!(await file.exists())) return { agents: {}, accounts: {}, loginSessions: {} }
   const data = await file.json().catch(() => ({}))
   return {
     agents: data.agents ?? {},
