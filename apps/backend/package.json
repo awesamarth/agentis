@@ -18,7 +18,7 @@
     "@solana/mpp": "^0.5.2",
     "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.4",
-    "@umbra-privacy/sdk": "^4.0.0",
+    "@umbra-privacy/sdk": "5.0.0-rc.3",
     "@umbra-privacy/web-zk-prover": "^2.0.1",
     "@x402/core": "^2.10.0",
     "@x402/evm": "^2.10.0",

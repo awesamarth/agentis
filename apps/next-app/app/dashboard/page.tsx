@@ -2,8 +2,8 @@
 
 import { Copy, Check, Lock, Unlock, X, RefreshCw } from 'lucide-react'
 import { usePrivy } from '@privy-io/react-auth'
-import { useEffect, useEffectEvent, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import Link from 'next/link'
 import Navbar from '@/components/Navbar'
 
 type Agent = {
@@ -70,6 +70,7 @@ const EARN_SWEEP_TIMEOUT_MS = 8000
 function CopyAddress({ address }: { address: string }) {
   const [copied, setCopied] = useState(false)
   function copy(e: React.MouseEvent) {
+    e.preventDefault()
     e.stopPropagation()
     navigator.clipboard.writeText(address)
     setCopied(true)
@@ -114,7 +115,6 @@ function formatEarnRowAmount(value: string | undefined) {
 
 export default function Dashboard() {
   const { ready, authenticated, getAccessToken, login } = usePrivy()
-  const router = useRouter()
   const [agents, setAgents] = useState<Agent[]>([])
   const [balances, setBalances] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(false)
@@ -132,6 +132,8 @@ export default function Dashboard() {
   const [earnPositions, setEarnPositions] = useState<EarnAccountPositions | null>(null)
   const [earnPositionsLoading, setEarnPositionsLoading] = useState(false)
   const [earnPositionsError, setEarnPositionsError] = useState<string | null>(null)
+  const earnInitialLoadRef = useRef(false)
+  const earnSnapshotInFlightRef = useRef<Promise<void> | null>(null)
 
   function getAgentCardClass(agent: Agent) {
     if (agent.policyMode === 'onchain') {
@@ -179,8 +181,10 @@ export default function Dashboard() {
       setAgents(data)
       setLoading(false)
       void fetchAllBalances(data.map((a: Agent) => a.walletAddress))
-      void fetchSweepPlan(token)
-      void fetchEarnAccountPositions(token)
+      if (!earnInitialLoadRef.current) {
+        earnInitialLoadRef.current = true
+        void fetchEarnSnapshot(token)
+      }
     } finally {
       setLoading(false)
     }
@@ -194,6 +198,10 @@ export default function Dashboard() {
       })
     } else {
       queueMicrotask(() => {
+        earnInitialLoadRef.current = false
+        earnSnapshotInFlightRef.current = null
+        setSweepPlan(null)
+        setEarnPositions(null)
         const guests = loadGuestAgents()
         setAgents(guests)
         void fetchAllBalances(guests.map(a => a.walletAddress))
@@ -303,6 +311,24 @@ export default function Dashboard() {
     }
   }
 
+  async function fetchEarnSnapshot(tokenInput?: string | null) {
+    if (earnSnapshotInFlightRef.current) return earnSnapshotInFlightRef.current
+
+    const run = (async () => {
+      const token = tokenInput ?? await getAccessToken()
+      if (!token) return
+      await fetchSweepPlan(token)
+      await fetchEarnAccountPositions(token)
+    })()
+
+    earnSnapshotInFlightRef.current = run
+    try {
+      await run
+    } finally {
+      earnSnapshotInFlightRef.current = null
+    }
+  }
+
   async function executeSweep() {
     if (!authenticated) {
       login()
@@ -325,10 +351,7 @@ export default function Dashboard() {
       const body = await res.json().catch(() => null)
       if (!res.ok) throw new Error(body?.error ?? 'Earn sweep failed')
       setSweepDeposits(body.deposits ?? [])
-      await Promise.all([
-        fetchSweepPlan(token),
-        fetchEarnAccountPositions(token),
-      ])
+      await fetchEarnSnapshot()
     } catch (err: unknown) {
       setSweepError(getErrorMessage(err, 'Earn sweep failed'))
     } finally {
@@ -344,6 +367,7 @@ export default function Dashboard() {
     return { agent, available, supplied }
   })
   const earnLoading = sweepLoading || earnPositionsLoading
+  const hasEarnSnapshot = Boolean(sweepPlan || earnPositions || sweepError || earnPositionsError)
 
   return (
     <main className="min-h-screen bg-beige">
@@ -397,9 +421,9 @@ export default function Dashboard() {
         ) : (
           <div className="flex flex-col gap-3">
             {agents.map(agent => (
-              <div
+              <Link
                 key={agent.id}
-                onClick={() => router.push(`/dashboard/agents/${agent.id}`)}
+                href={`/dashboard/agents/${agent.id}`}
                 className={`border p-6 flex items-center justify-between cursor-pointer hover:border-ink-muted hover:shadow-sm transition-all group ${getAgentCardClass(agent)}`}
               >
                 <div>
@@ -453,7 +477,7 @@ export default function Dashboard() {
                   </div>
                   <span className="font-mono text-ink-muted text-lg group-hover:translate-x-1 transition-transform">→</span>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         )}
@@ -472,10 +496,7 @@ export default function Dashboard() {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button
-                  onClick={() => {
-                    void fetchSweepPlan()
-                    void fetchEarnAccountPositions()
-                  }}
+                  onClick={() => { void fetchEarnSnapshot() }}
                   disabled={earnLoading || sweepExecuting}
                   className="font-mono text-[0.6rem] text-ink-muted border border-[#b8d8c0] bg-white/60 px-3 h-9 hover:border-[#79aa86] transition-colors cursor-pointer disabled:opacity-40 inline-flex items-center gap-1.5"
                 >
@@ -495,16 +516,16 @@ export default function Dashboard() {
             <div className="grid grid-cols-3 gap-3 mt-5">
               <div className="bg-white/75 border border-[#b8d8c0]/80 px-4 py-3">
                 <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">supplied</p>
-                <p className="font-mono text-sm text-black">{earnPositionsLoading && !earnPositions ? 'loading...' : `${earnPositions?.totalUnderlyingUi ?? '0'} USDC`}</p>
+                <p className="font-mono text-sm text-black">{earnPositionsLoading && !earnPositions ? 'loading...' : `${earnPositions?.totalUnderlyingUi ?? '--'} USDC`}</p>
               </div>
               <div className="bg-white/75 border border-[#b8d8c0]/80 px-4 py-3">
                 <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">available</p>
-                <p className="font-mono text-sm text-black">{sweepLoading && !sweepPlan ? 'loading...' : `${sweepPlan?.totalUi ?? '0'} USDC`}</p>
+                <p className="font-mono text-sm text-black">{sweepLoading && !sweepPlan ? 'loading...' : `${sweepPlan?.totalUi ?? '--'} USDC`}</p>
               </div>
               <div className="bg-white/75 border border-[#b8d8c0]/80 px-4 py-3">
                 <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">agents</p>
                 <p className="font-mono text-sm text-black">
-                  {suppliedAgents.length} supplied · {sweepableAgents.length} with USDC
+                  {hasEarnSnapshot ? `${suppliedAgents.length} supplied · ${sweepableAgents.length} with USDC` : 'refresh to load'}
                 </p>
               </div>
             </div>

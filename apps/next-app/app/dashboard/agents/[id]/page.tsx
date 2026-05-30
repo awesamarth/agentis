@@ -14,8 +14,9 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
 } from '@solana/transaction-messages'
 import { compileTransaction, getTransactionEncoder } from '@solana/transactions'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { RefreshCw } from 'lucide-react'
 import Navbar from '@/components/Navbar'
 
@@ -322,11 +323,14 @@ export default function AgentDetail() {
   const [onchainError, setOnchainError] = useState<string | null>(null)
   const [earnPositions, setEarnPositions] = useState<EarnPosition[]>([])
   const [earnAvailableUsdc, setEarnAvailableUsdc] = useState<EarnBalanceResponse | null>(null)
+  const [earnLoaded, setEarnLoaded] = useState(false)
   const [earnLoading, setEarnLoading] = useState(false)
   const [earnDepositing, setEarnDepositing] = useState(false)
   const [earnAmount, setEarnAmount] = useState('1')
   const [earnError, setEarnError] = useState<string | null>(null)
   const [earnMessage, setEarnMessage] = useState<string | null>(null)
+  const earnInitialAgentIdRef = useRef<string | null>(null)
+  const earnSnapshotInFlightRef = useRef<Promise<void> | null>(null)
 
   const [apiKey, setApiKey] = useState<string | null>(null)
   const [apiKeyCanCopy, setApiKeyCanCopy] = useState(false)
@@ -389,18 +393,20 @@ export default function AgentDetail() {
       if (data.policyMode === 'onchain') {
         fetchOnchainPolicy()
       }
-      fetchEarnSnapshot()
+      if (earnInitialAgentIdRef.current !== data.id) {
+        earnInitialAgentIdRef.current = data.id
+        void fetchEarnSnapshot()
+      }
     } finally {
       setLoading(false)
     }
   }
 
-  async function fetchEarnPositions() {
+  async function fetchEarnPositions(tokenInput?: string | null) {
     if (!authenticated) return
-    setEarnLoading(true)
     setEarnError(null)
     try {
-      const token = await getAccessToken()
+      const token = tokenInput ?? await getAccessToken()
       if (!token) return
       const res = await fetch(`${API}/agents/${id}/earn/positions?network=mainnet`, {
         headers: { authorization: `Bearer ${token}` },
@@ -411,16 +417,14 @@ export default function AgentDetail() {
       setEarnPositions(positions)
     } catch (err: unknown) {
       setEarnError(getErrorMessage(err, 'Failed to load Jupiter Earn positions'))
-    } finally {
-      setEarnLoading(false)
     }
   }
 
-  async function fetchEarnBalance() {
+  async function fetchEarnBalance(tokenInput?: string | null) {
     if (!authenticated) return
     setEarnError(null)
     try {
-      const token = await getAccessToken()
+      const token = tokenInput ?? await getAccessToken()
       if (!token) return
       const res = await fetch(`${API}/agents/${id}/earn/balance?network=mainnet`, {
         headers: { authorization: `Bearer ${token}` },
@@ -434,16 +438,37 @@ export default function AgentDetail() {
   }
 
   async function fetchEarnSnapshot() {
-    setEarnLoading(true)
+    if (earnSnapshotInFlightRef.current) return earnSnapshotInFlightRef.current
+
+    const run = (async () => {
+      const token = await getAccessToken()
+      if (!token) return
+      setEarnLoading(true)
+      try {
+        await fetchEarnPositions(token)
+        await fetchEarnBalance(token)
+        setEarnLoaded(true)
+      } finally {
+        setEarnLoading(false)
+      }
+    })()
+
+    earnSnapshotInFlightRef.current = run
     try {
-      await Promise.all([
-        fetchEarnPositions(),
-        fetchEarnBalance(),
-      ])
+      await run
     } finally {
-      setEarnLoading(false)
+      earnSnapshotInFlightRef.current = null
     }
   }
+
+  useEffect(() => {
+    earnInitialAgentIdRef.current = null
+    earnSnapshotInFlightRef.current = null
+    setEarnLoaded(false)
+    setEarnPositions([])
+    setEarnAvailableUsdc(null)
+    setEarnError(null)
+  }, [id])
 
   async function handleEarnDeposit() {
     if (!authenticated) {
@@ -905,15 +930,15 @@ export default function AgentDetail() {
     <main className="min-h-screen bg-beige">
       <Navbar showCrumb="dashboard" />
 
-      <div className="max-w-4xl mx-auto px-12 py-16">
+        <div className="max-w-4xl mx-auto px-12 py-16">
 
         {/* Back + header */}
-        <button
-          onClick={() => router.push('/dashboard')}
+        <Link
+          href="/dashboard"
           className="font-mono text-[0.65rem] text-ink-muted tracking-widest mb-8 hover:text-ink transition-colors cursor-pointer flex items-center gap-2"
         >
           ← back to agents
-        </button>
+        </Link>
 
         <div className="flex items-start justify-between mb-12">
           <div>
@@ -1182,7 +1207,7 @@ export default function AgentDetail() {
                           inputMode="decimal"
                           value={umbraAmount}
                           onChange={e => setUmbraAmount(e.target.value.replace(/[^\d.]/g, ''))}
-                          className="w-full h-[46px] bg-beige border border-beige-darker px-3 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
+                          className="w-full h-[46px] bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
                           placeholder="0.001"
                         />
                       </div>
@@ -1230,7 +1255,7 @@ export default function AgentDetail() {
                             inputMode="decimal"
                             value={umbraUtxoAmount}
                             onChange={e => setUmbraUtxoAmount(e.target.value.replace(/[^\d.]/g, ''))}
-                            className="w-full h-[46px] bg-beige border border-beige-darker px-3 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
+                            className="w-full h-[46px] bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
                             placeholder="0.001"
                           />
                         </div>
@@ -1242,7 +1267,7 @@ export default function AgentDetail() {
                             type="text"
                             value={umbraUtxoRecipient}
                             onChange={e => setUmbraUtxoRecipient(e.target.value.trim())}
-                            className="w-full h-[46px] bg-beige border border-beige-darker px-3 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
+                            className="w-full h-[46px] bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
                             placeholder="Solana address"
                           />
                         </div>
@@ -1468,7 +1493,7 @@ export default function AgentDetail() {
                 onChange={e => setDomainInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && addDomain()}
                 placeholder="e.g. api.dune.com"
-                className="flex-1 bg-beige border border-beige-darker px-4 py-2.5 font-mono text-sm text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
+                className="flex-1 bg-[#fcfaf7] border border-beige-darker px-4 py-2.5 font-mono text-sm text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
               />
               <button
                 onClick={addDomain}
@@ -1484,7 +1509,7 @@ export default function AgentDetail() {
             ) : (
               <div className="flex flex-wrap gap-2">
                 {policy.allowedDomains.map(d => (
-                  <div key={d} className="flex items-center gap-2 bg-beige border border-beige-darker px-3 py-1.5">
+                  <div key={d} className="flex items-center gap-2 bg-[#fcfaf7] border border-beige-darker px-3 py-1.5">
                     <span className="font-mono text-xs text-ink">{d}</span>
                     <button
                       onClick={() => removeDomain(d)}
@@ -1550,13 +1575,13 @@ export default function AgentDetail() {
                 <div className="bg-white/75 border border-[#b8d8c0]/80 px-4 py-3">
                   <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">supplied</p>
                   <p className="font-mono text-sm text-black">
-                    {earnLoading && earnPositions.length === 0 ? 'loading...' : `${formatEarnAmount(visibleEarnTotalUnderlying, 6)} USDC`}
+                    {earnLoading && earnPositions.length === 0 ? 'loading...' : `${earnLoaded ? formatEarnAmount(visibleEarnTotalUnderlying, 6) : '--'} USDC`}
                   </p>
                 </div>
                 <div className="bg-white/75 border border-[#b8d8c0]/80 px-4 py-3">
                   <p className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase mb-1">available</p>
                   <p className="font-mono text-sm text-black">
-                    {earnLoading && !earnAvailableUsdc ? 'loading...' : `${earnAvailableUsdc?.amountUi ?? '0'} USDC`}
+                    {earnLoading && !earnAvailableUsdc ? 'loading...' : `${earnAvailableUsdc?.amountUi ?? (earnLoaded ? '0' : '--')} USDC`}
                   </p>
                 </div>
                 <div className="bg-white/75 border border-[#b8d8c0]/80 px-4 py-3">
@@ -1566,7 +1591,11 @@ export default function AgentDetail() {
               </div>
 
               <div className="bg-white/70 border border-[#b8d8c0]/80 divide-y divide-[#b8d8c0]/70 mb-5">
-                {earnLoading && earnPositions.length === 0 ? (
+                {!earnLoaded && !earnLoading ? (
+                  <div className="px-4 py-3">
+                    <p className="font-mono text-[0.65rem] text-ink-muted/50 tracking-widest">refresh to load Earn positions</p>
+                  </div>
+                ) : earnLoading && earnPositions.length === 0 ? (
                   <div className="px-4 py-3">
                     <p className="font-mono text-[0.65rem] text-ink-muted/50 tracking-widest">loading positions...</p>
                   </div>
@@ -1604,7 +1633,7 @@ export default function AgentDetail() {
                     inputMode="decimal"
                     value={earnAmount}
                     onChange={e => setEarnAmount(e.target.value.replace(/[^\d.]/g, ''))}
-                    className="w-full h-[46px] bg-beige border border-beige-darker px-3 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
+                    className="w-full h-[46px] bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
                     placeholder="1"
                   />
                 </div>

@@ -53,6 +53,17 @@ Local packages point to `src/` directly; no package build step is normally neede
 - Backend must be run from `apps/backend/` so `.env` is loaded.
 - Ports commonly used: dashboard `3000`, backend `3001`, x402 test `4000`, MPP test `4001`.
 
+## Current Focus: Umbra RC SDK
+Umbra is the active workstream. The backend has been moved to `@umbra-privacy/sdk@5.0.0-rc.3`, and the Umbra SDK/docs are unstable enough that new changes must inspect installed package exports/types/dist instead of relying on old docs or older Agentis assumptions.
+
+Current Umbra migration state:
+- `GET /umbra/scan`, direct encrypted-balance deposit/withdraw, encrypted-balance-sourced UTXO creation, and `claim-latest` were retested locally against the backend on May 30, 2026.
+- Scan must not call `ensureUmbraMintKey`; repair/rotation is unrelated to scanning and caused misleading logs.
+- The RC SDK scanner failed on devnet indexer absolute row `0` with `Failed to parse String to BigInt`; `apps/backend/src/routes/umbra.ts` now injects `fetchStealthPoolNoteDataForScan(...)` to skip index `0` for scan only.
+- `create-utxo` now uses encrypted balance as the source (`ETA -> stealth pool`) instead of public ATA. Self UTXO and cross-agent receiver UTXO flows both claimed successfully through the local backend.
+- `claim-latest` handles stale indexer rows by skipping `NullifierAlreadyBurnt` entries and treating Umbra relayer `completed` status as success.
+- Do not chase `repair` unless explicitly working on registration/mint-key rotation. For the current debugging path, fix and test one Umbra operation at a time.
+
 ## Auth And Keys
 | Credential | Used by | Notes |
 |---|---|---|
@@ -306,9 +317,14 @@ Important Umbra facts:
 - Devnet program: `DSuKkyqGVGgo4QtPABfxKJKygUDACbUhirnuv63mEpAJ`.
 - Devnet indexer: `https://utxo-indexer.api-devnet.umbraprivacy.com`.
 - Devnet relayer: `https://relayer.api-devnet.umbraprivacy.com`.
-- Devnet wSOL/SOL mint: `So11111111111111111111111111111111111111112`.
-- Confirmed devnet Umbra deposit consumes native SOL and credits encrypted balance under the wSOL mint. Public wSOL ATA can remain zero.
-- Devnet USDC failed with Umbra custom program error `#3012`; wSOL is the safe demo asset.
+- Umbra devnet demo/testing currently works with wSOL plus dUSDC/dUSDT:
+  - wSOL/SOL mint: `So11111111111111111111111111111111111111112`
+  - dUSDC: `4oG4sjmopf5MzvTHLE8rpVJ2uyczxfsw2K84SUTpNDx7`
+  - dUSDT: `DXQwBNGgyQ2BzGWxEriJPVmXYFQBsQbXvfvfSNTaJkL6`
+- wSOL direct encrypted-balance deposit was retested after Umbra re-initialized devnet and is now confirmed working locally: `scan-fresh-1780145672` deposited `1_000_000` atomic wSOL and encrypted balance became `shared`, `1000000`.
+- dUSDC direct encrypted-balance deposit was confirmed working locally: `scan-fresh-1780145672` deposited `1_000_000` atomic dUSDC and encrypted balance became `shared`, `1000000`.
+- wSOL self UTXO claim was confirmed locally: `scan-fresh-1780145672` created a `100_000` atomic wSOL self UTXO and claim-latest credited `99_574` atomic wSOL back to encrypted balance.
+- wSOL cross-agent UTXO claim was confirmed locally: `scan-fresh-1780145672` sent a `100_000` atomic wSOL receiver UTXO to `umbra-rc-test-177`; receiver scan showed `received: 1`, and claim-latest credited `99_574` atomic wSOL.
 
 Encrypted balance vs UTXO:
 - Encrypted balance hides amount but not linkability.

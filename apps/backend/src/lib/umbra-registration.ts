@@ -1,5 +1,7 @@
 import { PrivyClient } from '@privy-io/node'
-import { getUserRegistrationFunction } from '@umbra-privacy/sdk'
+import { getUserRegistrationFunction } from '@umbra-privacy/sdk/registration'
+import { getMintEncryptionKeyRotatorFunction } from '@umbra-privacy/sdk/account'
+import { address as toAddress } from '@solana/kit'
 import { createUmbraClient } from './umbra-signer'
 import { getNodeRegistrationProver } from './node-prover'
 
@@ -65,5 +67,33 @@ export async function registerPrivyWalletWithUmbra(
     confidential,
     anonymous,
     signatures,
+  }
+}
+
+export async function repairPrivyWalletUmbraMintKey(
+  privyNode: PrivyClient,
+  walletId: string,
+  walletAddress: string,
+  mint: string,
+) {
+  console.log('[umbra/repair-mint-key] start', { walletAddress, mint })
+
+  const client = await createUmbraClient(privyNode, walletId, walletAddress)
+  const rotateMintKey = getMintEncryptionKeyRotatorFunction({ client })
+  const signature = await rotateMintKey(
+    toAddress(mint),
+    undefined,
+    undefined,
+    undefined,
+    { skipKeyConsistencyCheck: true }
+  )
+
+  console.log('[umbra/repair-mint-key] done', { walletAddress, mint, signature })
+
+  return {
+    walletAddress,
+    mint,
+    signature,
+    repaired: Boolean(signature),
   }
 }

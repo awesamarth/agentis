@@ -88,10 +88,18 @@ export function getNodeRegistrationProver() {
   }
 }
 
-export function getNodeCreateReceiverClaimableUtxoFromPublicBalanceProver() {
+export function getNodeCreateReceiverBurnableStealthPoolNoteFromPublicBalanceProver() {
   return {
     prove: async (inputs: unknown) => {
-      return runNodeProver('create-receiver-claimable-utxo-from-public-balance', inputs)
+      return runNodeProver('create-receiver-burnable-stealth-pool-note-from-public-balance', inputs)
+    },
+  }
+}
+
+export function getNodeCreateStealthPoolNoteFromEncryptedBalanceProver() {
+  return {
+    prove: async (inputs: unknown) => {
+      return runNodeProver('create-stealth-pool-note-from-encrypted-balance', inputs)
     },
   }
 }

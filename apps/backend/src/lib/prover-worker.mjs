@@ -1,14 +1,13 @@
 // Runs in Node.js (not Bun) — used for ZK proof generation
 // ffjavascript's web-worker polyfill works correctly in Node.js
 
-import { getUserRegistrationProver } from '@umbra-privacy/web-zk-prover'
 import {
+  getATAIntoStealthPoolNoteCreatorProver,
   getClaimReceiverClaimableUtxoIntoEncryptedBalanceProver,
-  getCreateReceiverClaimableUtxoFromPublicBalanceProver,
-} from '@umbra-privacy/web-zk-prover'
-import { getCdnZkAssetProvider } from '@umbra-privacy/web-zk-prover/cdn'
-import https from 'https'
-import http from 'http'
+  getCdnZkAssetProvider,
+  getETAIntoStealthPoolNoteCreatorProver,
+  getUserRegistrationProver,
+} from '@umbra-privacy/sdk'
 
 function log(msg) {
   process.stderr.write(`[prover] ${msg}\n`)
@@ -108,8 +107,13 @@ async function main() {
     log('Prover initialized, proving...')
     result = await prover.prove(inputs)
     log('Proof generated successfully')
-  } else if (type === 'create-receiver-claimable-utxo-from-public-balance') {
-    const prover = getCreateReceiverClaimableUtxoFromPublicBalanceProver()
+  } else if (type === 'create-receiver-burnable-stealth-pool-note-from-public-balance') {
+    const prover = getATAIntoStealthPoolNoteCreatorProver()
+    log('Prover initialized, proving...')
+    result = await prover.prove(inputs)
+    log('Proof generated successfully')
+  } else if (type === 'create-stealth-pool-note-from-encrypted-balance') {
+    const prover = getETAIntoStealthPoolNoteCreatorProver()
     log('Prover initialized, proving...')
     result = await prover.prove(inputs)
     log('Proof generated successfully')
