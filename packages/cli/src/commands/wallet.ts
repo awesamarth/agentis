@@ -1,6 +1,7 @@
 import { createLocalWallet, listLocalWallets } from '../lib/local-wallet'
 import { getToken } from '../lib/keychain'
 import { apiFetch } from '../lib/config'
+import { formatHostedAgentLine, formatLocalWalletLine } from '../lib/format-agent'
 
 export async function walletCreate(args: string[]) {
   const nameIdx = args.indexOf('--name')
@@ -60,7 +61,7 @@ export async function walletList() {
         if (hosted.length > 0) {
           console.log('\nHosted wallets:')
           for (const a of hosted) {
-            console.log(`  ${a.name.padEnd(20)} ${a.walletAddress}  [${a.id}]`)
+            console.log(formatHostedAgentLine(a))
           }
         }
       }
@@ -72,7 +73,7 @@ export async function walletList() {
   if (localWallets.length > 0) {
     console.log('\nLocal wallets:')
     for (const w of localWallets) {
-      console.log(`  ${w.name.padEnd(20)} ${w.solanaAddress}  [${w.id}]`)
+      console.log(formatLocalWalletLine(w))
     }
   }
 

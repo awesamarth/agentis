@@ -370,7 +370,7 @@ Tested Jupiter Earn:
 - `agentis earn positions leno --mainnet` returns `USDC 1.000062 supplied (0.960198 jlUSDC)`.
 
 Useful Jupiter docs in this repo:
-- `JUPITER.txt` is the local full docs dump; search it, do not read all at once.
+- `reference-dumps/JUPITER.txt` is the local full docs dump; search it, do not read all at once.
 - Relevant sections: Lend/Earn API, Earn deposit/withdraw, Privy Earn guide, program addresses.
 - For new Jupiter work, prioritize Swap, Portfolio, Earn withdraw, Trigger/limit orders, Recurring/DCA, then Lend/Borrow. Ignore Prediction, Studio token creation, Lock/vesting, Perps, and Jupiter Plugin unless explicitly requested.
 
@@ -385,10 +385,11 @@ Do not casually mutate `leno` privacy flags; it is useful as a stable funded tes
 
 
 ## Reference Files
-- `JUPITER.txt`: Jupiter docs dump.
-- `umbra.txt`: Umbra docs dump. Huge; search only.
-- `x402.txt`: x402 docs dump. Huge; search only.
-- `mpp.txt`: MPP docs dump. Huge; search only.
+- Reference dumps now live under `reference-dumps/`, not the repo root.
+- `reference-dumps/JUPITER.txt`: Jupiter docs dump.
+- `reference-dumps/umbra.txt`: Umbra docs dump. Huge; search only.
+- `reference-dumps/x402.txt`: x402 docs dump. Huge; search only.
+- `reference-dumps/mpp.txt`: MPP docs dump. Huge; search only.
 
 ## External References
 - Jupiter docs: https://dev.jup.ag

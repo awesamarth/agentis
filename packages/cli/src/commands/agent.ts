@@ -2,6 +2,7 @@ import { getToken } from '../lib/keychain'
 import { apiFetch } from '../lib/config'
 import { fetchAccountAgents, findAccountAgent } from '../lib/account'
 import { getLocalWalletSigner, loadLocalWalletByNameOrId, recordLocalSpend } from '../lib/local-wallet'
+import { formatHostedAgentLine } from '../lib/format-agent'
 import { checkPolicy } from '@agentis-hq/core'
 import {
   address,
@@ -78,7 +79,7 @@ export async function agentList() {
   }
   console.log()
   for (const a of agents) {
-    console.log(`  ${a.name.padEnd(20)} ${a.walletAddress}  [${a.id}]`)
+    console.log(formatHostedAgentLine(a))
   }
   console.log()
 }

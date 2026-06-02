@@ -1,0 +1,13 @@
+{
+  "name": "agentis-sdk-paywall-server",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun index.ts"
+  },
+  "dependencies": {
+    "@agentis-hq/sdk": "file:../../packages/sdk",
+    "hono": "^4.10.5"
+  }
+}

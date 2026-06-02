@@ -1,4 +1,7 @@
 #!/usr/bin/env bun
+import { readFileSync } from 'fs'
+import { dirname, join } from 'path'
+import { fileURLToPath } from 'url'
 import { login, logout, whoami } from './commands/auth'
 import { agentList, agentCreate, agentSend, agentBalance } from './commands/agent'
 import { walletCreate, walletList } from './commands/wallet'
@@ -17,6 +20,18 @@ const green = '\x1b[38;5;114m'
 const muted = '\x1b[38;5;244m'
 const bold = '\x1b[1m'
 const reset = '\x1b[0m'
+
+function readCliVersion(): string {
+  try {
+    const packageJsonPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json')
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { version?: string }
+    return packageJson.version ?? 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+const version = readCliVersion()
 
 type HelpSpec = {
   usage: string
@@ -38,6 +53,10 @@ const helpSpecs: Record<string, HelpSpec> = {
   whoami: {
     usage: 'agentis whoami',
     description: 'Show the currently authenticated Agentis account key in masked form.',
+  },
+  version: {
+    usage: 'agentis version',
+    description: 'Show the installed Agentis CLI version.',
   },
   wallet: {
     usage: 'agentis wallet <command>',
@@ -294,7 +313,7 @@ function showHelp() {
 ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   ██║╚════██║
 ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   ██║███████║
 ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝╚══════╝
-${reset}${muted}v0.1.0${reset}
+${reset}${muted}v${version}${reset}
 
 ${bold}Agentis${reset} — financial infrastructure for AI agents
 
@@ -302,6 +321,7 @@ ${green}${bold}Commands:${reset}
   login                                    authenticate with your Agentis account
   logout                                   remove stored credentials
   whoami                                   show current account
+  version                                  show installed CLI version
 
   wallet create --name <name>              create hosted wallet (requires login)
   wallet create --name <name> --local      create local encrypted wallet
@@ -396,6 +416,11 @@ function showCommandHelp(path: string) {
 }
 
 async function main() {
+  if (cmd === '--version' || cmd === '-v' || cmd === 'version') {
+    console.log(version)
+    return
+  }
+
   if (!cmd || hasHelpFlag(args)) {
     showCommandHelp(helpPath(args))
     return

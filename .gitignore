@@ -36,3 +36,7 @@ x402.txt
 
 # Local MCP config
 .mcp.json
+
+# Local planning docs
+gtm-plan.md
+demos.md

@@ -58,14 +58,21 @@ const agentis = await AgentisClient.create({
 
 ## Server-side paywall
 
-Turn any endpoint into a paid endpoint:
+Turn any endpoint into an MPP and/or x402 paid endpoint. Amounts are atomic
+token units: for USDC/USDT, `1000` means `0.001` token; for SOL, `10000`
+means `10000` lamports.
 
 ```typescript
 // app/api/data/route.ts (Next.js)
 import { paywall } from '@agentis-hq/sdk/server'
 
 export const GET = paywall(
-  { fee: 0.001, receiver: 'YourSolanaWallet' },
+  {
+    protocol: 'both',
+    asset: 'usdc',
+    amount: '1000',
+    recipient: 'YourSolanaWallet',
+  },
   async (req) => {
     return Response.json({ data: 'premium content' })
   }
@@ -75,5 +82,21 @@ export const GET = paywall(
 ```typescript
 // Hono
 import { honoPaywall } from '@agentis-hq/sdk/server'
-app.use('/api/data', honoPaywall({ fee: 0.001, receiver: 'YourSolanaWallet' }))
+app.use('/api/data', honoPaywall({
+  protocol: 'x402',
+  asset: 'usdc',
+  amount: '1000',
+  recipient: 'YourSolanaWallet',
+}))
 ```
+
+Supported Solana devnet assets:
+
+- MPP: native SOL, USDC, and USDT/SPL-compatible token mints.
+- x402: SPL tokens through the x402 SVM exact scheme. USDC and USDT are
+  supported; native SOL is intentionally MPP-only unless wrapped as an SPL asset
+  and supported by your facilitator.
+
+The server helpers use standard protocol headers: MPP uses
+`WWW-Authenticate`, `Authorization`, and `Payment-Receipt`; x402 v2 uses
+`PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, and `PAYMENT-RESPONSE`.
