@@ -1,6 +1,7 @@
 'use client'
 
 import { usePrivy } from '@privy-io/react-auth'
+import { ArrowUpRight } from 'lucide-react'
 import Link from 'next/link'
 
 export default function Navbar({ showCrumb }: { showCrumb?: string }) {
@@ -21,6 +22,15 @@ export default function Navbar({ showCrumb }: { showCrumb?: string }) {
       </div>
 
       <div className="flex items-center gap-6">
+        <a
+          href="https://docs.agentis.systems"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1.5 font-mono text-xs text-ink-muted tracking-widest hover:text-ink transition-colors"
+        >
+          docs
+          <ArrowUpRight className="h-3 w-3" strokeWidth={1.8} aria-hidden="true" />
+        </a>
         <Link href="/dashboard" className="font-mono text-xs text-ink-muted tracking-widest hover:text-ink transition-colors">
           dashboard
         </Link>

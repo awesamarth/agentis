@@ -38,7 +38,7 @@ https://api.agentis.systems
 To point the CLI at a local or self-hosted backend:
 
 ```bash
-AGENTIS_API_URL=http://localhost:3001 agentis agent list
+AGENTIS_API_URL=http://localhost:3001 agentis wallet list
 ```
 
 ## Authentication
@@ -74,12 +74,6 @@ agentis wallet list
 ```
 
 ## Hosted Agents
-
-List agents:
-
-```bash
-agentis agent list
-```
 
 Create a hosted agent:
 
@@ -277,7 +271,7 @@ bun src/index.ts --help
 Point at a local backend:
 
 ```bash
-AGENTIS_API_URL=http://localhost:3001 bun src/index.ts agent list
+AGENTIS_API_URL=http://localhost:3001 bun src/index.ts wallet list
 ```
 
 ## Notes

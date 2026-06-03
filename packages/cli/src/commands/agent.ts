@@ -1,8 +1,7 @@
 import { getToken } from '../lib/keychain'
 import { apiFetch } from '../lib/config'
-import { fetchAccountAgents, findAccountAgent } from '../lib/account'
+import { findAccountAgent } from '../lib/account'
 import { getLocalWalletSigner, loadLocalWalletByNameOrId, recordLocalSpend } from '../lib/local-wallet'
-import { formatHostedAgentLine } from '../lib/format-agent'
 import { checkPolicy } from '@agentis-hq/core'
 import {
   address,
@@ -68,20 +67,6 @@ async function solToUsd(sol: number): Promise<number> {
   const price = data[SOL_MINT]?.usdPrice ?? 0
   cachedSolPrice = { usd: price, fetchedAt: now }
   return sol * price
-}
-
-export async function agentList() {
-  const token = await requireAuth()
-  const agents = await fetchAccountAgents(token)
-  if (agents.length === 0) {
-    console.log('No agents found. Run `agentis agent create <name>` to create one.')
-    return
-  }
-  console.log()
-  for (const a of agents) {
-    console.log(formatHostedAgentLine(a))
-  }
-  console.log()
 }
 
 export async function agentCreate(args: string[] | string | undefined) {

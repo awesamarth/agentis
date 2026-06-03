@@ -5,7 +5,7 @@ description: "Use when an AI agent needs to operate Agentis, the Solana financia
 
 # Agentis
 
-Agentis is financial infrastructure for AI agents on Solana. It gives agents wallets, payment rails, spending policies, privacy flows, and Jupiter Earn access.
+Agentis is financial infrastructure for AI agents on Solana. It gives agents hosted wallets, local encrypted wallets, payment rails, spending policies, privacy flows, and Jupiter Earn access.
 
 Use Agentis when the user wants an agent to hold funds, pay an API or wallet, inspect balances, obey spend controls, move privately, or manage yield.
 
@@ -13,8 +13,8 @@ Use Agentis when the user wants an agent to hold funds, pay an API or wallet, in
 
 Use the interface that matches the current environment:
 
-- **CLI**: best default when shell access is available. It is the broadest interface and supports hosted wallets, local wallets, paid fetches, policy, Umbra, Jupiter Earn, and facilitator scaffolding.
-- **MCP**: best when Agentis tools are already connected to the host agent. Prefer MCP for structured state/action calls from an AI assistant because results come back as JSON.
+- **CLI**: best default when shell access is available. It is the broadest interface and supports hosted agents, local encrypted agents/wallets, paid fetches, policy, Umbra, Jupiter Earn, and facilitator scaffolding. Local agents are stored on the user's machine and can run local policy checks and local sends without hosted Privy custody.
+- **MCP**: best when Agentis tools are already connected to the host agent, or when the CLI is unavailable/not suitable in the current environment. Prefer MCP for structured state/action calls from an AI assistant because results come back as JSON.
 - **SDK**: best when writing app code or agent runtime code that needs Agentis programmatically.
 - **Dashboard**: best when a human should review agents, balances, policy, privacy, or Jupiter Earn state visually.
 
@@ -22,13 +22,15 @@ Do not assume the repo is present or that a local backend is running. Normal use
 
 ## CLI
 
-Use the installed `agentis` command by default. If it is not installed, run the published CLI package:
+Use the installed `agentis` command by default. First check whether it is available:
 
 ```sh
-npx @agentis-hq/cli --help
+agentis --version
 ```
 
-For frequent use, install the CLI globally:
+If `agentis --version` succeeds, use `agentis ...` directly for all CLI operations. Do not use `npx @agentis-hq/cli ...` or `bun x @agentis-hq/cli ...` when the installed `agentis` command is available.
+
+If `agentis` is not installed or cannot run, prefer installing the CLI globally:
 
 ```sh
 npm install -g @agentis-hq/cli
@@ -38,6 +40,14 @@ agentis --help
 Or with Bun:
 
 ```sh
+bun add -g @agentis-hq/cli
+agentis --help
+```
+
+Only if global installation is infeasible, use the published package through a one-off runner:
+
+```sh
+npx @agentis-hq/cli --help
 bun x @agentis-hq/cli --help
 ```
 
@@ -66,7 +76,6 @@ agentis wallet create --name my-agent
 agentis wallet create --name my-agent --local
 agentis wallet list
 
-agentis agent list
 agentis agent create my-agent
 agentis agent create my-agent --onchain-policy
 agentis agent balance my-agent
@@ -95,9 +104,16 @@ agentis facilitator publish <name-or-id> --url <public-url> --listed
 
 For Jupiter Earn, `--mainnet` is required. Omitting `--amount` on `earn withdraw` redeems the full USDC Earn position.
 
+Local wallet notes:
+
+- `agentis wallet create --name <name> --local` creates a local encrypted Solana wallet/agent vault.
+- Local wallet vaults live on the user's machine and include local policy and spend history.
+- Hosted-only features such as Umbra, Jupiter Earn, and hosted x402/MPP signing require hosted Agentis agents unless local support is explicitly added.
+- MCP is account-key based and primarily operates on hosted agents; use the CLI for local encrypted-wallet operations.
+
 ## MCP
 
-Use MCP if the host environment has an Agentis MCP server configured.
+Use MCP if the host environment has an Agentis MCP server configured, or when the CLI cannot be installed/run in the current environment. If the installed `agentis` CLI is available, prefer the CLI for normal shell-based operations.
 
 Install the MCP server globally:
 
@@ -153,6 +169,10 @@ agentis_privacy_withdraw
 agentis_privacy_create_utxo
 agentis_privacy_scan
 agentis_privacy_claim_latest
+agentis_scaffold_facilitator
+agentis_list_facilitators
+agentis_register_facilitator
+agentis_publish_facilitator
 ```
 
 MCP currently supports Earn deposit, positions, and sweep. Use the CLI for Jupiter Earn withdraw unless an MCP withdraw tool is added.

@@ -3,7 +3,7 @@ import { readFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { login, logout, whoami } from './commands/auth'
-import { agentList, agentCreate, agentSend, agentBalance } from './commands/agent'
+import { agentCreate, agentSend, agentBalance } from './commands/agent'
 import { walletCreate, walletList } from './commands/wallet'
 import { policyGet, policyInitOnchain, policySet } from './commands/policy'
 import { paidFetch } from './commands/fetch'
@@ -84,16 +84,10 @@ const helpSpecs: Record<string, HelpSpec> = {
     usage: 'agentis agent <command>',
     description: 'Manage hosted agents and send funds from hosted or local wallets.',
     commands: [
-      ['list', 'list hosted agents'],
       ['create <name> [--onchain-policy]', 'create a hosted agent'],
       ['balance <name-or-id>', 'show SOL and token balances'],
       ['send <name-or-id> <to> <amount> [options]', 'send SOL from an agent or local wallet'],
     ],
-  },
-  'agent list': {
-    usage: 'agentis agent list',
-    description: 'List hosted agents owned by your Agentis account.',
-    options: [['-h, --help', 'display help for command']],
   },
   'agent create': {
     usage: 'agentis agent create <name> [--onchain-policy]',
@@ -327,7 +321,6 @@ ${green}${bold}Commands:${reset}
   wallet create --name <name> --local      create local encrypted wallet
   wallet list                              list all wallets (hosted + local)
 
-  agent list                               list your hosted agents
   agent create <name>                      create a new hosted agent
     --onchain-policy                       create with Quasar on-chain policy mode
   agent send <name-or-id> <to> <amount>    send SOL (amount in lamports)
@@ -454,9 +447,6 @@ async function main() {
 
     case 'agent':
       switch (sub) {
-        case 'list':
-          await agentList()
-          break
         case 'create':
           await agentCreate(args.slice(2))
           break
@@ -467,7 +457,7 @@ async function main() {
           await agentBalance(args[2])
           break
         default:
-          console.log('Usage: agentis agent <list|create|send|balance>')
+          console.log('Usage: agentis agent <create|send|balance>')
       }
       break
 

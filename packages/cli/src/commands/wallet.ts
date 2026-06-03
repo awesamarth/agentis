@@ -1,6 +1,6 @@
 import { createLocalWallet, listLocalWallets } from '../lib/local-wallet'
 import { getToken } from '../lib/keychain'
-import { apiFetch } from '../lib/config'
+import { API_BASE, apiFetch } from '../lib/config'
 import { formatHostedAgentLine, formatLocalWalletLine } from '../lib/format-agent'
 
 export async function walletCreate(args: string[]) {
@@ -52,6 +52,7 @@ export async function walletCreate(args: string[]) {
 export async function walletList() {
   const token = await getToken()
   const localWallets = listLocalWallets()
+  let printedHosted = false
 
   if (token) {
     try {
@@ -63,11 +64,22 @@ export async function walletList() {
           for (const a of hosted) {
             console.log(formatHostedAgentLine(a))
           }
+          printedHosted = true
+        } else {
+          console.log('\nNo hosted wallets found.')
         }
+      } else if (res.status === 401) {
+        console.log(`\nCould not list hosted wallets: stored login is expired or invalid. Run \`agentis logout\` and then \`agentis login\`.`)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        console.log(`\nCould not list hosted wallets from ${API_BASE}: ${data.error ?? res.statusText}`)
       }
-    } catch {
-      // backend unreachable — skip hosted wallets silently
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.log(`\nCould not list hosted wallets from ${API_BASE}: ${message}`)
     }
+  } else {
+    console.log('\nNot logged in. Run `agentis login` to list hosted wallets.')
   }
 
   if (localWallets.length > 0) {
@@ -79,6 +91,8 @@ export async function walletList() {
 
   if (localWallets.length === 0 && !token) {
     console.log('No wallets found. Run `agentis wallet create --name <name>` to create one.')
+  } else if (localWallets.length === 0 && token && !printedHosted) {
+    console.log('\nNo local wallets found.')
   }
   console.log()
 }
