@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "agentis": {
+      "source": "awesamarth/agentis",
+      "sourceType": "github",
+      "skillPath": "skills/agentis/SKILL.md",
+      "computedHash": "790770a89b9208957f0d6d91a612d3e32d9446d5126d35bd54a57f13ad105a86"
+    }
+  }
+}
