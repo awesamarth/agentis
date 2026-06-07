@@ -90,8 +90,12 @@ export async function login() {
   openBrowser(authorizeUrl.toString())
   console.log('Waiting for authorization...')
 
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error('Login timed out. Run `agentis login` again.')), 10 * 60 * 1000)
+    timeoutId = setTimeout(
+      () => reject(new Error('Login timed out. Run `agentis login` again.')),
+      10 * 60 * 1000,
+    )
   })
 
   try {
@@ -134,6 +138,7 @@ export async function login() {
     console.error(`\n${error instanceof Error ? error.message : 'Login failed'}`)
     process.exitCode = 1
   } finally {
+    if (timeoutId) clearTimeout(timeoutId)
     server.stop(true)
   }
 }
