@@ -4,7 +4,7 @@
   "workspaces": [
     "apps/*",
     "packages/*",
-    "sdk-testing/*"
+    "testing/*"
   ],
   "scripts": {
     "build:backend-deps": "bun run --filter @agentis-hq/core build && bun run --filter @agentis-hq/sdk build",

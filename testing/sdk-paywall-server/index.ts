@@ -20,6 +20,8 @@ app.get('/', c => c.json({
     '/x402-usdc',
     '/x402-usdt',
     '/both-usdc',
+    '/x402-echo',
+    '/mpp-echo',
     '/standard-mpp-usdc',
   ],
 }))
@@ -86,6 +88,38 @@ app.use('/both-usdc', honoPaywall({
 }))
 app.get('/both-usdc', c => c.json({ ok: true, protocol: 'both', asset: 'usdc' }))
 
+app.use('/x402-echo', honoPaywall({
+  protocol: 'x402',
+  asset: 'usdc',
+  amount: '1000',
+  recipient: RECIPIENT,
+  description: 'SDK x402 method forwarding test',
+}))
+app.all('/x402-echo', async c => c.json({
+  ok: true,
+  protocol: 'x402',
+  method: c.req.method,
+  contentType: c.req.header('content-type'),
+  body: await c.req.text(),
+}, c.req.method === 'POST' ? 201 : 202))
+
+app.use('/mpp-echo', honoPaywall({
+  protocol: 'mpp',
+  asset: 'usdc',
+  amount: '1000',
+  recipient: RECIPIENT,
+  mppSecretKey: MPP_SECRET_KEY,
+  mppRealm: 'agentis-sdk-paywall-test',
+  description: 'SDK MPP method forwarding test',
+}))
+app.all('/mpp-echo', async c => c.json({
+  ok: true,
+  protocol: 'mpp',
+  method: c.req.method,
+  contentType: c.req.header('content-type'),
+  body: await c.req.text(),
+}, c.req.method === 'POST' ? 201 : 202))
+
 const standardMppUsdc = paywall({
   protocol: 'mpp',
   asset: 'usdc',
@@ -111,4 +145,6 @@ console.log('  GET /mpp-usdt          - 1000 atomic devnet dUSDT via MPP')
 console.log('  GET /x402-usdc         - 1000 atomic devnet USDC via x402')
 console.log('  GET /x402-usdt         - 1000 atomic devnet dUSDT via x402')
 console.log('  GET /both-usdc         - 1000 atomic devnet USDC via MPP or x402')
+console.log('  POST/PATCH /x402-echo  - 1000 atomic devnet USDC via x402')
+console.log('  POST/PATCH /mpp-echo   - 1000 atomic devnet USDC via MPP')
 console.log('  GET /standard-mpp-usdc - standard Request/Response helper')

@@ -2,6 +2,7 @@ import type {
   X402Response,
   X402PaymentRequirements,
 } from './types'
+import { Challenge } from 'mppx'
 
 const SOLANA_DEVNET = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
 const SOLANA_MAINNET = 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'
@@ -21,8 +22,9 @@ export type ParsedPayment =
 export function parse402(response: Response): ParsedPayment | null {
   const wwwAuth = response.headers.get('www-authenticate')
   if (wwwAuth && isMPPChallenge(wwwAuth)) {
-    // Real MPP — extract amount from the request field for policy checks
-    const { amount, currency, recipient } = parseMPPRequest(wwwAuth)
+    const request = parseMPPRequest(wwwAuth)
+    if (!request) return null
+    const { amount, currency, recipient } = request
     return { protocol: 'mpp', wwwAuthenticate: wwwAuth, amount, currency, recipient }
   }
 
@@ -40,10 +42,9 @@ export async function parse402WithBody(response: Response): Promise<ParsedPaymen
     try {
       const decoded = atob(paymentRequired)
       const body: X402Response = JSON.parse(decoded)
-      if (body.x402Version !== undefined && body.accepts?.length > 0) {
-        const solanaReq = body.accepts.find(
-          a => a.network === SOLANA_DEVNET || a.network === SOLANA_MAINNET
-        ) ?? body.accepts[0]!
+      if (body.x402Version === 2 && body.accepts?.length > 0) {
+        const solanaReq = supportedSolanaRequirement(body.accepts)
+        if (!solanaReq) return null
         return { protocol: 'x402', requirements: solanaReq, x402Version: body.x402Version }
       }
     } catch {
@@ -54,10 +55,9 @@ export async function parse402WithBody(response: Response): Promise<ParsedPaymen
   // Try x402 v1 — body JSON
   try {
     const body: X402Response = await response.clone().json()
-    if (body.x402Version !== undefined && body.accepts?.length > 0) {
-      const solanaReq = body.accepts.find(
-        a => a.network === SOLANA_DEVNET || a.network === SOLANA_MAINNET
-      ) ?? body.accepts[0]!
+    if (body.x402Version === 1 && body.accepts?.length > 0) {
+      const solanaReq = supportedSolanaRequirement(body.accepts)
+      if (!solanaReq) return null
       return { protocol: 'x402', requirements: solanaReq, x402Version: body.x402Version }
     }
   } catch {
@@ -65,6 +65,14 @@ export async function parse402WithBody(response: Response): Promise<ParsedPaymen
   }
 
   return null
+}
+
+function supportedSolanaRequirement(
+  requirements: X402PaymentRequirements[]
+): X402PaymentRequirements | undefined {
+  return requirements.find(
+    requirement => requirement.network === SOLANA_DEVNET || requirement.network === SOLANA_MAINNET
+  )
 }
 
 /**
@@ -80,26 +88,33 @@ function isMPPChallenge(wwwAuth: string): boolean {
  * Parse the request field from an MPP WWW-Authenticate header.
  * The request field is base64url-encoded JSON with amount, currency, recipient, etc.
  */
-function parseMPPRequest(wwwAuth: string): { amount: number; currency: string; recipient: string } {
-  // Extract the request="..." field
-  const requestMatch = wwwAuth.match(/request="([^"]+)"/)
-  if (!requestMatch?.[1]) {
-    return { amount: 0, currency: 'unknown', recipient: '' }
-  }
-
+function parseMPPRequest(
+  wwwAuth: string
+): { amount: number; currency: string; recipient: string } | null {
   try {
-    const decoded = atob(requestMatch[1].replace(/-/g, '+').replace(/_/g, '/'))
-    const req = JSON.parse(decoded)
+    const challenge = Challenge.deserialize(wwwAuth)
+    if (challenge.method !== 'solana' || challenge.intent !== 'charge') return null
+    if (challenge.expires && Date.parse(challenge.expires) <= Date.now()) return null
+
+    const req = challenge.request as {
+      amount?: string
+      currency?: string
+      recipient?: string
+      methodDetails?: { decimals?: number }
+    }
     // amount is in atomic units (e.g. 1000 = $0.001 USDC with 6 decimals)
     const decimals = req.methodDetails?.decimals ?? 6
-    const amount = parseInt(req.amount ?? '0', 10) / (10 ** decimals)
+    const atomicAmount = Number(req.amount)
+    if (!Number.isSafeInteger(atomicAmount) || atomicAmount <= 0) return null
+    if (!req.currency || !req.recipient) return null
+
     return {
-      amount,
-      currency: req.currency ?? 'unknown',
-      recipient: req.recipient ?? '',
+      amount: atomicAmount / (10 ** decimals),
+      currency: req.currency,
+      recipient: req.recipient,
     }
   } catch {
-    return { amount: 0, currency: 'unknown', recipient: '' }
+    return null
   }
 }
 

@@ -459,6 +459,17 @@ function applySettlementResult(response: Response, result: ProcessSettleResultRe
   })
 }
 
+function markPaymentReceiptPrivate(response: Response): Response {
+  if (!response.headers.has('payment-receipt')) return response
+  const headers = new Headers(response.headers)
+  headers.set('cache-control', 'private')
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  })
+}
+
 function createEngine(config: PaywallConfig): PaywallEngine {
   return new PaywallEngine(resolveConfig(config))
 }
@@ -476,7 +487,7 @@ export function paywall(
     if (pre.type === 'response') return pre.response
 
     const response = await handler(req)
-    if (pre.type === 'mpp-paid') return pre.withReceipt(response)
+    if (pre.type === 'mpp-paid') return markPaymentReceiptPrivate(pre.withReceipt(response))
     return engine.settleX402(pre, response)
   }
 }
@@ -493,7 +504,7 @@ export function honoPaywall(config: PaywallConfig) {
     await next()
 
     if (pre.type === 'mpp-paid') {
-      c.res = pre.withReceipt(c.res)
+      c.res = markPaymentReceiptPrivate(pre.withReceipt(c.res))
       return
     }
 

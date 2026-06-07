@@ -70,13 +70,15 @@ Current Umbra migration state:
 |---|---|---|
 | Privy JWT | Dashboard | Verified with Privy server auth |
 | `agt_live_xxx` | SDK/backend API key | Per-agent key; full key shown only on create/regenerate |
-| `agt_user_xxx` | CLI/MCP/account API key | Full key shown only on generate/login; stored in OS keychain for CLI; pass as `AGENTIS_ACCOUNT_KEY` for MCP |
+| `agt_user_xxx` | Account API key / local stdio MCP | Full key shown only on generate; pass as `AGENTIS_ACCOUNT_KEY` for local stdio MCP |
+| `agt_oauth_xxx` + `agt_refresh_xxx` | CLI and remote MCP OAuth | Stored as an OAuth credential bundle in the OS keychain for CLI; remote MCP keeps credentials client-side |
 
 Key storage:
 - `apps/backend/data/db.json` stores only HMAC-SHA256 key hashes plus masked metadata (`prefix`, `suffix`, `masked`).
 - Runtime plaintext key recovery material is in gitignored `apps/backend/data/key-secrets.json`.
 - Set `API_KEY_HASH_SECRET` in production and keep it stable. Local dev falls back to a deterministic dev secret.
-- Normal agent/account reads return masked keys only. Agent API keys are returned only on agent create/regenerate; account keys are returned only on account key generate or CLI login completion.
+- Normal agent/account reads return masked keys only. Agent API keys are returned only on agent create/regenerate; account keys are returned only on account key generate.
+- New CLI logins use OAuth authorization code + PKCE. Legacy `/auth/session` clients remain supported and reuse the existing account key instead of rotating it.
 
 ## Built And Working
 
@@ -84,8 +86,9 @@ Key storage:
 Core routes:
 - `/agents/*`: dashboard/user auth; create agents, update policies, initialize/read on-chain policy, send funds, regen keys, transactions.
 - `/sdk/*`: API-key auth; `GET /sdk/agent`, policy update, MPP/x402 paid fetch, direct send, spend record.
-- `/account/*`: account key auth for CLI; list/create hosted agents.
-- `/auth/*`: CLI browser login session flow.
+- `/account/*`: Privy JWT, account-key, or scoped OAuth auth; list/create hosted agents.
+- `/auth/*`: legacy CLI browser login session flow.
+- `/oauth/*`: OAuth authorization, consent completion, token/refresh, revocation, dynamic client registration, and MCP introspection.
 - `/umbra/*`: API-key Umbra privacy routes.
 - `/facilitators/*`: facilitator heartbeat route used by CLI-generated facilitator scaffolds.
 - `/sol-price`: cached SOL/USD price from Jupiter Price API.
@@ -135,7 +138,22 @@ Local wallets:
 - Local sends run `checkPolicy(...)` before signing.
 
 ### MCP
-Local stdio server: `packages/mcp`.
+`packages/mcp` contains shared MCP tools, a local stdio entrypoint, and a
+stateless Cloudflare Streamable HTTP Worker.
+
+Remote MCP implementation:
+- Endpoint path: `/mcp`.
+- OAuth protected-resource metadata:
+  `/.well-known/oauth-protected-resource`.
+- OAuth authorization server is implemented by backend `/oauth/*` routes with
+  authorization code + PKCE, refresh-token rotation, revocation, dynamic client
+  registration, and private token introspection.
+- Remote access tokens are resource-bound and independently revocable. The
+  Worker stores no user credentials.
+- Build with `cd packages/mcp && bun run build:worker`.
+- Deployment is intentionally still pending.
+
+Local stdio run:
 
 Run:
 ```json
@@ -161,7 +179,10 @@ Implemented tools:
 - `agentis_earn_deposit`, `agentis_earn_positions`, `agentis_earn_sweep`.
 - `agentis_privacy_status/register/balance/deposit/withdraw/create_utxo/scan/claim_latest`.
 
-MCP auth is account-key only. It resolves agent API keys internally from the account-owned agent list when it needs to call SDK/Umbra routes. Local encrypted-wallet vault commands are intentionally CLI-only for v1.
+Local stdio auth remains account-key based for compatibility. Remote MCP uses
+OAuth. Both resolve agent API keys internally from the account-owned agent list
+when needed. Local encrypted-wallet vault commands are intentionally CLI-only
+for v1.
 
 Tested MCP:
 - `bun --check packages/mcp/src/index.ts`.

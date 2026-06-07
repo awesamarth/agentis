@@ -17,6 +17,7 @@ import {
 } from '../lib/onchain-policy'
 
 const DEVNET_CAIP2 = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
+const BODYLESS_METHODS = new Set(['GET', 'HEAD'])
 
 // @privy-io/node client for x402 signing
 const privyNode = new PrivyClient({
@@ -27,6 +28,41 @@ const privyNode = new PrivyClient({
 type Agent = Awaited<ReturnType<typeof getAgentByApiKey>>
 
 const sdk = new Hono<{ Variables: { agent: NonNullable<Agent> } }>()
+
+function paidFetchInit(input: {
+  method?: string
+  headers?: Record<string, string>
+  body?: unknown
+  bodyBase64?: string
+}): RequestInit {
+  const method = (input.method ?? 'GET').toUpperCase()
+  const headers = new Headers(input.headers ?? {})
+  headers.delete('host')
+  headers.delete('content-length')
+
+  let body: BodyInit | undefined
+  if (!BODYLESS_METHODS.has(method)) {
+    if (typeof input.bodyBase64 === 'string') {
+      body = Buffer.from(input.bodyBase64, 'base64')
+    } else if (typeof input.body === 'string') {
+      body = input.body
+    } else if (input.body !== undefined) {
+      body = JSON.stringify(input.body)
+    }
+  }
+
+  return { method, headers, ...(body !== undefined ? { body } : {}) }
+}
+
+async function serializePaidResponse(response: Response) {
+  const bytes = Buffer.from(await response.arrayBuffer())
+  return {
+    status: response.status,
+    headers: Object.fromEntries(response.headers.entries()),
+    body: bytes.toString('utf8'),
+    bodyBase64: bytes.toString('base64'),
+  }
+}
 
 // Middleware: API key auth
 sdk.use('*', async (c, next) => {
@@ -131,7 +167,7 @@ sdk.post('/agent/sign', async (c) => {
 // The SDK sends the URL here, backend does the paid fetch and returns the response
 sdk.post('/agent/fetch-paid', async (c) => {
   const agent = c.get('agent')
-  const { url, method, headers, body, amount, mint } = await c.req.json()
+  const { url, method, headers, body, bodyBase64, amount, mint } = await c.req.json()
 
   if (!url) {
     return c.json({ error: 'url is required' }, 400)
@@ -145,16 +181,15 @@ sdk.post('/agent/fetch-paid', async (c) => {
 
     const fetchWithPayment = wrapFetchWithPayment(globalThis.fetch, x402client)
 
-    const response = await fetchWithPayment(url, {
-      method: method ?? 'GET',
-      headers: headers ?? {},
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    })
-
-    const responseBody = await response.text()
+    const response = await fetchWithPayment(url, paidFetchInit({
+      method,
+      headers,
+      body,
+      bodyBase64,
+    }))
 
     // Record transaction if payment succeeded
-    if (response.status === 200 && amount) {
+    if (response.ok && amount) {
       const paymentResponse = response.headers.get('payment-response')
       const txHash = paymentResponse ? (() => { try { return JSON.parse(atob(paymentResponse)).transaction ?? 'x402-unknown' } catch { return 'x402-unknown' } })() : 'x402-unknown'
       const amountNum = Number(amount)
@@ -168,11 +203,7 @@ sdk.post('/agent/fetch-paid', async (c) => {
       }).catch(() => {}) // don't fail the response if recording fails
     }
 
-    return c.json({
-      status: response.status,
-      headers: Object.fromEntries(response.headers.entries()),
-      body: responseBody,
-    })
+    return c.json(await serializePaidResponse(response))
   } catch (err: any) {
     return c.json({ error: err?.message ?? 'Fetch failed' }, 500)
   }
@@ -182,7 +213,7 @@ sdk.post('/agent/fetch-paid', async (c) => {
 // Uses mppx.fetch() which handles the full 402 → sign → credential → retry flow.
 sdk.post('/agent/fetch-paid-mpp', async (c) => {
   const agent = c.get('agent')
-  const { url, method, headers: reqHeaders, amount, mint } = await c.req.json()
+  const { url, method, headers: reqHeaders, body, bodyBase64, amount, mint } = await c.req.json()
 
   if (!url) {
     return c.json({ error: 'url is required' }, 400)
@@ -206,18 +237,19 @@ sdk.post('/agent/fetch-paid-mpp', async (c) => {
       ],
     })
 
-    const response = await mppx.fetch(url, {
-      method: method ?? 'GET',
-      headers: reqHeaders ?? {},
-    })
+    const response = await mppx.fetch(url, paidFetchInit({
+      method,
+      headers: reqHeaders,
+      body,
+      bodyBase64,
+    }))
 
-    const responseBody = await response.text()
     if (response.status === 402) {
-      console.error('[fetch-paid-mpp] Server still returned 402:', responseBody.slice(0, 500))
+      console.error('[fetch-paid-mpp] Server still returned 402')
     }
 
     // Record transaction if payment succeeded
-    if (response.status === 200 && amount) {
+    if (response.ok && amount) {
       const receipt = response.headers.get('payment-receipt')
       const txHash = receipt ? (() => { try { return JSON.parse(atob(receipt)).reference ?? 'mpp-unknown' } catch { return 'mpp-unknown' } })() : 'mpp-unknown'
       const amountNum = Number(amount)
@@ -231,11 +263,7 @@ sdk.post('/agent/fetch-paid-mpp', async (c) => {
       }).catch(() => {})
     }
 
-    return c.json({
-      status: response.status,
-      headers: Object.fromEntries(response.headers.entries()),
-      body: responseBody,
-    })
+    return c.json(await serializePaidResponse(response))
   } catch (err: any) {
     console.error('[fetch-paid-mpp] Error:', err)
     return c.json({ error: err?.message ?? 'MPP payment failed' }, 500)

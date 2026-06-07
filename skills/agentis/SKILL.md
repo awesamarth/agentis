@@ -75,6 +75,7 @@ agentis whoami
 agentis wallet create --name my-agent
 agentis wallet create --name my-agent --local
 agentis wallet list
+agentis wallet list --json
 
 agentis agent create my-agent
 agentis agent create my-agent --onchain-policy
@@ -109,13 +110,18 @@ Local wallet notes:
 - `agentis wallet create --name <name> --local` creates a local encrypted Solana wallet/agent vault.
 - Local wallet vaults live on the user's machine and include local policy and spend history.
 - Hosted-only features such as Umbra, Jupiter Earn, and hosted x402/MPP signing require hosted Agentis agents unless local support is explicitly added.
-- MCP is account-key based and primarily operates on hosted agents; use the CLI for local encrypted-wallet operations.
+- MCP primarily operates on hosted agents; use the CLI for local encrypted-wallet operations.
 
 ## MCP
 
 Use MCP if the host environment has an Agentis MCP server configured, or when the CLI cannot be installed/run in the current environment. If the installed `agentis` CLI is available, prefer the CLI for normal shell-based operations.
 
-Install the MCP server globally:
+Prefer a configured remote Agentis MCP connection when the host supports remote
+Streamable HTTP and OAuth. The remote client should discover OAuth metadata and
+open the Agentis consent flow; do not ask the user to paste an account key into
+a remote service.
+
+For environments that only support local stdio, install the MCP server globally:
 
 ```sh
 npm install -g @agentis-hq/mcp
@@ -127,7 +133,9 @@ Or run it through the published package from an MCP client command:
 npx @agentis-hq/mcp
 ```
 
-MCP requires an Agentis account key, usually named `AGENTIS_ACCOUNT_KEY`, in the MCP server environment. The default API is `https://api.agentis.systems`.
+Local stdio requires an Agentis account key, usually named
+`AGENTIS_ACCOUNT_KEY`, in the MCP server environment. Remote MCP uses OAuth.
+The default API is `https://api.agentis.systems`.
 
 Example MCP config:
 

@@ -1,78 +1,168 @@
-import { saveToken, getToken, deleteToken } from '../lib/keychain'
-import { apiFetch } from '../lib/config'
+import { createHash, randomBytes } from 'crypto'
+import { execFile } from 'child_process'
+import { API_BASE } from '../lib/config'
+import {
+  deleteToken,
+  getStoredCredentials,
+  getToken,
+  saveOAuthCredentials,
+} from '../lib/keychain'
+
+const CLIENT_ID = 'agentis-cli'
+const SCOPES = [
+  'wallets:read',
+  'wallets:write',
+  'payments:execute',
+  'policy:read',
+  'policy:write',
+  'privacy:read',
+  'privacy:write',
+  'earn:read',
+  'earn:write',
+]
+
+function base64url(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString('base64url')
+}
+
+function openBrowser(url: string) {
+  if (process.platform === 'darwin') {
+    execFile('open', [url], () => {})
+  } else if (process.platform === 'win32') {
+    execFile('cmd', ['/c', 'start', '', url], () => {})
+  } else {
+    execFile('xdg-open', [url], () => {})
+  }
+}
 
 export async function login() {
-  const existing = await getToken()
+  const existing = await getStoredCredentials()
   if (existing) {
     console.log('Already logged in. Run `agentis logout` first.')
     return
   }
 
-  // Create a pending session
-  const res = await apiFetch('/auth/session', { method: 'POST' })
-  if (!res.ok) {
-    console.error('Failed to start login session.')
-    process.exit(1)
-  }
-  const { sessionId, loginUrl } = await res.json()
+  const verifier = base64url(randomBytes(48))
+  const challenge = createHash('sha256').update(verifier).digest('base64url')
+  const state = base64url(randomBytes(24))
+
+  let resolveCallback: (value: { code?: string; error?: string; state?: string }) => void
+  const callback = new Promise<{ code?: string; error?: string; state?: string }>(resolve => {
+    resolveCallback = resolve
+  })
+  let handled = false
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch(request) {
+      const url = new URL(request.url)
+      if (url.pathname !== '/callback') return new Response('Not found', { status: 404 })
+      if (!handled) {
+        handled = true
+        resolveCallback({
+          code: url.searchParams.get('code') ?? undefined,
+          error: url.searchParams.get('error') ?? undefined,
+          state: url.searchParams.get('state') ?? undefined,
+        })
+      }
+      return new Response(
+        '<!doctype html><html><body style="font-family:monospace;padding:40px">Agentis authorization complete. You can close this window.</body></html>',
+        { headers: { 'content-type': 'text/html; charset=utf-8' } },
+      )
+    },
+  })
+
+  const redirectUri = `http://127.0.0.1:${server.port}/callback`
+  const authorizeUrl = new URL(`${API_BASE}/oauth/authorize`)
+  authorizeUrl.search = new URLSearchParams({
+    response_type: 'code',
+    client_id: CLIENT_ID,
+    redirect_uri: redirectUri,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    scope: SCOPES.join(' '),
+    state,
+    resource: API_BASE,
+  }).toString()
 
   console.log('\nOpen this URL in your browser to authenticate:\n')
-  console.log(`  ${loginUrl}\n`)
+  console.log(`  ${authorizeUrl}\n`)
+  openBrowser(authorizeUrl.toString())
+  console.log('Waiting for authorization...')
 
-  // Try to open browser automatically
+  const timeout = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error('Login timed out. Run `agentis login` again.')), 10 * 60 * 1000)
+  })
+
   try {
-    const { exec } = await import('child_process')
-    const open = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open'
-    exec(`${open} "${loginUrl}"`)
-  } catch {
-    // silently ignore — user can open manually
-  }
+    const result = await Promise.race([callback, timeout])
+    if (result.error) throw new Error(`Authorization failed: ${result.error}`)
+    if (!result.code || result.state !== state) throw new Error('Invalid OAuth callback')
 
-  console.log('Waiting for authentication...')
-
-  // Poll every 2 seconds for up to 10 minutes
-  const deadline = Date.now() + 10 * 60 * 1000
-  while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, 2000))
-
-    const poll = await apiFetch(`/auth/session/${sessionId}`)
-    if (!poll.ok) {
-      if (poll.status === 410) {
-        console.error('\nSession expired. Run `agentis login` again.')
-        process.exit(1)
-      }
-      continue
+    const response = await fetch(`${API_BASE}/oauth/token`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: result.code,
+        redirect_uri: redirectUri,
+        code_verifier: verifier,
+        client_id: CLIENT_ID,
+      }),
+    })
+    const body = await response.json() as {
+      access_token?: string
+      refresh_token?: string
+      expires_in?: number
+      scope?: string
+      error_description?: string
+    }
+    if (!response.ok || !body.access_token || !body.refresh_token || !body.expires_in) {
+      throw new Error(body.error_description ?? 'OAuth token exchange failed')
     }
 
-    const data = await poll.json()
-    if (data.status === 'complete' && data.accountKey) {
-      await saveToken(data.accountKey)
-      console.log('\nAuthenticated! You can now use the Agentis CLI.\n')
-      return
-    }
+    await saveOAuthCredentials({
+      version: 2,
+      accessToken: body.access_token,
+      refreshToken: body.refresh_token,
+      expiresAt: Date.now() + body.expires_in * 1000,
+      scope: body.scope?.split(/\s+/).filter(Boolean) ?? SCOPES,
+      clientId: CLIENT_ID,
+    })
+    console.log('\nAuthenticated. You can now use the Agentis CLI.\n')
+  } catch (error) {
+    console.error(`\n${error instanceof Error ? error.message : 'Login failed'}`)
+    process.exitCode = 1
+  } finally {
+    server.stop(true)
   }
-
-  console.error('\nLogin timed out. Run `agentis login` again.')
-  process.exit(1)
 }
 
 export async function logout() {
-  const token = await getToken()
-  if (!token) {
+  const stored = await getStoredCredentials()
+  if (!stored) {
     console.log('Not logged in.')
     return
+  }
+
+  if (stored.type === 'oauth') {
+    await fetch(`${API_BASE}/oauth/revoke`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token: stored.credentials.refreshToken }),
+    }).catch(() => null)
   }
   await deleteToken()
   console.log('Logged out.')
 }
 
 export async function whoami() {
+  const stored = await getStoredCredentials()
   const token = await getToken()
-  if (!token) {
+  if (!stored || !token) {
     console.log('Not logged in. Run `agentis login`.')
     return
   }
-  // Show masked key
   const masked = token.slice(0, 13) + '••••••••' + token.slice(-4)
-  console.log(`Logged in as ${masked}`)
+  console.log(`Logged in via ${stored.type === 'oauth' ? 'OAuth' : 'account key'} as ${masked}`)
 }

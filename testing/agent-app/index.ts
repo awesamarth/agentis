@@ -9,7 +9,7 @@
 
 import { AgentisClient } from '@agentis-hq/sdk'
 import { wrapFetchWithPayment, x402Client } from '@x402/fetch'
-import { ExactSvmSchemeV1 } from '@x402/svm/exact/v1/client'
+import { ExactSvmScheme } from '@x402/svm/exact/client'
 import { Mppx, solana as solanaClient } from '@solana/mpp/client'
 import { createKeyPairSignerFromBytes } from '@solana/kit'
 import { base58 } from '@scure/base'
@@ -109,8 +109,8 @@ async function testX402Direct() {
   const signer = await createKeyPairSignerFromBytes(keypairBytes)
   console.log(`Wallet: ${signer.address}\n`)
 
-  const svmScheme = new ExactSvmSchemeV1(signer)
-  const client = new x402Client().register(DEVNET_NETWORK, svmScheme, 1)
+  const client = new x402Client()
+    .register('solana:*', new ExactSvmScheme(signer))
   const fetchWithPay = wrapFetchWithPayment(globalThis.fetch, client)
 
   // Paid endpoint

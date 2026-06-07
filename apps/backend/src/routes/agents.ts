@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { privy } from '../lib/privy'
 import { PrivyClient as NodePrivyClient } from '@privy-io/node'
-import { createAgent, getAgentsByUser, getAgentById, updateAgent, updateAgentApiKey, recordTransaction, getAccountByKey, getAgentApiKeySecret } from '../lib/db'
+import { createAgent, getAgentsByUser, getAgentById, updateAgent, updateAgentApiKey, recordTransaction, getAgentApiKeySecret } from '../lib/db'
 import { randomBytes } from 'crypto'
 import {
   Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL
@@ -20,6 +20,7 @@ import {
   preparePrivyTransaction,
   readOnchainPolicy,
 } from '../lib/onchain-policy'
+import { authenticateAccountBearer, hasAccountScope, type AccountIdentity } from '../lib/account-auth'
 
 const DEVNET_RPC = 'https://api.devnet.solana.com'
 const DEVNET_CAIP2 = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
@@ -36,7 +37,16 @@ const privyNode = new NodePrivyClient({
   appSecret: process.env.PRIVY_APP_SECRET!,
 })
 
-const agents = new Hono<{ Variables: { userId: string } }>()
+const agents = new Hono<{ Variables: { userId: string; identity: AccountIdentity } }>()
+
+function requiredOAuthScope(method: string, path: string): string {
+  const read = method === 'GET' || method === 'HEAD'
+  if (path.includes('/umbra')) return read ? 'privacy:read' : 'privacy:write'
+  if (path.includes('/earn')) return read ? 'earn:read' : 'earn:write'
+  if (path.includes('/policy')) return read ? 'policy:read' : 'policy:write'
+  if (path.endsWith('/send') || path.endsWith('/fetch')) return 'payments:execute'
+  return read ? 'wallets:read' : 'wallets:write'
+}
 
 function getFlaggedTokenAmountUi(amount: unknown): number | null {
   const value = typeof amount === 'string' ? Number(amount) : Number(amount)
@@ -362,21 +372,17 @@ agents.use('*', async (c, next) => {
   }
   const token = authHeader.slice(7)
 
-  if (token.startsWith('agt_user_')) {
-    const acc = await getAccountByKey(token)
-    if (!acc) return c.json({ error: 'Invalid account key' }, 401)
-    c.set('userId', acc.userId)
-    await next()
-    return
+  const identity = await authenticateAccountBearer(token)
+  if (!identity) return c.json({ error: 'Invalid token' }, 401)
+  if (identity.authType === 'oauth') {
+    const required = requiredOAuthScope(c.req.method, c.req.path)
+    if (!hasAccountScope(identity, required)) {
+      return c.json({ error: `Missing required scope: ${required}` }, 403)
+    }
   }
-
-  try {
-    const { userId } = await privy.verifyAuthToken(token)
-    c.set('userId', userId)
-    await next()
-  } catch {
-    return c.json({ error: 'Invalid token' }, 401)
-  }
+  c.set('userId', identity.userId)
+  c.set('identity', identity)
+  await next()
 })
 
 // GET /agents — list agents for current user

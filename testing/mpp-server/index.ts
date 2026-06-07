@@ -30,6 +30,17 @@ const mppx = Mppx.create({
   ],
 })
 
+function withPrivateReceipt(result: { withReceipt(response: Response): Response }, response: Response) {
+  const paidResponse = result.withReceipt(response)
+  const headers = new Headers(paidResponse.headers)
+  headers.set('cache-control', 'private')
+  return new Response(paidResponse.body, {
+    status: paidResponse.status,
+    statusText: paidResponse.statusText,
+    headers,
+  })
+}
+
 // Minimal Hono-like server using Bun.serve directly
 // mppx handlers work with standard Request/Response
 
@@ -45,15 +56,20 @@ async function handler(request: Request): Promise<Response> {
     return Response.json({ message: 'This endpoint is free. No payment needed.' })
   }
 
-  if (path === '/mpp-data') {
+  if (path === '/mpp-data' || path === '/mpp-echo') {
     const result = await mppx.charge({
       amount: '1000', // 1000 atomic units = $0.001 USDC (6 decimals)
     })(request)
 
     if (result.status === 402) return result.challenge as Response
 
-    return result.withReceipt(
-      Response.json({
+    const response = path === '/mpp-echo'
+      ? Response.json({
+          method: request.method,
+          contentType: request.headers.get('content-type'),
+          body: await request.text(),
+        }, { status: request.method === 'POST' ? 201 : 202 })
+      : Response.json({
         data: {
           message: 'MPP payment verified! Alpha data unlocked.',
           solanaPrice: '$142.00',
@@ -62,7 +78,8 @@ async function handler(request: Request): Promise<Response> {
           timestamp: new Date().toISOString(),
         },
       })
-    )
+
+    return withPrivateReceipt(result, response)
   }
 
   if (path === '/mpp-premium') {
@@ -72,7 +89,7 @@ async function handler(request: Request): Promise<Response> {
 
     if (result.status === 402) return result.challenge as Response
 
-    return result.withReceipt(
+    return withPrivateReceipt(result,
       Response.json({
         data: {
           message: 'MPP premium data unlocked!',
@@ -80,7 +97,7 @@ async function handler(request: Request): Promise<Response> {
           confidence: '94%',
           timestamp: new Date().toISOString(),
         },
-      })
+      }),
     )
   }
 
@@ -99,3 +116,4 @@ console.log(`  Network:   devnet`)
 console.log(`  GET /free         — no payment`)
 console.log(`  GET /mpp-data     — $0.001 USDC (MPP solana/charge)`)
 console.log(`  GET /mpp-premium  — $0.005 USDC (MPP solana/charge)`)
+console.log(`  POST/PATCH /mpp-echo — $0.001 USDC (MPP solana/charge)`)

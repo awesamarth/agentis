@@ -1,11 +1,27 @@
 ---
 title: MCP
-description: Configure the Agentis MCP server for local AI agents and coding assistants.
+description: Connect AI agents to Agentis through remote MCP or local stdio.
 ---
 
-The Agentis MCP server exposes account-level tools over local stdio. It lets AI agents list wallets, create agents, fetch paid URLs, update policy, inspect balances, run privacy flows, and use Jupiter Earn.
+The Agentis MCP server lets AI agents list wallets, create agents, fetch paid URLs, update policy, inspect balances, run privacy flows, and use Jupiter Earn.
 
-## Install
+## Remote MCP
+
+The remote endpoint uses MCP Streamable HTTP and OAuth 2.1 authorization code
+flow with PKCE. Compatible MCP clients discover Agentis OAuth metadata, open
+the Agentis consent screen, and receive an independently revocable access
+token. User credentials are not stored in the MCP Worker.
+
+The deployment target is:
+
+```txt
+https://mcp.agentis.systems/mcp
+```
+
+The endpoint is available after the Worker and matching backend OAuth changes
+are deployed.
+
+## Local stdio
 
 ```bash
 npm install -g @agentis-hq/mcp
@@ -39,9 +55,10 @@ Use `AGENTIS_API_URL` only when targeting a local or staging backend:
 }
 ```
 
-## Account key
+## Local account key
 
-MCP uses an account API key, not an individual agent API key.
+Local stdio uses an account API key, not an individual agent API key. Remote
+MCP uses OAuth.
 
 You can generate an account key from the dashboard or through the CLI login flow.
 

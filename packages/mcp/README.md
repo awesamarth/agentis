@@ -1,8 +1,36 @@
 # Agentis MCP
 
-Local stdio MCP server for Agentis account-level tools.
+Agentis MCP tools for remote Streamable HTTP and local stdio clients.
 
-## Usage
+## Remote Worker
+
+`src/worker.ts` is a stateless Cloudflare Worker endpoint:
+
+- MCP endpoint: `/mcp`
+- OAuth resource metadata: `/.well-known/oauth-protected-resource`
+- authentication: OAuth 2.1 authorization code + PKCE
+- token validation: backend `/oauth/introspect`
+
+Build without deploying:
+
+```sh
+bun run build:worker
+```
+
+Before deployment, set the same secret on the backend and Worker:
+
+```sh
+# Backend
+MCP_INTROSPECTION_SECRET=<secret>
+
+# Cloudflare
+wrangler secret put MCP_INTROSPECTION_SECRET
+```
+
+Update `AGENTIS_MCP_RESOURCE` in `wrangler.toml` if the deployed URL is not
+`https://mcp.agentis.systems/mcp`.
+
+## Local Stdio
 
 ```json
 {
@@ -17,7 +45,8 @@ Local stdio MCP server for Agentis account-level tools.
 }
 ```
 
-`AGENTIS_ACCOUNT_KEY` is the account key from the dashboard/CLI auth flow. Agent API keys are resolved internally from the account-owned agent list; they are not configured separately.
+Local stdio retains account-key authentication for compatibility. Agent API
+keys are resolved internally and are not configured separately.
 
 Set `AGENTIS_API_URL` only when targeting a local or staging backend. The default API is `https://api.agentis.systems`.
 

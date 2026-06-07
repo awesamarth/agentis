@@ -7,6 +7,7 @@ import account from './src/routes/account'
 import auth from './src/routes/auth'
 import umbra from './src/routes/umbra'
 import facilitators from './src/routes/facilitators'
+import oauth, { authorizationServerMetadata } from './src/routes/oauth'
 import { solToUsd } from './src/lib/price'
 
 const app = new Hono()
@@ -27,13 +28,17 @@ const allowedDashboardOrigins = dashboardOrigins.length > 0 ? dashboardOrigins :
 app.use('/agents/*', cors({ origin: allowedDashboardOrigins }))
 app.use('/account/*', cors({ origin: allowedDashboardOrigins }))
 app.use('/auth/*', cors({ origin: allowedDashboardOrigins }))
+app.use('/oauth/*', cors({ origin: allowedDashboardOrigins }))
 app.use('/sdk/*', cors({ origin: allowedDashboardOrigins }))
 app.use('/umbra/*', cors({ origin: allowedDashboardOrigins }))
 app.use('/facilitators/*', cors({ origin: '*' }))
 app.use('/sol-price', cors({ origin: '*' }))
+app.use('/.well-known/*', cors({ origin: '*' }))
 app.use('*', logger())
 
 app.get('/', (c) => c.json({ status: 'ok', service: 'agentis-backend' }))
+app.get('/.well-known/oauth-authorization-server', (c) => c.json(authorizationServerMetadata()))
+app.get('/.well-known/openid-configuration', (c) => c.json(authorizationServerMetadata()))
 
 app.get('/sol-price', async (c) => {
   const usd = await solToUsd(1)
@@ -43,6 +48,7 @@ app.route('/agents', agents)
 app.route('/sdk', sdk)
 app.route('/account', account)
 app.route('/auth', auth)
+app.route('/oauth', oauth)
 app.route('/umbra', umbra)
 app.route('/facilitators', facilitators)
 

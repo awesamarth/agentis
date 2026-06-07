@@ -1,0 +1,11 @@
+name = "agentis-mcp"
+main = "src/worker.ts"
+compatibility_date = "2026-06-07"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+AGENTIS_API_URL = "https://api.agentis.systems"
+AGENTIS_MCP_RESOURCE = "https://mcp.agentis.systems/mcp"
+
+# Configure before deployment:
+# wrangler secret put MCP_INTROSPECTION_SECRET

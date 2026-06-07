@@ -16,12 +16,12 @@
   "scripts": {
     "dev": "bun run src/index.ts",
     "check": "bun --check src/index.ts",
-    "build": "tsup"
+    "build": "tsup",
+    "build:worker": "wrangler deploy --dry-run --outdir dist-worker",
+    "dev:worker": "wrangler dev"
   },
   "dependencies": {
-    "@agentis-hq/cli": "^0.1.0",
     "@agentis-hq/core": "^0.1.0",
-    "@agentis-hq/sdk": "^0.1.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@solana/kit": "^6.8.0",
     "zod": "^4.4.1"
@@ -29,6 +29,7 @@
   "devDependencies": {
     "@types/bun": "latest",
     "tsup": "^8.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "wrangler": "^4.0.0"
   }
 }

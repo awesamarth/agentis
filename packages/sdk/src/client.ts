@@ -36,6 +36,62 @@ function jsonSafe(value: unknown): unknown {
   return value
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize))
+  }
+  return btoa(binary)
+}
+
+function base64ToBytes(value: string): ArrayBuffer {
+  const binary = atob(value)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index++) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+  return bytes.buffer as ArrayBuffer
+}
+
+async function serializeRequest(request: Request): Promise<{
+  method: string
+  headers: Record<string, string>
+  bodyBase64?: string
+}> {
+  const method = request.method.toUpperCase()
+  const bodyBase64 = method === 'GET' || method === 'HEAD'
+    ? undefined
+    : bytesToBase64(new Uint8Array(await request.arrayBuffer()))
+
+  return {
+    method,
+    headers: Object.fromEntries(request.headers.entries()),
+    ...(bodyBase64 ? { bodyBase64 } : {}),
+  }
+}
+
+function responseFromProxy(result: {
+  status: number
+  headers?: Record<string, string>
+  body?: string
+  bodyBase64?: string
+}): Response {
+  const headers = new Headers(result.headers)
+  // The backend fetch has already decoded transfer/content encoding.
+  headers.delete('content-encoding')
+  headers.delete('content-length')
+
+  const body = result.bodyBase64
+    ? base64ToBytes(result.bodyBase64)
+    : result.body
+
+  return new Response(body, {
+    status: result.status,
+    headers,
+  })
+}
+
 export class AgentisClient {
   private config: Required<AgentisConfig>
   private agent!: AgentInfo
@@ -76,8 +132,10 @@ export class AgentisClient {
 
   // Drop-in fetch replacement
   async fetch(url: string, options?: RequestInit): Promise<Response> {
+    const request = new Request(url, options)
+
     // First attempt — no payment
-    const response = await globalThis.fetch(url, options)
+    const response = await globalThis.fetch(request.clone())
 
     if (response.status !== 402) return response
 
@@ -123,6 +181,8 @@ export class AgentisClient {
       return response
     }
 
+    const forwardedRequest = await serializeRequest(request)
+
     if (parsed.protocol === 'mpp') {
       // MPP: proxy through backend which uses @solana/mpp client + Privy signer
       const proxyRes = await globalThis.fetch(`${this.config.baseUrl}/sdk/agent/fetch-paid-mpp`, {
@@ -133,8 +193,7 @@ export class AgentisClient {
         },
         body: JSON.stringify({
           url,
-          method: options?.method ?? 'GET',
-          headers: options?.headers ?? {},
+          ...forwardedRequest,
           amount: tokenAmount,
           mint: asset,
         }),
@@ -150,12 +209,11 @@ export class AgentisClient {
         throw new PaymentError('MPP payment was rejected by server')
       }
 
-      this._recordSpend(amountUsd, url, parsed)
+      if (result.status >= 200 && result.status < 300) {
+        this._recordSpend(amountUsd, url, parsed)
+      }
 
-      return new Response(result.body, {
-        status: result.status,
-        headers: result.headers,
-      })
+      return responseFromProxy(result)
     }
 
     // x402: proxy through backend which uses Privy x402 client to pay
@@ -167,8 +225,7 @@ export class AgentisClient {
       },
       body: JSON.stringify({
         url,
-        method: options?.method ?? 'GET',
-        headers: options?.headers ?? {},
+        ...forwardedRequest,
         amount: tokenAmount,
         mint: asset,
       }),
@@ -184,14 +241,12 @@ export class AgentisClient {
       throw new PaymentError('Payment was rejected by server')
     }
 
-    // Record spend
-    this._recordSpend(amountUsd, url, parsed)
+    if (result.status >= 200 && result.status < 300) {
+      this._recordSpend(amountUsd, url, parsed)
+    }
 
     // Return a synthetic Response from the proxied result
-    return new Response(result.body, {
-      status: result.status,
-      headers: result.headers,
-    })
+    return responseFromProxy(result)
   }
 
   private _recordSpend(amountUsd: number, url: string, parsed: any): void {

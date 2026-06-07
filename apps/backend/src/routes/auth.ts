@@ -1,6 +1,13 @@
 import { Hono } from 'hono'
 import { privy } from '../lib/privy'
-import { createLoginSession, getLoginSession, completeLoginSession, createOrUpdateAccount, getLoginSessionAccountKey } from '../lib/db'
+import {
+  completeLoginSession,
+  createLoginSession,
+  createOrUpdateAccount,
+  getAccountKeySecret,
+  getLoginSession,
+  getLoginSessionAccountKey,
+} from '../lib/db'
 import { randomBytes } from 'crypto'
 
 const auth = new Hono()
@@ -54,9 +61,11 @@ auth.post('/session/:id/complete', async (c) => {
     return c.json({ error: 'Invalid Privy token' }, 401)
   }
 
-  // Generate or reuse account key
-  const accountKey = 'agt_user_' + randomBytes(24).toString('hex')
-  await createOrUpdateAccount(userId, accountKey)
+  // Legacy clients still use one account key. Reuse it so a new CLI login does
+  // not invalidate existing CLI or MCP sessions.
+  const existingAccountKey = await getAccountKeySecret(userId)
+  const accountKey = existingAccountKey ?? 'agt_user_' + randomBytes(24).toString('hex')
+  if (!existingAccountKey) await createOrUpdateAccount(userId, accountKey)
   await completeLoginSession(session.id, accountKey)
 
   return c.json({ success: true })

@@ -2,6 +2,53 @@ import { createLocalWallet, listLocalWallets } from '../lib/local-wallet'
 import { getToken } from '../lib/keychain'
 import { API_BASE, apiFetch } from '../lib/config'
 import { formatHostedAgentLine, formatLocalWalletLine } from '../lib/format-agent'
+import type { LocalWallet } from '../lib/local-wallet'
+
+type HostedWallet = {
+  id: string
+  name: string
+  walletAddress: string
+  type: 'hosted'
+  policyMode: 'backend' | 'onchain'
+  onchainPolicy?: {
+    initialized: boolean
+    programId?: string
+  }
+  privacyEnabled: boolean
+  umbraStatus: string
+  umbraRegisteredAt?: string
+}
+
+function toHostedWallet(agent: any): HostedWallet {
+  return {
+    id: agent.id,
+    name: agent.name,
+    walletAddress: agent.walletAddress,
+    type: 'hosted',
+    policyMode: agent.policyMode ?? 'backend',
+    onchainPolicy: agent.onchainPolicy
+      ? {
+          initialized: Boolean(agent.onchainPolicy.initialized),
+          programId: agent.onchainPolicy.programId,
+        }
+      : undefined,
+    privacyEnabled: Boolean(agent.privacyEnabled),
+    umbraStatus: agent.umbraStatus ?? 'disabled',
+    umbraRegisteredAt: agent.umbraRegisteredAt,
+  }
+}
+
+function toLocalWallet(wallet: LocalWallet) {
+  return {
+    id: wallet.id,
+    name: wallet.name,
+    walletAddress: wallet.solanaAddress,
+    solanaAddress: wallet.solanaAddress,
+    type: 'local' as const,
+    createdAt: wallet.createdAt,
+    policy: wallet.policy,
+  }
+}
 
 export async function walletCreate(args: string[]) {
   const nameIdx = args.indexOf('--name')
@@ -49,37 +96,58 @@ export async function walletCreate(args: string[]) {
   console.log(`  API Key: ${agent.apiKey}\n`)
 }
 
-export async function walletList() {
+export async function walletList(args: string[] = []) {
+  const json = args.includes('--json')
   const token = await getToken()
   const localWallets = listLocalWallets()
+  const local = localWallets.map(toLocalWallet)
+  const hosted: HostedWallet[] = []
+  let hostedError: { status?: number; message: string } | null = null
   let printedHosted = false
 
   if (token) {
     try {
       const res = await apiFetch('/account/agents', {}, token)
       if (res.ok) {
-        const hosted = await res.json()
-        if (hosted.length > 0) {
+        const agents = await res.json()
+        hosted.push(...agents.map(toHostedWallet))
+        if (!json && hosted.length > 0) {
           console.log('\nHosted wallets:')
-          for (const a of hosted) {
+          for (const a of agents) {
             console.log(formatHostedAgentLine(a))
           }
           printedHosted = true
-        } else {
+        } else if (!json) {
           console.log('\nNo hosted wallets found.')
         }
       } else if (res.status === 401) {
-        console.log(`\nCould not list hosted wallets: stored login is expired or invalid. Run \`agentis logout\` and then \`agentis login\`.`)
+        hostedError = { status: res.status, message: 'Stored login is expired or invalid. Run `agentis logout` and then `agentis login`.' }
+        if (!json) console.log(`\nCould not list hosted wallets: ${hostedError.message}`)
       } else {
         const data = await res.json().catch(() => ({}))
-        console.log(`\nCould not list hosted wallets from ${API_BASE}: ${data.error ?? res.statusText}`)
+        hostedError = { status: res.status, message: data.error ?? res.statusText }
+        if (!json) console.log(`\nCould not list hosted wallets from ${API_BASE}: ${hostedError.message}`)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      console.log(`\nCould not list hosted wallets from ${API_BASE}: ${message}`)
+      hostedError = { message }
+      if (!json) console.log(`\nCould not list hosted wallets from ${API_BASE}: ${message}`)
     }
   } else {
-    console.log('\nNot logged in. Run `agentis login` to list hosted wallets.')
+    hostedError = { message: 'Not logged in. Run `agentis login` to list hosted wallets.' }
+    if (!json) console.log(`\n${hostedError.message}`)
+  }
+
+  if (json) {
+    console.log(JSON.stringify({
+      apiBase: API_BASE,
+      authenticated: Boolean(token),
+      hosted,
+      hostedError,
+      local,
+      wallets: [...hosted, ...local],
+    }, null, 2))
+    return
   }
 
   if (localWallets.length > 0) {

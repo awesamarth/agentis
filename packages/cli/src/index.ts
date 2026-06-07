@@ -76,9 +76,12 @@ const helpSpecs: Record<string, HelpSpec> = {
     ],
   },
   'wallet list': {
-    usage: 'agentis wallet list',
+    usage: 'agentis wallet list [--json]',
     description: 'List hosted wallets from Agentis and local encrypted wallets on this machine.',
-    options: [['-h, --help', 'display help for command']],
+    options: [
+      ['--json', 'print structured JSON for agent/tool parsing'],
+      ['-h, --help', 'display help for command'],
+    ],
   },
   agent: {
     usage: 'agentis agent <command>',
@@ -319,7 +322,7 @@ ${green}${bold}Commands:${reset}
 
   wallet create --name <name>              create hosted wallet (requires login)
   wallet create --name <name> --local      create local encrypted wallet
-  wallet list                              list all wallets (hosted + local)
+  wallet list [--json]                     list all wallets (hosted + local)
 
   agent create <name>                      create a new hosted agent
     --onchain-policy                       create with Quasar on-chain policy mode
@@ -438,7 +441,7 @@ async function main() {
           await walletCreate(args.slice(2))
           break
         case 'list':
-          await walletList()
+          await walletList(args.slice(2))
           break
         default:
           console.log('Usage: agentis wallet <create|list>')

@@ -3,7 +3,6 @@ import { privy } from '../lib/privy'
 import {
   getAccountByUserId,
   createOrUpdateAccount,
-  getAccountByKey,
   getAgentsByUser,
   createAgent,
   createFacilitator,
@@ -12,8 +11,11 @@ import {
 } from '../lib/db'
 import { randomBytes } from 'crypto'
 import { deriveOnchainPolicy } from '../lib/onchain-policy'
+import { authenticateAccountBearer, hasAccountScope, type AccountIdentity } from '../lib/account-auth'
 
-const account = new Hono<{ Variables: { userId: string; authedViaKey: boolean } }>()
+const account = new Hono<{
+  Variables: { userId: string; authedViaKey: boolean; identity: AccountIdentity }
+}>()
 
 // Middleware: accepts either Privy JWT or account key
 account.use('*', async (c, next) => {
@@ -23,22 +25,17 @@ account.use('*', async (c, next) => {
   }
   const token = authHeader.slice(7)
 
-  if (token.startsWith('agt_user_')) {
-    // Account key auth
-    const acc = await getAccountByKey(token)
-    if (!acc) return c.json({ error: 'Invalid account key' }, 401)
-    c.set('userId', acc.userId)
-    c.set('authedViaKey', true)
-  } else {
-    // Privy JWT auth
-    try {
-      const { userId } = await privy.verifyAuthToken(token)
-      c.set('userId', userId)
-      c.set('authedViaKey', false)
-    } catch {
-      return c.json({ error: 'Invalid token' }, 401)
-    }
+  const identity = await authenticateAccountBearer(token)
+  if (!identity) return c.json({ error: 'Invalid token' }, 401)
+
+  const requiredScope = c.req.method === 'GET' ? 'wallets:read' : 'wallets:write'
+  if (identity.authType === 'oauth' && !hasAccountScope(identity, requiredScope)) {
+    return c.json({ error: `Missing required scope: ${requiredScope}` }, 403)
   }
+
+  c.set('userId', identity.userId)
+  c.set('identity', identity)
+  c.set('authedViaKey', identity.authType !== 'privy')
   await next()
 })
 

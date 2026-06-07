@@ -3,6 +3,8 @@ node_modules/
 
 # Build outputs
 dist/
+dist-worker/
+.wrangler/
 .next/
 out/
 .source/

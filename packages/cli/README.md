@@ -43,7 +43,9 @@ AGENTIS_API_URL=http://localhost:3001 agentis wallet list
 
 ## Authentication
 
-Hosted wallets and hosted agents require an Agentis account key. The CLI gets one through the browser login flow and stores it in your OS keychain.
+Hosted wallets and hosted agents require authentication. The CLI uses OAuth
+authorization code flow with PKCE and stores its access and refresh credentials
+in the OS keychain.
 
 ```bash
 agentis login
@@ -71,6 +73,7 @@ List hosted and local wallets:
 
 ```bash
 agentis wallet list
+agentis wallet list --json
 ```
 
 ## Hosted Agents
@@ -277,7 +280,7 @@ AGENTIS_API_URL=http://localhost:3001 bun src/index.ts wallet list
 ## Notes
 
 - Hosted agent keys are shown only when created or regenerated.
-- CLI account keys are stored in the OS keychain.
+- CLI OAuth credentials are stored in the OS keychain.
 - Local wallet vaults live under `~/.agentis/wallets/`.
 - Jupiter Earn commands require mainnet and the `--mainnet` safety flag.
 - Umbra devnet flows are currently safest with SOL or wSOL.

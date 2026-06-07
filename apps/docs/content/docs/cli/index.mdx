@@ -65,7 +65,9 @@ agentis whoami
 agentis logout
 ```
 
-The CLI stores your account key in the OS keychain.
+The CLI uses OAuth authorization code flow with PKCE and stores its access and
+refresh credentials in the OS keychain. Each CLI login is independently
+revocable and does not invalidate other sessions.
 
 ## Wallets and agents
 
@@ -85,6 +87,7 @@ List wallets and hosted agents:
 
 ```bash
 agentis wallet list
+agentis wallet list --json
 ```
 
 Create a hosted agent with on-chain policy mode:

@@ -1,8 +1,8 @@
 import { join } from 'path'
 import { createHmac, timingSafeEqual } from 'crypto'
 
-const DB_PATH = join(import.meta.dir, '../../data/db.json')
-const KEY_SECRETS_PATH = join(import.meta.dir, '../../data/key-secrets.json')
+const DB_PATH = process.env.AGENTIS_DB_PATH ?? join(import.meta.dir, '../../data/db.json')
+const KEY_SECRETS_PATH = process.env.AGENTIS_KEY_SECRETS_PATH ?? join(import.meta.dir, '../../data/key-secrets.json')
 const KEY_HASH_SECRET = process.env.API_KEY_HASH_SECRET ?? 'agentis-local-dev-key-hash-secret'
 
 type Policy = {
@@ -72,6 +72,59 @@ type Account = {
   createdAt: string
 }
 
+export type OAuthClient = {
+  clientId: string
+  clientName: string
+  redirectUris: string[]
+  tokenEndpointAuthMethod: 'none'
+  grantTypes: Array<'authorization_code' | 'refresh_token'>
+  createdAt: string
+}
+
+export type OAuthAuthorizationRequest = {
+  id: string
+  clientId: string
+  redirectUri: string
+  codeChallenge: string
+  codeChallengeMethod: 'S256'
+  scope: string[]
+  state?: string
+  resource?: string
+  status: 'pending' | 'approved' | 'denied'
+  userId?: string
+  createdAt: string
+  expiresAt: string
+}
+
+type OAuthAuthorizationCode = {
+  codeHash: string
+  clientId: string
+  redirectUri: string
+  codeChallenge: string
+  scope: string[]
+  userId: string
+  resource?: string
+  createdAt: string
+  expiresAt: string
+  usedAt?: string
+}
+
+export type OAuthGrant = {
+  id: string
+  userId: string
+  clientId: string
+  clientName: string
+  scope: string[]
+  resource?: string
+  accessTokenHash: string
+  accessTokenExpiresAt: string
+  refreshTokenHash: string
+  refreshTokenExpiresAt: string
+  createdAt: string
+  updatedAt: string
+  revokedAt?: string
+}
+
 export type FacilitatorRecord = {
   id: string
   ownerUserId: string
@@ -109,6 +162,10 @@ type DB = {
   accounts: Account[]
   loginSessions: LoginSession[]
   facilitators: FacilitatorRecord[]
+  oauthClients: OAuthClient[]
+  oauthAuthorizationRequests: OAuthAuthorizationRequest[]
+  oauthAuthorizationCodes: OAuthAuthorizationCode[]
+  oauthGrants: OAuthGrant[]
 }
 
 type KeySecrets = {
@@ -227,11 +284,26 @@ async function migratePlaintextKeys(data: DB): Promise<boolean> {
 async function readDb(): Promise<DB> {
   const file = Bun.file(DB_PATH)
   const exists = await file.exists()
-  if (!exists) return { agents: [], accounts: [], loginSessions: [], facilitators: [] }
+  if (!exists) {
+    return {
+      agents: [],
+      accounts: [],
+      loginSessions: [],
+      facilitators: [],
+      oauthClients: [],
+      oauthAuthorizationRequests: [],
+      oauthAuthorizationCodes: [],
+      oauthGrants: [],
+    }
+  }
   const data = await file.json()
   if (!data.accounts) data.accounts = []
   if (!data.loginSessions) data.loginSessions = []
   if (!data.facilitators) data.facilitators = []
+  if (!data.oauthClients) data.oauthClients = []
+  if (!data.oauthAuthorizationRequests) data.oauthAuthorizationRequests = []
+  if (!data.oauthAuthorizationCodes) data.oauthAuthorizationCodes = []
+  if (!data.oauthGrants) data.oauthGrants = []
   const migrated = await migratePlaintextKeys(data)
   // Migrate old tx records missing amountUsd — assume 1:1 with raw amount as fallback
   for (const agent of data.agents ?? []) {
@@ -377,6 +449,11 @@ export async function getAccountByKey(accountKey: string): Promise<Account | und
   return account ? attachAccountMasked(account) : undefined
 }
 
+export async function getAccountKeySecret(userId: string): Promise<string | undefined> {
+  const secrets = await readKeySecrets()
+  return secrets.accounts[userId]?.accountKey
+}
+
 export async function createLoginSession(id: string): Promise<LoginSession> {
   const db = await readDb()
   const session: LoginSession = {
@@ -441,6 +518,200 @@ export async function createOrUpdateAccount(userId: string, accountKey: string):
   await writeKeySecrets(secrets)
   await writeDb(db)
   return { ...account, accountKey }
+}
+
+export async function getOAuthClient(clientId: string): Promise<OAuthClient | undefined> {
+  if (clientId === 'agentis-cli') {
+    return {
+      clientId,
+      clientName: 'Agentis CLI',
+      redirectUris: [],
+      tokenEndpointAuthMethod: 'none',
+      grantTypes: ['authorization_code', 'refresh_token'],
+      createdAt: '2026-06-07T00:00:00.000Z',
+    }
+  }
+  const db = await readDb()
+  return db.oauthClients.find(client => client.clientId === clientId)
+}
+
+export async function registerOAuthClient(client: OAuthClient): Promise<OAuthClient> {
+  const db = await readDb()
+  const existing = db.oauthClients.findIndex(candidate => candidate.clientId === client.clientId)
+  if (existing === -1) db.oauthClients.push(client)
+  else db.oauthClients[existing] = client
+  await writeDb(db)
+  return client
+}
+
+export async function createOAuthAuthorizationRequest(
+  request: OAuthAuthorizationRequest,
+): Promise<OAuthAuthorizationRequest> {
+  const db = await readDb()
+  db.oauthAuthorizationRequests.push(request)
+  await writeDb(db)
+  return request
+}
+
+export async function getOAuthAuthorizationRequest(
+  id: string,
+): Promise<OAuthAuthorizationRequest | undefined> {
+  const db = await readDb()
+  return db.oauthAuthorizationRequests.find(request => request.id === id)
+}
+
+export async function completeOAuthAuthorizationRequest(
+  id: string,
+  patch: Pick<OAuthAuthorizationRequest, 'status'> & { userId?: string },
+): Promise<OAuthAuthorizationRequest> {
+  const db = await readDb()
+  const index = db.oauthAuthorizationRequests.findIndex(request => request.id === id)
+  if (index === -1) throw new Error('Authorization request not found')
+  db.oauthAuthorizationRequests[index] = {
+    ...db.oauthAuthorizationRequests[index]!,
+    ...patch,
+  }
+  await writeDb(db)
+  return db.oauthAuthorizationRequests[index]!
+}
+
+export async function createOAuthAuthorizationCode(input: {
+  code: string
+  clientId: string
+  redirectUri: string
+  codeChallenge: string
+  scope: string[]
+  userId: string
+  resource?: string
+  expiresAt: string
+}): Promise<void> {
+  const db = await readDb()
+  const { code, ...stored } = input
+  db.oauthAuthorizationCodes.push({
+    ...stored,
+    codeHash: hashKey(code),
+    createdAt: new Date().toISOString(),
+  })
+  await writeDb(db)
+}
+
+export async function consumeOAuthAuthorizationCode(
+  code: string,
+  expected: { clientId: string; redirectUri: string; codeChallenge: string },
+): Promise<OAuthAuthorizationCode | undefined> {
+  const db = await readDb()
+  const hash = hashKey(code)
+  const index = db.oauthAuthorizationCodes.findIndex(candidate =>
+    !candidate.usedAt &&
+    candidate.clientId === expected.clientId &&
+    candidate.redirectUri === expected.redirectUri &&
+    candidate.codeChallenge === expected.codeChallenge &&
+    safeCompare(candidate.codeHash, hash)
+  )
+  if (index === -1) return undefined
+  const authorizationCode = db.oauthAuthorizationCodes[index]!
+  if (new Date(authorizationCode.expiresAt) <= new Date()) return undefined
+  db.oauthAuthorizationCodes[index] = {
+    ...authorizationCode,
+    usedAt: new Date().toISOString(),
+  }
+  await writeDb(db)
+  return authorizationCode
+}
+
+export async function createOAuthGrant(input: {
+  id: string
+  userId: string
+  clientId: string
+  clientName: string
+  scope: string[]
+  resource?: string
+  accessToken: string
+  accessTokenExpiresAt: string
+  refreshToken: string
+  refreshTokenExpiresAt: string
+}): Promise<OAuthGrant> {
+  const db = await readDb()
+  const now = new Date().toISOString()
+  const grant: OAuthGrant = {
+    id: input.id,
+    userId: input.userId,
+    clientId: input.clientId,
+    clientName: input.clientName,
+    scope: input.scope,
+    resource: input.resource,
+    accessTokenHash: hashKey(input.accessToken),
+    accessTokenExpiresAt: input.accessTokenExpiresAt,
+    refreshTokenHash: hashKey(input.refreshToken),
+    refreshTokenExpiresAt: input.refreshTokenExpiresAt,
+    createdAt: now,
+    updatedAt: now,
+  }
+  db.oauthGrants.push(grant)
+  await writeDb(db)
+  return grant
+}
+
+export async function getOAuthGrantByAccessToken(token: string): Promise<OAuthGrant | undefined> {
+  const db = await readDb()
+  const hash = hashKey(token)
+  return db.oauthGrants.find(grant =>
+    !grant.revokedAt &&
+    new Date(grant.accessTokenExpiresAt) > new Date() &&
+    safeCompare(grant.accessTokenHash, hash)
+  )
+}
+
+export async function getOAuthGrantByRefreshToken(token: string): Promise<OAuthGrant | undefined> {
+  const db = await readDb()
+  const hash = hashKey(token)
+  return db.oauthGrants.find(grant =>
+    !grant.revokedAt &&
+    new Date(grant.refreshTokenExpiresAt) > new Date() &&
+    safeCompare(grant.refreshTokenHash, hash)
+  )
+}
+
+export async function rotateOAuthGrantTokens(input: {
+  grantId: string
+  accessToken: string
+  accessTokenExpiresAt: string
+  refreshToken: string
+  refreshTokenExpiresAt: string
+}): Promise<OAuthGrant> {
+  const db = await readDb()
+  const index = db.oauthGrants.findIndex(grant => grant.id === input.grantId && !grant.revokedAt)
+  if (index === -1) throw new Error('OAuth grant not found')
+  db.oauthGrants[index] = {
+    ...db.oauthGrants[index]!,
+    accessTokenHash: hashKey(input.accessToken),
+    accessTokenExpiresAt: input.accessTokenExpiresAt,
+    refreshTokenHash: hashKey(input.refreshToken),
+    refreshTokenExpiresAt: input.refreshTokenExpiresAt,
+    updatedAt: new Date().toISOString(),
+  }
+  await writeDb(db)
+  return db.oauthGrants[index]!
+}
+
+export async function revokeOAuthToken(token: string): Promise<void> {
+  const db = await readDb()
+  const hash = hashKey(token)
+  const index = db.oauthGrants.findIndex(grant =>
+    safeCompare(grant.accessTokenHash, hash) || safeCompare(grant.refreshTokenHash, hash)
+  )
+  if (index === -1) return
+  db.oauthGrants[index] = {
+    ...db.oauthGrants[index]!,
+    revokedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+  await writeDb(db)
+}
+
+export async function getOAuthGrantsByUser(userId: string): Promise<OAuthGrant[]> {
+  const db = await readDb()
+  return db.oauthGrants.filter(grant => grant.userId === userId)
 }
 
 export async function createFacilitator(input: Omit<FacilitatorRecord, 'createdAt' | 'updatedAt' | 'status' | 'publicUrl' | 'metrics' | 'lastHeartbeatAt'> & { publicUrl?: string | null }): Promise<FacilitatorRecord> {
