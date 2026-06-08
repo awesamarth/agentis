@@ -77,8 +77,17 @@ function result(value: unknown) {
 }
 
 function safeAgent(agent: Agent) {
-  const { apiKey: _apiKey, walletId: _walletId, ...safe } = agent
-  return safe
+  return {
+    id: agent.id,
+    name: agent.name,
+    walletAddress: agent.walletAddress,
+    createdAt: agent.createdAt,
+    policyMode: agent.policyMode ?? 'backend',
+    privacyEnabled: agent.privacyEnabled ?? false,
+    umbraStatus: agent.umbraStatus ?? 'disabled',
+    policy: agent.policy,
+    onchainPolicy: agent.onchainPolicy,
+  }
 }
 
 function spendHistory(agent: Agent) {
@@ -492,7 +501,7 @@ server.registerTool(
     const policy = Object.fromEntries(
       Object.entries({ ...current, ...patch }).filter(([, value]) => value !== undefined),
     )
-    const updated = await apiFetch(`/agents/${resolved.id}`, {
+    const updated = await apiFetch(`/agents/${resolved.id}/policy`, {
       method: 'PATCH',
       body: JSON.stringify({ policy }),
     })

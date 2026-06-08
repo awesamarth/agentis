@@ -660,6 +660,49 @@ agents.get('/:id', async (c) => {
   return c.json(agent)
 })
 
+async function applyOnchainPolicyUpdate(
+  agent: NonNullable<Awaited<ReturnType<typeof getAgentById>>>,
+  policy: any,
+) {
+  let onchainPolicy = agent.onchainPolicy
+  if (agent.policyMode === 'onchain' && agent.onchainPolicy?.initialized) {
+    const connection = new Connection(DEVNET_RPC, 'confirmed')
+    const tx = await preparePrivyTransaction(
+      connection,
+      agent.walletAddress,
+      new Transaction().add(createUpdatePolicyInstruction(agent, policy)),
+    )
+    const result = await privy.walletApi.solana.signAndSendTransaction({
+      walletId: agent.walletId,
+      transaction: tx,
+      caip2: DEVNET_CAIP2,
+    })
+    await confirmTransactionOrThrow(connection, result.hash, tx)
+    onchainPolicy = {
+      ...agent.onchainPolicy,
+      lastPolicySignature: result.hash,
+    }
+  }
+  return onchainPolicy
+}
+
+// PATCH /agents/:id/policy — update policy using policy-specific OAuth scope
+agents.patch('/:id/policy', async (c) => {
+  const userId = c.get('userId')
+  const agent = await getAgentById(c.req.param('id'))
+  if (!agent || agent.userId !== userId) return c.json({ error: 'Not found' }, 404)
+  const body = await c.req.json()
+  if (!body.policy || typeof body.policy !== 'object') {
+    return c.json({ error: 'Policy is required' }, 400)
+  }
+  try {
+    const onchainPolicy = await applyOnchainPolicyUpdate(agent, body.policy)
+    return c.json(await updateAgent(agent.id, { policy: body.policy, onchainPolicy }))
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 500)
+  }
+})
+
 // PATCH /agents/:id — update agent config (owner only)
 agents.patch('/:id', async (c) => {
   const userId = c.get('userId')
@@ -668,24 +711,9 @@ agents.patch('/:id', async (c) => {
     return c.json({ error: 'Not found' }, 404)
   }
   const body = await c.req.json()
-  if (body.policy && agent.policyMode === 'onchain' && agent.onchainPolicy?.initialized) {
+  if (body.policy) {
     try {
-      const connection = new Connection(DEVNET_RPC, 'confirmed')
-      const tx = await preparePrivyTransaction(
-        connection,
-        agent.walletAddress,
-        new Transaction().add(createUpdatePolicyInstruction(agent, body.policy)),
-      )
-      const result = await privy.walletApi.solana.signAndSendTransaction({
-        walletId: agent.walletId,
-        transaction: tx,
-        caip2: DEVNET_CAIP2,
-      })
-      await confirmTransactionOrThrow(connection, result.hash, tx)
-      body.onchainPolicy = {
-        ...agent.onchainPolicy,
-        lastPolicySignature: result.hash,
-      }
+      body.onchainPolicy = await applyOnchainPolicyUpdate(agent, body.policy)
     } catch (err) {
       return c.json({ error: formatSolanaTransactionError(err) }, 500)
     }

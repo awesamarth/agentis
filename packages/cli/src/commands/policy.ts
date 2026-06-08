@@ -81,7 +81,7 @@ export async function policySet(nameOrId: string | undefined, args: string[]) {
 
   if (hosted && token) {
     const policy = applyPolicyFlags(hosted.policy, args)
-    const res = await apiFetch(`/agents/${hosted.id}`, {
+    const res = await apiFetch(`/agents/${hosted.id}/policy`, {
       method: 'PATCH',
       body: JSON.stringify({ policy }),
     }, token)
