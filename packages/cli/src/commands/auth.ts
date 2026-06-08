@@ -19,6 +19,8 @@ const SCOPES = [
   'privacy:write',
   'earn:read',
   'earn:write',
+  'jupiter:read',
+  'jupiter:write',
 ]
 
 function base64url(bytes: Uint8Array): string {

@@ -5,6 +5,9 @@ export type Policy = {
   maxBudget: number | null
   maxPerTx: number | null
   allowedDomains: string[]
+  allowedMints?: string[]
+  maxSlippageBps?: number | null
+  maxDailySwapVolume?: number | null
   killSwitch: boolean
 }
 

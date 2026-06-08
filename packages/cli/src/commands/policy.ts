@@ -19,6 +19,9 @@ function printPolicy(name: string, p: any, scope: 'hosted' | 'local') {
   console.log(`  Monthly limit:  ${p.monthlyLimit !== null ? `$${p.monthlyLimit}` : 'unlimited'}`)
   console.log(`  Total budget:   ${p.maxBudget !== null ? `$${p.maxBudget}` : 'unlimited'}`)
   console.log(`  Allowed domains: ${p.allowedDomains?.length > 0 ? p.allowedDomains.join(', ') : 'all'}`)
+  console.log(`  Allowed mints:   ${p.allowedMints?.length > 0 ? p.allowedMints.join(', ') : 'all'}`)
+  console.log(`  Max slippage:    ${p.maxSlippageBps !== null && p.maxSlippageBps !== undefined ? `${p.maxSlippageBps} bps` : 'unlimited'}`)
+  console.log(`  Daily swaps:     ${p.maxDailySwapVolume !== null && p.maxDailySwapVolume !== undefined ? `$${p.maxDailySwapVolume}` : 'unlimited'}`)
   console.log()
 }
 
@@ -36,6 +39,8 @@ function applyPolicyFlags(existingPolicy: any, args: string[]) {
   if (get('--daily') !== undefined) policy.dailyLimit = parseFloat(get('--daily')!)
   if (get('--monthly') !== undefined) policy.monthlyLimit = parseFloat(get('--monthly')!)
   if (get('--budget') !== undefined) policy.maxBudget = parseFloat(get('--budget')!)
+  if (get('--max-slippage-bps') !== undefined) policy.maxSlippageBps = parseInt(get('--max-slippage-bps')!, 10)
+  if (get('--daily-swap-volume') !== undefined) policy.maxDailySwapVolume = parseFloat(get('--daily-swap-volume')!)
   if (get('--allow')) {
     const domain = get('--allow')!.replace(/^https?:\/\//, '').toLowerCase()
     policy.allowedDomains = [...new Set([...(policy.allowedDomains ?? []), domain])]
@@ -43,6 +48,14 @@ function applyPolicyFlags(existingPolicy: any, args: string[]) {
   if (get('--disallow')) {
     const domain = get('--disallow')!.replace(/^https?:\/\//, '').toLowerCase()
     policy.allowedDomains = (policy.allowedDomains ?? []).filter((d: string) => d !== domain)
+  }
+  if (get('--allow-mint')) {
+    const mint = get('--allow-mint')!
+    policy.allowedMints = [...new Set([...(policy.allowedMints ?? []), mint])]
+  }
+  if (get('--disallow-mint')) {
+    const mint = get('--disallow-mint')!
+    policy.allowedMints = (policy.allowedMints ?? []).filter((candidate: string) => candidate !== mint)
   }
 
   return policy

@@ -27,6 +27,9 @@ type Policy = {
   maxBudget: number | null
   maxPerTx: number | null
   allowedDomains: string[]
+  allowedMints?: string[]
+  maxSlippageBps?: number | null
+  maxDailySwapVolume?: number | null
   killSwitch: boolean
 }
 
@@ -153,6 +156,50 @@ type EarnBalanceResponse = {
   amountUi: string
 }
 
+type JupiterToken = {
+  id: string
+  symbol?: string
+  name?: string
+  decimals: number
+  isVerified?: boolean | null
+  organicScoreLabel?: string
+  audit?: { isSus?: boolean }
+}
+
+type JupiterPortfolioElement = {
+  type?: string
+  label?: string
+  platformId?: string
+  value?: number
+}
+
+type JupiterRecurringOrder = {
+  orderKey?: string
+  publicKey?: string
+  id?: string
+  status?: string
+}
+
+type JupiterSwapResponse = {
+  amountUi?: number
+  amountUsd?: number
+  inputToken?: JupiterToken
+  outputToken?: JupiterToken
+  quote?: {
+    outAmount?: string
+    router?: string
+    priceImpactPct?: string
+  }
+  order?: {
+    outAmount?: string
+    router?: string
+    priceImpactPct?: string
+  }
+  result?: {
+    signature?: string
+  }
+}
+
 const DEFAULT_POLICY: Policy = {
   hourlyLimit: null,
   dailyLimit: null,
@@ -160,6 +207,9 @@ const DEFAULT_POLICY: Policy = {
   maxBudget: null,
   maxPerTx: null,
   allowedDomains: [],
+  allowedMints: [],
+  maxSlippageBps: null,
+  maxDailySwapVolume: null,
   killSwitch: false,
 }
 
@@ -317,6 +367,7 @@ export default function AgentDetail() {
   const [editingName, setEditingName] = useState(false)
   const [policy, setPolicy] = useState<Policy>(DEFAULT_POLICY)
   const [domainInput, setDomainInput] = useState('')
+  const [mintInput, setMintInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [copiedAddress, setCopiedAddress] = useState(false)
@@ -343,6 +394,24 @@ export default function AgentDetail() {
   const [earnAmount, setEarnAmount] = useState('1')
   const [earnError, setEarnError] = useState<string | null>(null)
   const [earnMessage, setEarnMessage] = useState<string | null>(null)
+  const [tokenQuery, setTokenQuery] = useState('SOL')
+  const [tokenResults, setTokenResults] = useState<JupiterToken[]>([])
+  const [swapFrom, setSwapFrom] = useState('SOL')
+  const [swapTo, setSwapTo] = useState('USDC')
+  const [swapAmount, setSwapAmount] = useState('0.01')
+  const [swapSlippage, setSwapSlippage] = useState('')
+  const [swapQuote, setSwapQuote] = useState<JupiterSwapResponse | null>(null)
+  const [portfolioElements, setPortfolioElements] = useState<JupiterPortfolioElement[]>([])
+  const [portfolioLoaded, setPortfolioLoaded] = useState(false)
+  const [recurringOrders, setRecurringOrders] = useState<JupiterRecurringOrder[]>([])
+  const [recurringFrom, setRecurringFrom] = useState('USDC')
+  const [recurringTo, setRecurringTo] = useState('SOL')
+  const [recurringAmount, setRecurringAmount] = useState('100')
+  const [recurringCount, setRecurringCount] = useState('2')
+  const [recurringInterval, setRecurringInterval] = useState('86400')
+  const [jupiterWorking, setJupiterWorking] = useState<string | null>(null)
+  const [jupiterError, setJupiterError] = useState<string | null>(null)
+  const [jupiterMessage, setJupiterMessage] = useState<string | null>(null)
   const earnInitialAgentIdRef = useRef<string | null>(null)
   const earnSnapshotInFlightRef = useRef<Promise<void> | null>(null)
 
@@ -521,6 +590,144 @@ export default function AgentDetail() {
       setEarnError(getErrorMessage(err, 'Jupiter Earn deposit failed'))
     } finally {
       setEarnDepositing(false)
+    }
+  }
+
+  async function jupiterFetch(path: string, init: RequestInit = {}) {
+    const token = await getAccessToken()
+    if (!token) throw new Error('Missing auth token')
+    const res = await fetch(`${API}/agents/${id}/jupiter${path}`, {
+      ...init,
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+        ...(init.headers as Record<string, string> ?? {}),
+      },
+    })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(body?.error ?? 'Financial operation failed')
+    return body
+  }
+
+  function swapRequestBody() {
+    return {
+      input: swapFrom.trim(),
+      output: swapTo.trim(),
+      amount: swapAmount,
+      ...(swapSlippage ? { slippageBps: Number(swapSlippage) } : {}),
+    }
+  }
+
+  async function handleTokenSearch() {
+    if (!tokenQuery.trim()) return
+    setJupiterWorking('tokens')
+    setJupiterError(null)
+    try {
+      const body = await jupiterFetch(`/tokens?query=${encodeURIComponent(tokenQuery.trim())}`)
+      setTokenResults(Array.isArray(body.tokens) ? body.tokens : [])
+    } catch (err: unknown) {
+      setJupiterError(getErrorMessage(err, 'Token search failed'))
+    } finally {
+      setJupiterWorking(null)
+    }
+  }
+
+  async function handleSwap(action: 'quote' | 'execute') {
+    setJupiterWorking(`swap-${action}`)
+    setJupiterError(null)
+    setJupiterMessage(null)
+    try {
+      const body = await jupiterFetch(`/swap${action === 'quote' ? '/quote' : ''}`, {
+        method: 'POST',
+        body: JSON.stringify(swapRequestBody()),
+      })
+      setSwapQuote(body)
+      if (action === 'execute') {
+        const signature = body.result?.signature
+        setJupiterMessage(`swap executed${signature ? ` · ${String(signature).slice(0, 12)}...` : ''}`)
+        const token = await getAccessToken()
+        await Promise.all([
+          fetchBalances(agent?.walletAddress ?? ''),
+          token ? fetchTransactions(token) : Promise.resolve(),
+        ])
+      }
+    } catch (err: unknown) {
+      setJupiterError(getErrorMessage(err, `Swap ${action} failed`))
+    } finally {
+      setJupiterWorking(null)
+    }
+  }
+
+  async function handlePortfolio() {
+    setJupiterWorking('portfolio')
+    setJupiterError(null)
+    try {
+      const body = await jupiterFetch('/portfolio')
+      const portfolio = body.portfolio
+      const elements = Array.isArray(portfolio?.elements)
+        ? portfolio.elements
+        : Array.isArray(portfolio)
+          ? portfolio
+          : []
+      setPortfolioElements(elements)
+      setPortfolioLoaded(true)
+    } catch (err: unknown) {
+      setJupiterError(getErrorMessage(err, 'Portfolio load failed'))
+    } finally {
+      setJupiterWorking(null)
+    }
+  }
+
+  async function handleRecurringList() {
+    setJupiterWorking('recurring-list')
+    setJupiterError(null)
+    try {
+      const body = await jupiterFetch('/recurring?status=active')
+      const payload = body.orders
+      const orders = Array.isArray(payload) ? payload : Array.isArray(payload?.orders) ? payload.orders : []
+      setRecurringOrders(orders)
+    } catch (err: unknown) {
+      setJupiterError(getErrorMessage(err, 'Recurring orders load failed'))
+    } finally {
+      setJupiterWorking(null)
+    }
+  }
+
+  async function handleRecurringCreate() {
+    setJupiterWorking('recurring-create')
+    setJupiterError(null)
+    setJupiterMessage(null)
+    try {
+      const body = await jupiterFetch('/recurring', {
+        method: 'POST',
+        body: JSON.stringify({
+          input: recurringFrom.trim(),
+          output: recurringTo.trim(),
+          amount: recurringAmount,
+          numberOfOrders: Number(recurringCount),
+          intervalSeconds: Number(recurringInterval),
+        }),
+      })
+      setJupiterMessage(`recurring order created${body.result?.signature ? ` · ${String(body.result.signature).slice(0, 12)}...` : ''}`)
+      await handleRecurringList()
+    } catch (err: unknown) {
+      setJupiterError(getErrorMessage(err, 'Recurring order creation failed'))
+    } finally {
+      setJupiterWorking(null)
+    }
+  }
+
+  async function handleRecurringCancel(order: string) {
+    setJupiterWorking(`recurring-cancel-${order}`)
+    setJupiterError(null)
+    try {
+      await jupiterFetch(`/recurring/${encodeURIComponent(order)}/cancel`, { method: 'POST' })
+      setJupiterMessage('recurring order cancelled')
+      await handleRecurringList()
+    } catch (err: unknown) {
+      setJupiterError(getErrorMessage(err, 'Recurring order cancellation failed'))
+    } finally {
+      setJupiterWorking(null)
     }
   }
 
@@ -912,6 +1119,18 @@ export default function AgentDetail() {
     setPolicy(p => ({ ...p, allowedDomains: p.allowedDomains.filter(d => d !== domain) }))
   }
 
+  function addMint() {
+    const mint = mintInput.trim()
+    const allowedMints = policy.allowedMints ?? []
+    if (!mint || allowedMints.includes(mint)) { setMintInput(''); return }
+    setPolicy(p => ({ ...p, allowedMints: [...(p.allowedMints ?? []), mint] }))
+    setMintInput('')
+  }
+
+  function removeMint(mint: string) {
+    setPolicy(p => ({ ...p, allowedMints: (p.allowedMints ?? []).filter(item => item !== mint) }))
+  }
+
   if (!ready || loading) {
     return (
       <main className="min-h-screen bg-beige">
@@ -941,6 +1160,7 @@ export default function AgentDetail() {
     (sum, position) => sum + getEarnPositionUnderlyingAtomic(position),
     0n,
   )
+  const displayedSwapQuote = swapQuote?.quote ?? swapQuote?.order
 
   return (
     <main className="min-h-screen bg-beige">
@@ -1490,6 +1710,67 @@ export default function AgentDetail() {
                 onChange={v => setPolicy(p => ({ ...p, maxPerTx: v }))}
               />
             </div>
+            <LimitInput
+              label="Daily Swap Volume"
+              sublabel="Maximum swap and recurring volume per 24 hours"
+              value={policy.maxDailySwapVolume ?? null}
+              onChange={v => setPolicy(p => ({ ...p, maxDailySwapVolume: v }))}
+            />
+            <div className="flex flex-col gap-1.5">
+              <label className="font-mono text-[0.65rem] text-ink-muted tracking-widest uppercase">Max Slippage</label>
+              <p className="font-mono text-[0.6rem] text-ink-muted/60">Maximum allowed slippage in basis points</p>
+              <div className="relative">
+                <input
+                  type="number"
+                  min={1}
+                  max={10000}
+                  step={1}
+                  value={policy.maxSlippageBps ?? ''}
+                  onChange={e => setPolicy(p => ({ ...p, maxSlippageBps: e.target.value === '' ? null : Number(e.target.value) }))}
+                  placeholder="provider default"
+                  className="w-full bg-white border border-beige-darker px-4 pr-14 py-2.5 font-mono text-sm text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[0.6rem] text-ink-muted">bps</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Token allowlist */}
+        <section className="mb-10">
+          <h2 className="font-mono text-[0.65rem] text-ink-muted tracking-widest uppercase mb-4">Token Allowlist</h2>
+          <div className="bg-white border border-beige-darker p-6">
+            <p className="font-mono text-[0.6rem] text-ink-muted/70 mb-4">
+              Restrict swaps and recurring orders to approved mint addresses. Leave empty to allow all.
+            </p>
+            <div className="flex gap-3 mb-4">
+              <input
+                type="text"
+                value={mintInput}
+                onChange={e => setMintInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addMint()}
+                placeholder="Solana mint address"
+                className="flex-1 min-w-0 bg-[#fcfaf7] border border-beige-darker px-4 py-2.5 font-mono text-sm text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
+              />
+              <button
+                onClick={addMint}
+                className="font-mono text-xs tracking-widest text-ink-muted border border-beige-darker px-4 py-2.5 hover:border-ink-muted transition-colors cursor-pointer"
+              >
+                + add
+              </button>
+            </div>
+            {(policy.allowedMints ?? []).length === 0 ? (
+              <p className="font-mono text-[0.65rem] text-ink-muted/50 tracking-widest">no restrictions — all tokens allowed</p>
+            ) : (
+              <div className="space-y-2">
+                {(policy.allowedMints ?? []).map(mint => (
+                  <div key={mint} className="flex items-center justify-between gap-3 bg-[#fcfaf7] border border-beige-darker px-3 py-2">
+                    <span className="font-mono text-[0.65rem] text-ink truncate">{mint}</span>
+                    <button onClick={() => removeMint(mint)} className="font-mono text-xs text-ink-muted hover:text-black cursor-pointer">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 
@@ -1668,6 +1949,217 @@ export default function AgentDetail() {
                 </p>
               )}
             </div>
+          </section>
+        )}
+
+        {/* Financial operations */}
+        {authenticated && (
+          <section className="mb-10">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <img src="/jupiter-logo.png" alt="" className="h-4 w-4 rounded-full" />
+                <h2 className="font-mono text-[0.65rem] text-ink-muted tracking-widest uppercase">Financial Operations</h2>
+              </div>
+              <span className="font-mono text-[0.55rem] text-[#6f54a6] tracking-widest uppercase">Jupiter · mainnet</span>
+            </div>
+
+            <div className="bg-white border border-beige-darker divide-y divide-beige-darker">
+              <div className="p-5">
+                <div className="flex items-center justify-between gap-4 mb-4">
+                  <div>
+                    <p className="font-mono text-sm text-black">Swap</p>
+                    <p className="font-mono text-[0.6rem] text-ink-muted">Quote first, then execute through this agent&apos;s policy.</p>
+                  </div>
+                  {swapQuote?.amountUsd !== undefined && (
+                    <span className="font-mono text-[0.6rem] text-ink-muted">${swapQuote.amountUsd.toFixed(2)}</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+                  <input
+                    value={swapFrom}
+                    onChange={e => setSwapFrom(e.target.value)}
+                    placeholder="from: SOL"
+                    className="h-11 bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs text-black outline-none focus:border-ink-muted"
+                  />
+                  <input
+                    value={swapTo}
+                    onChange={e => setSwapTo(e.target.value)}
+                    placeholder="to: USDC"
+                    className="h-11 bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs text-black outline-none focus:border-ink-muted"
+                  />
+                  <input
+                    value={swapAmount}
+                    onChange={e => setSwapAmount(e.target.value.replace(/[^\d.]/g, ''))}
+                    inputMode="decimal"
+                    placeholder="amount"
+                    className="h-11 bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs text-black outline-none focus:border-ink-muted"
+                  />
+                  <input
+                    value={swapSlippage}
+                    onChange={e => setSwapSlippage(e.target.value.replace(/\D/g, ''))}
+                    inputMode="numeric"
+                    placeholder="slippage bps"
+                    className="h-11 bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs text-black outline-none focus:border-ink-muted"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    onClick={() => handleSwap('quote')}
+                    disabled={jupiterWorking !== null}
+                    className="border border-beige-darker px-4 h-10 font-mono text-xs text-ink hover:border-ink-muted cursor-pointer disabled:opacity-40"
+                  >
+                    {jupiterWorking === 'swap-quote' ? 'quoting...' : 'get quote'}
+                  </button>
+                  <button
+                    onClick={() => handleSwap('execute')}
+                    disabled={jupiterWorking !== null}
+                    className="bg-black text-beige px-4 h-10 font-mono text-xs tracking-widest hover:bg-ink cursor-pointer disabled:opacity-40"
+                  >
+                    {jupiterWorking === 'swap-execute' ? 'executing...' : 'execute swap'}
+                  </button>
+                  {displayedSwapQuote && (
+                    <p className="font-mono text-[0.6rem] text-ink-muted break-all">
+                      expected out {displayedSwapQuote.outAmount ?? 'unknown'} atomic
+                      {displayedSwapQuote.priceImpactPct ? ` · impact ${displayedSwapQuote.priceImpactPct}%` : ''}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="min-w-0">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <div>
+                      <p className="font-mono text-sm text-black">Token search</p>
+                      <p className="font-mono text-[0.6rem] text-ink-muted">Resolve metadata and safety signals.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mb-3">
+                    <input
+                      value={tokenQuery}
+                      onChange={e => setTokenQuery(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleTokenSearch()}
+                      placeholder="symbol, name, or mint"
+                      className="min-w-0 flex-1 h-10 bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs text-black outline-none focus:border-ink-muted"
+                    />
+                    <button
+                      onClick={handleTokenSearch}
+                      disabled={jupiterWorking !== null}
+                      className="border border-beige-darker px-3 h-10 font-mono text-xs text-ink cursor-pointer disabled:opacity-40"
+                    >
+                      search
+                    </button>
+                  </div>
+                  <div className="border border-beige-darker divide-y divide-beige-darker max-h-44 overflow-y-auto">
+                    {tokenResults.length === 0 ? (
+                      <p className="p-3 font-mono text-[0.6rem] text-ink-muted/50">no search loaded</p>
+                    ) : tokenResults.slice(0, 8).map(token => (
+                      <button
+                        key={token.id}
+                        onClick={() => setSwapTo(token.id)}
+                        className="w-full p-3 flex items-center justify-between gap-3 text-left hover:bg-[#fcfaf7] cursor-pointer"
+                      >
+                        <span className="min-w-0">
+                          <span className="block font-mono text-xs text-black">{token.symbol ?? 'UNKNOWN'} · {token.name ?? 'unnamed'}</span>
+                          <span className="block font-mono text-[0.55rem] text-ink-muted truncate">{token.id}</span>
+                        </span>
+                        <span className={`font-mono text-[0.55rem] shrink-0 ${token.audit?.isSus ? 'text-red-700' : token.isVerified ? 'text-green-700' : 'text-ink-muted'}`}>
+                          {token.audit?.isSus ? 'suspicious' : token.isVerified ? 'verified' : 'unverified'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="min-w-0">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <div>
+                      <p className="font-mono text-sm text-black">Portfolio</p>
+                      <p className="font-mono text-[0.6rem] text-ink-muted">Mainnet positions for this agent.</p>
+                    </div>
+                    <button
+                      onClick={handlePortfolio}
+                      disabled={jupiterWorking !== null}
+                      className="font-mono text-[0.6rem] text-ink-muted hover:text-black cursor-pointer disabled:opacity-40 inline-flex items-center gap-1.5"
+                    >
+                      <RefreshCw size={12} className={jupiterWorking === 'portfolio' ? 'animate-spin' : ''} />
+                      refresh
+                    </button>
+                  </div>
+                  <div className="border border-beige-darker divide-y divide-beige-darker max-h-44 overflow-y-auto">
+                    {!portfolioLoaded ? (
+                      <p className="p-3 font-mono text-[0.6rem] text-ink-muted/50">refresh to load positions</p>
+                    ) : portfolioElements.length === 0 ? (
+                      <p className="p-3 font-mono text-[0.6rem] text-ink-muted/50">no portfolio positions</p>
+                    ) : portfolioElements.map((position, index) => (
+                      <div key={`${position.platformId ?? 'position'}-${index}`} className="p-3 flex items-center justify-between gap-3">
+                        <span className="min-w-0">
+                          <span className="block font-mono text-xs text-black truncate">{position.label ?? position.type ?? 'position'}</span>
+                          <span className="block font-mono text-[0.55rem] text-ink-muted">{position.platformId ?? 'Jupiter'}</span>
+                        </span>
+                        <span className="font-mono text-xs text-black shrink-0">${Number(position.value ?? 0).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-5">
+                <div className="flex items-center justify-between gap-4 mb-4">
+                  <div>
+                    <p className="font-mono text-sm text-black">Recurring orders</p>
+                    <p className="font-mono text-[0.6rem] text-ink-muted">Time-based DCA. Minimum $100 total and $50 per cycle.</p>
+                  </div>
+                  <button
+                    onClick={handleRecurringList}
+                    disabled={jupiterWorking !== null}
+                    className="font-mono text-[0.6rem] text-ink-muted hover:text-black cursor-pointer disabled:opacity-40 inline-flex items-center gap-1.5"
+                  >
+                    <RefreshCw size={12} className={jupiterWorking === 'recurring-list' ? 'animate-spin' : ''} />
+                    refresh
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-3">
+                  <input value={recurringFrom} onChange={e => setRecurringFrom(e.target.value)} placeholder="from" className="h-10 bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs outline-none focus:border-ink-muted" />
+                  <input value={recurringTo} onChange={e => setRecurringTo(e.target.value)} placeholder="to" className="h-10 bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs outline-none focus:border-ink-muted" />
+                  <input value={recurringAmount} onChange={e => setRecurringAmount(e.target.value.replace(/[^\d.]/g, ''))} placeholder="total amount" className="h-10 bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs outline-none focus:border-ink-muted" />
+                  <input value={recurringCount} onChange={e => setRecurringCount(e.target.value.replace(/\D/g, ''))} placeholder="orders" className="h-10 bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs outline-none focus:border-ink-muted" />
+                  <input value={recurringInterval} onChange={e => setRecurringInterval(e.target.value.replace(/\D/g, ''))} placeholder="interval sec" className="h-10 bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs outline-none focus:border-ink-muted" />
+                </div>
+                <button
+                  onClick={handleRecurringCreate}
+                  disabled={jupiterWorking !== null}
+                  className="bg-black text-beige px-4 h-10 font-mono text-xs tracking-widest hover:bg-ink cursor-pointer disabled:opacity-40 mb-4"
+                >
+                  {jupiterWorking === 'recurring-create' ? 'creating...' : 'create recurring order'}
+                </button>
+                <div className="border border-beige-darker divide-y divide-beige-darker">
+                  {recurringOrders.length === 0 ? (
+                    <p className="p-3 font-mono text-[0.6rem] text-ink-muted/50">refresh to load active orders</p>
+                  ) : recurringOrders.map(order => {
+                    const orderId = order.orderKey ?? order.publicKey ?? order.id ?? ''
+                    return (
+                      <div key={orderId} className="p-3 flex items-center justify-between gap-3">
+                        <span className="font-mono text-[0.6rem] text-ink truncate">{orderId}</span>
+                        <button
+                          onClick={() => handleRecurringCancel(orderId)}
+                          disabled={!orderId || jupiterWorking !== null}
+                          className="font-mono text-[0.6rem] text-red-700 hover:text-red-900 cursor-pointer disabled:opacity-40"
+                        >
+                          cancel
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {(jupiterError || jupiterMessage) && (
+              <p className={`font-mono text-[0.65rem] mt-3 break-all ${jupiterError ? 'text-red-700' : 'text-ink-muted'}`}>
+                {jupiterError ?? jupiterMessage}
+              </p>
+            )}
           </section>
         )}
 

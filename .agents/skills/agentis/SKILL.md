@@ -75,6 +75,7 @@ agentis whoami
 agentis wallet create --name my-agent
 agentis wallet create --name my-agent --local
 agentis wallet list
+agentis wallet list --json
 
 agentis agent create my-agent
 agentis agent create my-agent --onchain-policy
@@ -91,6 +92,14 @@ agentis earn deposit my-agent --asset USDC --amount 1 --mainnet
 agentis earn withdraw my-agent --asset USDC --mainnet
 agentis earn withdraw my-agent --asset USDC --amount 1 --mainnet
 agentis earn sweep --dry-run
+
+agentis tokens search SOL
+agentis swap quote my-agent --from SOL --to USDC --amount 0.1
+agentis swap execute my-agent --from SOL --to USDC --amount 0.1
+agentis portfolio my-agent
+agentis recurring list my-agent
+agentis recurring create my-agent --from USDC --to SOL --amount 100 --orders 2 --interval 86400
+agentis recurring cancel my-agent <order>
 
 agentis privacy status --agent my-agent
 agentis privacy balance --agent my-agent
@@ -168,6 +177,13 @@ agentis_policy_read_onchain
 agentis_earn_deposit
 agentis_earn_positions
 agentis_earn_sweep
+agentis_tokens_search
+agentis_swap_quote
+agentis_swap_execute
+agentis_portfolio
+agentis_recurring_list
+agentis_recurring_create
+agentis_recurring_cancel
 agentis_privacy_status
 agentis_privacy_register
 agentis_privacy_balance

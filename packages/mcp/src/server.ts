@@ -18,6 +18,9 @@ const DEFAULT_POLICY = {
   maxBudget: null,
   maxPerTx: null,
   allowedDomains: [],
+  allowedMints: [],
+  maxSlippageBps: null,
+  maxDailySwapVolume: null,
   killSwitch: false,
 }
 
@@ -493,6 +496,9 @@ server.registerTool(
       monthlyLimit: nullableUsd,
       maxBudget: nullableUsd,
       allowedDomains: z.array(z.string()).optional(),
+      allowedMints: z.array(z.string()).optional(),
+      maxSlippageBps: z.number().int().min(1).max(10_000).nullable().optional(),
+      maxDailySwapVolume: nullableUsd,
     },
   },
   async ({ agent, ...patch }) => {
@@ -607,6 +613,137 @@ server.registerTool(
     }
     if (mode === 'dry-run') return result(dryRun)
     return result({ dryRun, deposits: await executeSweep(plan) })
+  },
+)
+
+const jupiterTradeSchema = {
+  agent: agentRef,
+  input: z.string().min(1).describe('Input token symbol or mint, e.g. SOL or USDC'),
+  output: z.string().min(1).describe('Output token symbol or mint'),
+  amount: z.number().positive().describe('Input amount in UI token units'),
+  slippageBps: z.number().int().min(1).max(10_000).optional(),
+}
+
+server.registerTool(
+  'agentis_tokens_search',
+  {
+    title: 'Search Jupiter tokens',
+    description: 'Search mainnet Solana token metadata, verification, organic score, liquidity, and safety signals.',
+    inputSchema: { query: z.string().min(1) },
+  },
+  async ({ query }) => result(await apiFetch(`/agents/jupiter/tokens?query=${encodeURIComponent(query)}`)),
+)
+
+server.registerTool(
+  'agentis_swap_quote',
+  {
+    title: 'Quote Jupiter swap',
+    description: 'Get a policy-checked Jupiter Swap V2 quote without executing it.',
+    inputSchema: jupiterTradeSchema,
+  },
+  async ({ agent, ...trade }) => {
+    const resolved = await resolveAgent(agent)
+    const data = await apiFetch(`/agents/${resolved.id}/jupiter/swap/quote`, {
+      method: 'POST',
+      body: JSON.stringify(trade),
+    })
+    return result({ agent: safeAgent(resolved), ...data })
+  },
+)
+
+server.registerTool(
+  'agentis_swap_execute',
+  {
+    title: 'Execute Jupiter swap',
+    description: 'Execute a mainnet Jupiter Swap V2 trade after Agentis policy checks.',
+    inputSchema: jupiterTradeSchema,
+  },
+  async ({ agent, ...trade }) => {
+    const resolved = await resolveAgent(agent)
+    const data = await apiFetch(`/agents/${resolved.id}/jupiter/swap`, {
+      method: 'POST',
+      body: JSON.stringify(trade),
+    })
+    return result({ agent: safeAgent(resolved), ...data })
+  },
+)
+
+server.registerTool(
+  'agentis_portfolio',
+  {
+    title: 'Get Jupiter portfolio',
+    description: 'Read mainnet Jupiter portfolio positions for an agent wallet.',
+    inputSchema: {
+      agent: agentRef,
+      platforms: z.array(z.string()).optional(),
+    },
+  },
+  async ({ agent, platforms }) => {
+    const resolved = await resolveAgent(agent)
+    const query = platforms?.length ? `?platforms=${encodeURIComponent(platforms.join(','))}` : ''
+    const data = await apiFetch(`/agents/${resolved.id}/jupiter/portfolio${query}`)
+    return result({ agent: safeAgent(resolved), ...data })
+  },
+)
+
+server.registerTool(
+  'agentis_recurring_list',
+  {
+    title: 'List Jupiter recurring orders',
+    description: 'List active or historical time-based Jupiter recurring orders.',
+    inputSchema: {
+      agent: agentRef,
+      status: z.enum(['active', 'history']).optional().default('active'),
+      page: z.number().int().positive().optional().default(1),
+    },
+  },
+  async ({ agent, status, page }) => {
+    const resolved = await resolveAgent(agent)
+    const data = await apiFetch(`/agents/${resolved.id}/jupiter/recurring?status=${status}&page=${page}`)
+    return result({ agent: safeAgent(resolved), ...data })
+  },
+)
+
+server.registerTool(
+  'agentis_recurring_create',
+  {
+    title: 'Create Jupiter recurring order',
+    description: 'Create a policy-checked mainnet time-based DCA order. Jupiter requires at least $100 total and $50 per cycle.',
+    inputSchema: {
+      ...jupiterTradeSchema,
+      numberOfOrders: z.number().int().min(2),
+      intervalSeconds: z.number().int().min(60),
+      minPrice: z.number().positive().nullable().optional(),
+      maxPrice: z.number().positive().nullable().optional(),
+      startAt: z.number().int().positive().nullable().optional(),
+    },
+  },
+  async ({ agent, ...order }) => {
+    const resolved = await resolveAgent(agent)
+    const data = await apiFetch(`/agents/${resolved.id}/jupiter/recurring`, {
+      method: 'POST',
+      body: JSON.stringify(order),
+    })
+    return result({ agent: safeAgent(resolved), ...data })
+  },
+)
+
+server.registerTool(
+  'agentis_recurring_cancel',
+  {
+    title: 'Cancel Jupiter recurring order',
+    description: 'Cancel one active Jupiter recurring order and reclaim remaining funds.',
+    inputSchema: {
+      agent: agentRef,
+      order: z.string().min(1),
+    },
+  },
+  async ({ agent, order }) => {
+    const resolved = await resolveAgent(agent)
+    const data = await apiFetch(`/agents/${resolved.id}/jupiter/recurring/${encodeURIComponent(order)}/cancel`, {
+      method: 'POST',
+    })
+    return result({ agent: safeAgent(resolved), ...data })
   },
 )
 

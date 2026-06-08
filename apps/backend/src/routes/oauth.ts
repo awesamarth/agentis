@@ -28,6 +28,8 @@ const DEFAULT_SCOPES = [
   'privacy:write',
   'earn:read',
   'earn:write',
+  'jupiter:read',
+  'jupiter:write',
 ]
 const SCOPE_SET = new Set(DEFAULT_SCOPES)
 const ACCESS_TOKEN_TTL_MS = 60 * 60 * 1000

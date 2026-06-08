@@ -21,6 +21,20 @@ import {
   readOnchainPolicy,
 } from '../lib/onchain-policy'
 import { authenticateAccountBearer, hasAccountScope, type AccountIdentity } from '../lib/account-auth'
+import {
+  atomicToUi as jupiterAtomicToUi,
+  cancelRecurringOrder,
+  createRecurringOrder,
+  enforceJupiterPolicy,
+  executeSwap,
+  getJupiterPortfolio,
+  getRecurringOrders,
+  getSwapQuote,
+  resolveJupiterToken,
+  searchJupiterTokens,
+  uiAmountToAtomic as jupiterUiAmountToAtomic,
+  validateTradeTokens,
+} from '../lib/jupiter'
 
 const DEVNET_RPC = 'https://api.devnet.solana.com'
 const DEVNET_CAIP2 = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
@@ -43,6 +57,7 @@ function requiredOAuthScope(method: string, path: string): string {
   const read = method === 'GET' || method === 'HEAD'
   if (path.includes('/umbra')) return read ? 'privacy:read' : 'privacy:write'
   if (path.includes('/earn')) return read ? 'earn:read' : 'earn:write'
+  if (path.includes('/jupiter')) return read ? 'jupiter:read' : 'jupiter:write'
   if (path.includes('/policy')) return read ? 'policy:read' : 'policy:write'
   if (path.endsWith('/send') || path.endsWith('/fetch')) return 'payments:execute'
   return read ? 'wallets:read' : 'wallets:write'
@@ -572,6 +587,14 @@ agents.get('/earn/positions', async (c) => {
   })
 })
 
+agents.get('/jupiter/tokens', async (c) => {
+  try {
+    return c.json({ tokens: await searchJupiterTokens(c.req.query('query') ?? '') })
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 400)
+  }
+})
+
 // POST /agents/:id/privacy/register — register a funded agent wallet with Umbra
 agents.post('/:id/privacy/register', async (c) => {
   const userId = c.get('userId')
@@ -649,6 +672,154 @@ agents.post('/:id/umbra/withdraw', async (c) => proxyUmbraForAgent(c, c.req.para
 agents.post('/:id/umbra/create-utxo', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/create-utxo', 'POST'))
 agents.get('/:id/umbra/scan', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/scan', 'GET'))
 agents.post('/:id/umbra/claim-latest', async (c) => proxyUmbraForAgent(c, c.req.param('id'), '/claim-latest', 'POST'))
+
+async function ownedAgent(c: any) {
+  const agent = await getAgentById(c.req.param('id'))
+  return agent && agent.userId === c.get('userId') ? agent : null
+}
+
+agents.get('/:id/jupiter/tokens', async (c) => {
+  if (!await ownedAgent(c)) return c.json({ error: 'Not found' }, 404)
+  try {
+    return c.json({ tokens: await searchJupiterTokens(c.req.query('query') ?? '') })
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 400)
+  }
+})
+
+async function prepareJupiterTrade(agent: any, body: any, action: 'swap' | 'recurring') {
+  const [inputToken, outputToken] = await Promise.all([
+    resolveJupiterToken(String(body.input ?? body.inputMint ?? '')),
+    resolveJupiterToken(String(body.output ?? body.outputMint ?? '')),
+  ])
+  validateTradeTokens(inputToken, outputToken)
+  const amountAtomic = jupiterUiAmountToAtomic(body.amount, inputToken.decimals)
+  const amountUi = Number(jupiterAtomicToUi(amountAtomic, inputToken.decimals))
+  const requestedSlippage = body.slippageBps === undefined ? undefined : Number(body.slippageBps)
+  if (requestedSlippage !== undefined && (!Number.isInteger(requestedSlippage) || requestedSlippage < 1 || requestedSlippage > 10_000)) {
+    throw new Error('slippageBps must be an integer from 1 to 10000')
+  }
+  const slippageBps = requestedSlippage
+  const { amountUsd } = await enforceJupiterPolicy({
+    agent,
+    inputToken,
+    outputToken,
+    inputAmountUi: amountUi,
+    slippageBps,
+    action,
+  })
+  return { inputToken, outputToken, amountAtomic, amountUi, amountUsd, slippageBps }
+}
+
+agents.post('/:id/jupiter/swap/quote', async (c) => {
+  const agent = await ownedAgent(c)
+  if (!agent) return c.json({ error: 'Not found' }, 404)
+  try {
+    const trade = await prepareJupiterTrade(agent, await c.req.json(), 'swap')
+    const quote = await getSwapQuote(trade)
+    return c.json({ ...trade, quote })
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 400)
+  }
+})
+
+agents.post('/:id/jupiter/swap', async (c) => {
+  const agent = await ownedAgent(c)
+  if (!agent) return c.json({ error: 'Not found' }, 404)
+  try {
+    const trade = await prepareJupiterTrade(agent, await c.req.json(), 'swap')
+    const executed = await executeSwap(privyNode, agent, trade)
+    await recordTransaction(agent.id, {
+      txHash: executed.result.signature,
+      amount: trade.amountUi,
+      amountUsd: trade.amountUsd,
+      recipient: `jupiter-swap:${trade.inputToken.id}:${trade.outputToken.id}`,
+      timestamp: new Date().toISOString(),
+    })
+    return c.json({ ...trade, ...executed })
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 400)
+  }
+})
+
+agents.get('/:id/jupiter/portfolio', async (c) => {
+  const agent = await ownedAgent(c)
+  if (!agent) return c.json({ error: 'Not found' }, 404)
+  try {
+    return c.json({
+      network: 'mainnet',
+      walletAddress: agent.walletAddress,
+      portfolio: await getJupiterPortfolio(agent.walletAddress, c.req.query('platforms')),
+    })
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 500)
+  }
+})
+
+agents.get('/:id/jupiter/recurring', async (c) => {
+  const agent = await ownedAgent(c)
+  if (!agent) return c.json({ error: 'Not found' }, 404)
+  const status = c.req.query('status') === 'history' ? 'history' : 'active'
+  try {
+    return c.json({
+      network: 'mainnet',
+      walletAddress: agent.walletAddress,
+      status,
+      orders: await getRecurringOrders(agent.walletAddress, {
+        status,
+        page: Number(c.req.query('page') ?? 1),
+        inputMint: c.req.query('inputMint'),
+        outputMint: c.req.query('outputMint'),
+        includeFailedTx: c.req.query('includeFailedTx') === 'true',
+      }),
+    })
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 500)
+  }
+})
+
+agents.post('/:id/jupiter/recurring', async (c) => {
+  const agent = await ownedAgent(c)
+  if (!agent) return c.json({ error: 'Not found' }, 404)
+  try {
+    const body = await c.req.json()
+    const trade = await prepareJupiterTrade(agent, body, 'recurring')
+    const numberOfOrders = Number(body.numberOfOrders)
+    const intervalSeconds = Number(body.intervalSeconds)
+    if (!Number.isInteger(numberOfOrders) || numberOfOrders < 2) throw new Error('numberOfOrders must be at least 2')
+    if (!Number.isInteger(intervalSeconds) || intervalSeconds < 60) throw new Error('intervalSeconds must be at least 60')
+    if (trade.amountUsd < 100) throw new Error('Jupiter recurring orders require at least $100 total value')
+    if (trade.amountUsd / numberOfOrders < 50) throw new Error('Each Jupiter recurring cycle must be worth at least $50')
+    const created = await createRecurringOrder(privyNode, agent, {
+      ...trade,
+      numberOfOrders,
+      intervalSeconds,
+      minPrice: body.minPrice === undefined ? null : Number(body.minPrice),
+      maxPrice: body.maxPrice === undefined ? null : Number(body.maxPrice),
+      startAt: body.startAt === undefined ? null : Number(body.startAt),
+    })
+    await recordTransaction(agent.id, {
+      txHash: created.result.signature,
+      amount: trade.amountUi,
+      amountUsd: trade.amountUsd,
+      recipient: `jupiter-recurring:${trade.inputToken.id}:${trade.outputToken.id}`,
+      timestamp: new Date().toISOString(),
+    })
+    return c.json({ ...trade, ...created })
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 400)
+  }
+})
+
+agents.post('/:id/jupiter/recurring/:order/cancel', async (c) => {
+  const agent = await ownedAgent(c)
+  if (!agent) return c.json({ error: 'Not found' }, 404)
+  try {
+    return c.json(await cancelRecurringOrder(privyNode, agent, c.req.param('order')))
+  } catch (err) {
+    return c.json({ error: formatSolanaTransactionError(err) }, 400)
+  }
+})
 
 // GET /agents/:id — get single agent (owner only)
 agents.get('/:id', async (c) => {
@@ -741,6 +912,9 @@ agents.post('/:id/policy/onchain/initialize', async (c) => {
     maxBudget: null,
     maxPerTx: null,
     allowedDomains: [],
+    allowedMints: [],
+    maxSlippageBps: null,
+    maxDailySwapVolume: null,
     killSwitch: false,
   }
 

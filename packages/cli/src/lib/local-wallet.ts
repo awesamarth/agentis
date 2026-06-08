@@ -21,6 +21,9 @@ export const DEFAULT_LOCAL_POLICY: Policy = {
   maxBudget: null,
   maxPerTx: null,
   allowedDomains: [],
+  allowedMints: [],
+  maxSlippageBps: null,
+  maxDailySwapVolume: null,
   killSwitch: false,
 }
 

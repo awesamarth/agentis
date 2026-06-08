@@ -10,6 +10,7 @@ import { paidFetch } from './commands/fetch'
 import { privacyCommand } from './commands/privacy'
 import { facilitatorCommand } from './commands/facilitator'
 import { earnCommand } from './commands/earn'
+import { financialCommand } from './commands/jupiter'
 
 const args = process.argv.slice(2)
 const cmd = args[0]
@@ -131,6 +132,31 @@ const helpSpecs: Record<string, HelpSpec> = {
       ['withdraw <agent> --asset USDC [--amount <amount>] --mainnet', 'withdraw mainnet USDC from Jupiter Earn'],
       ['positions <agent> --mainnet [--all]', 'show Jupiter Earn positions'],
       ['sweep [--dry-run|--no-dry-run]', 'sweep all hosted agents mainnet USDC into Jupiter Earn'],
+    ],
+  },
+  swap: {
+    usage: 'agentis swap <quote|execute> <agent> --from <token> --to <token> --amount <ui>',
+    description: 'Quote or execute policy-controlled swaps through Jupiter.',
+    commands: [
+      ['quote <agent> --from <token> --to <token> --amount <ui>', 'get a policy-checked quote'],
+      ['execute <agent> --from <token> --to <token> --amount <ui>', 'execute the swap'],
+    ],
+  },
+  tokens: {
+    usage: 'agentis tokens search <query> [--json]',
+    description: 'Search Jupiter token metadata and safety signals.',
+  },
+  portfolio: {
+    usage: 'agentis portfolio <agent> [--json]',
+    description: 'Show mainnet Jupiter portfolio positions.',
+  },
+  recurring: {
+    usage: 'agentis recurring <list|create|cancel> ...',
+    description: 'Manage Jupiter time-based recurring swaps.',
+    commands: [
+      ['list <agent> [--history] [--json]', 'list active or historical orders'],
+      ['create <agent> --from <token> --to <token> --amount <ui> --orders <n> --interval <seconds>', 'create an order'],
+      ['cancel <agent> <order>', 'cancel an active order'],
     ],
   },
   'earn deposit': {
@@ -292,6 +318,10 @@ const helpSpecs: Record<string, HelpSpec> = {
       ['--budget <usd>', 'total lifetime budget cap'],
       ['--allow <domain>', 'add domain to whitelist'],
       ['--disallow <domain>', 'remove domain from whitelist'],
+      ['--allow-mint <mint>', 'add token mint to Jupiter allowlist'],
+      ['--disallow-mint <mint>', 'remove token mint from Jupiter allowlist'],
+      ['--max-slippage-bps <bps>', 'maximum Jupiter swap slippage'],
+      ['--daily-swap-volume <usd>', 'maximum Jupiter volume per 24 hours'],
       ['-h, --help', 'display help for command'],
     ],
   },
@@ -342,6 +372,14 @@ ${green}${bold}Commands:${reset}
   earn positions <agent> --mainnet         show Jupiter Earn positions
   earn sweep [--dry-run|--no-dry-run]      sweep all agents' mainnet USDC into Earn
 
+  tokens search <query>                     search token metadata and safety
+  swap quote <agent>                        quote a mainnet Jupiter swap
+  swap execute <agent>                      execute a policy-checked swap
+  portfolio <agent>                         show Jupiter portfolio positions
+  recurring list <agent>                    list active or historical DCA orders
+  recurring create <agent>                  create a time-based DCA order
+  recurring cancel <agent> <order>          cancel a DCA order
+
   facilitator create <name>                scaffold a Kora-backed x402 facilitator
     --dir <path>                           output directory
     --fee-bps <bps>                        prepaid seller fee rate (default 500)
@@ -373,6 +411,10 @@ ${green}${bold}Commands:${reset}
     --budget <usd>                         total lifetime budget cap
     --allow <domain>                       add domain to whitelist
     --disallow <domain>                    remove domain from whitelist
+    --allow-mint <mint>                    add token mint to Jupiter allowlist
+    --disallow-mint <mint>                 remove token mint from Jupiter allowlist
+    --max-slippage-bps <bps>               maximum Jupiter swap slippage
+    --daily-swap-volume <usd>              maximum Jupiter volume per 24 hours
 `)
 }
 
@@ -494,6 +536,13 @@ async function main() {
 
     case 'earn':
       await earnCommand(args.slice(1))
+      break
+
+    case 'tokens':
+    case 'swap':
+    case 'portfolio':
+    case 'recurring':
+      await financialCommand(args)
       break
 
     default:

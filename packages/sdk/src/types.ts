@@ -63,6 +63,39 @@ export type UmbraCreateUtxoOptions = UmbraAmountOptions & {
 
 export type UmbraResponse = Record<string, unknown>
 
+export type JupiterToken = {
+  id: string
+  name?: string
+  symbol?: string
+  icon?: string
+  decimals: number
+  tokenProgram?: string
+  isVerified?: boolean | null
+  organicScore?: number
+  organicScoreLabel?: 'high' | 'medium' | 'low'
+  liquidity?: number
+  usdPrice?: number
+  tags?: string[]
+  audit?: Record<string, unknown>
+}
+
+export type JupiterSwapOptions = {
+  input: string
+  output: string
+  amount: string | number
+  slippageBps?: number
+}
+
+export type JupiterRecurringCreateOptions = JupiterSwapOptions & {
+  numberOfOrders: number
+  intervalSeconds: number
+  minPrice?: number | null
+  maxPrice?: number | null
+  startAt?: number | null
+}
+
+export type JupiterResponse = Record<string, unknown>
+
 export type MPPChallenge = {
   amount: string
   currency: string

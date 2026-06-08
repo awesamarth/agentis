@@ -35,12 +35,12 @@ agentis/
     core/          shared types + policy engine
     sdk/           AgentisClient
     cli/           agentis CLI
-    mcp/           local stdio MCP server
-  sdk-testing/
+    mcp/           shared tools + local stdio + remote Cloudflare Worker
+  testing/
     x402-server/   local x402 test server, port 4000
     mpp-server/    local MPP test server, port 4001
     agent-app/     SDK test scripts
-  umbra-test/      standalone Umbra flow test app
+    umbra-test/    standalone Umbra flow test app
   quasar-proj/     Quasar on-chain policy program
 ```
 
@@ -53,8 +53,101 @@ Local packages point to `src/` directly; no package build step is normally neede
 - Backend must be run from `apps/backend/` so `.env` is loaded.
 - Ports commonly used: dashboard `3000`, backend `3001`, x402 test `4000`, MPP test `4001`.
 
-## Current Focus: Umbra RC SDK
-Umbra is the active workstream. The backend has been moved to `@umbra-privacy/sdk@5.0.0-rc.3`, and the Umbra SDK/docs are unstable enough that new changes must inspect installed package exports/types/dist instead of relying on old docs or older Agentis assumptions.
+## Current Checkpoint — June 8, 2026
+
+The x402/MPP hardening, CLI OAuth migration, and remote MCP launch are complete.
+Production is currently:
+
+- Dashboard: `https://agentis.systems`
+- Backend/OAuth issuer: `https://api.agentis.systems`
+- Docs: `https://docs.agentis.systems`
+- Remote MCP: `https://mcp.agentis.systems/mcp`
+- Published CLI: `@agentis-hq/cli@0.3.2`
+- Latest handoff commits:
+  - `20b29e8` — x402/MPP polish and MCP/OAuth revamp
+  - `3329682` — CLI `0.3.1` timeout hotfix
+  - `1caacd4` — remote MCP scope/output hardening
+  - `497c037` — remote MCP launch documentation
+
+Production configuration:
+- Railway service `backend` is linked to the `agentis` project and is online.
+- Railway has `PUBLIC_API_URL=https://api.agentis.systems`,
+  `DASHBOARD_URL=https://agentis.systems`, and `MCP_INTROSPECTION_SECRET`.
+- Cloudflare Worker `agentis-mcp` has the matching introspection secret.
+- `agentis.systems` uses Cloudflare nameservers
+  `gordon.ns.cloudflare.com` and `heather.ns.cloudflare.com`.
+- Existing root/API/docs/www records were migrated as DNS-only; MCP is proxied
+  to the Worker.
+
+Production deploy runbook:
+- Backend deploys from the connected Railway service after changes reach its
+  configured branch.
+- Dashboard/docs use their existing Vercel deployments.
+- Remote MCP Worker changes require a separate deploy from `packages/mcp`:
+  `bun run build:worker`, then
+  `bun x wrangler deploy --domain mcp.agentis.systems`.
+- Use `bun x`, not `bunx`, for package executables in this repo.
+- Worker config is `packages/mcp/wrangler.toml`. Keep
+  `MCP_INTROSPECTION_SECRET` identical in Railway and the Worker.
+
+Verified production remote MCP flow:
+- OAuth protected-resource and authorization-server discovery.
+- Dynamic client registration and PKCE browser consent.
+- Resource-bound access token exchange and private introspection.
+- Streamable HTTP initialize, 23-tool listing, and sanitized agent listing.
+- A no-op policy update on `cli-test-agent` succeeded with only
+  `wallets:read policy:read policy:write`; `wallets:write` was not granted.
+- Test refresh tokens were revoked after E2E.
+- Test harness: `testing/remote-mcp-oauth.ts`; set
+  `AGENTIS_MCP_TEST_MODE=write` for the scoped write test.
+
+Important caveats:
+- The root `.env` currently contains a Cloudflare API token as a raw single
+  line, not `KEY=value`. It is gitignored. Never print or commit it; rotate it
+  when administrative setup is finished.
+- npm CLI `0.3.2` includes the dedicated policy route from `1caacd4`.
+- JSON DB remains the main production durability/scaling risk.
+- Remote MCP local-wallet operations remain intentionally unsupported.
+
+Current unreleased source checkpoint:
+- Jupiter Swap V2, Tokens V2 search, Portfolio, and time-based Recurring/DCA are
+  implemented across backend, SDK, CLI, MCP, and the per-agent dashboard.
+- Public naming is provider-neutral: `agentis swap`, `agentis tokens search`,
+  `agentis portfolio`, and `agentis recurring`. Do not add an
+  `agentis jupiter` command namespace.
+- New policy controls are token mint allowlists, max slippage BPS, and max
+  rolling 24-hour swap/recurring volume.
+- Live read-only/build validation passed for token search, SOL-to-USDC Swap V2
+  order construction, `leno` Portfolio, recurring-order listing, and unsigned
+  recurring-order construction. No mainnet swap or recurring transaction was
+  signed or executed during this pass.
+- The live Recurring API currently requires `includeFailedTx=false` even though
+  the docs describe it as optional, returns orders under `time`, and requires
+  numeric `inAmount`; the backend normalizes these quirks.
+- Production CLI `0.3.2`, backend, dashboard, and 23-tool MCP Worker do not yet
+  include this unreleased Jupiter source. New OAuth logins request
+  `jupiter:read` and `jupiter:write`; existing credentials must re-login after
+  deployment to receive those scopes.
+
+## Next Work
+
+Recommended order:
+1. Review and deploy the Jupiter source, publish a new CLI release, deploy the
+   updated MCP Worker, then re-login the CLI for the new OAuth scopes.
+2. Run one deliberately small mainnet Swap V2 execution and one Recurring
+   create/cancel E2E using a user-approved agent and amounts.
+3. Database migration away from JSON while preserving key hashes, OAuth
+   clients/grants, agents, policies, transactions, and facilitator records.
+4. Test remote MCP from real third-party hosts such as Codex, Claude, OpenClaw,
+   or Hermes, not only the SDK harness.
+5. Add MCP and dashboard Jupiter Earn withdraw controls.
+6. Mainnet-readiness pass: secrets, rate limits, audit logs, token/action
+   allowlists, RPC reliability, monitoring, and production transaction limits.
+
+Do not redo the completed OAuth/MCP deployment unless a regression is observed.
+
+## Umbra RC SDK
+The backend uses `@umbra-privacy/sdk@5.0.0-rc.3`. The Umbra SDK/docs are unstable enough that new changes must inspect installed package exports/types/dist instead of relying on old docs or older Agentis assumptions.
 
 Current Umbra migration state:
 - `GET /umbra/scan`, direct encrypted-balance deposit/withdraw, encrypted-balance-sourced UTXO creation, and `claim-latest` were retested locally against the backend on May 30, 2026.
@@ -93,7 +186,7 @@ Core routes:
 - `/facilitators/*`: facilitator heartbeat route used by CLI-generated facilitator scaffolds.
 - `/sol-price`: cached SOL/USD price from Jupiter Price API.
 
-DB is still JSON at and should be replaced later.
+DB is still JSON and should be replaced later.
 
 On-chain policy notes:
 - On-chain policy agents use Quasar program `EGZKucpjMmAHvqUP3hLSBCccs4uAQyCAvQ8ikSNCryhM` on devnet.
@@ -120,12 +213,13 @@ Command: `agentis`.
 Implemented:
 - `agentis login/logout/whoami`
 - `agentis wallet create --name <name> [--local]`
-- `agentis wallet list`
-- `agentis agent list/create/balance/send`
+- `agentis wallet list [--json]`
+- `agentis agent create/balance/send`
 - `agentis agent create <name> --onchain-policy`
 - `agentis policy get/set/init-onchain`
-- `agentis fetch <url> --agent <name-or-id> [--method GET]`
+- `agentis fetch <url> --agent <name-or-id> [--method <method>]`
 - `agentis earn deposit <agent> --asset USDC --amount <amount> --mainnet`
+- `agentis earn withdraw <agent> --asset USDC [--amount <amount>] --mainnet`
 - `agentis earn positions <agent> --mainnet [--all]`
 - `agentis earn sweep [--dry-run|--no-dry-run]`
 - `agentis privacy status/register/balance/deposit/withdraw/create-utxo/scan/claim-latest --agent <name-or-id>`
@@ -156,6 +250,10 @@ Remote MCP implementation:
   PKCE consent, token exchange, Streamable HTTP initialization, 23-tool listing,
   sanitized `agentis_list_agents`, and a no-op `agentis_policy_update` using only
   `wallets:read policy:read policy:write`. The test grant was revoked afterward.
+- `agentis_list_agents` intentionally returns a compact safe projection. Do not
+  reintroduce key hashes, wallet IDs, or full transaction histories.
+- Policy writes use dedicated `PATCH /agents/:id/policy`, allowing
+  `policy:write` without `wallets:write`.
 
 Local stdio run:
 
@@ -231,7 +329,7 @@ Kora:
 - Default facilitator network should be `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`, not plain `solana-devnet`.
 
 Tested Kora/x402 e2e:
-- `sdk-testing/kora-test` is a dedicated x402 protected server that points at `FACILITATOR_URL`.
+- `testing/kora-test` is a dedicated x402 protected server that points at `FACILITATOR_URL`.
 - Kora fee payer test wallet: `Cw9XejYk1oN3uSRvLSsdmLPcrQ2mJpFYQ4Z1VqSaenhg`.
 - Test keypair file is local-only under `.agentis-test-keys/` and ignored by git.
 - Created devnet USDC ATA for the Kora fee-payer wallet to use it as seller/payTo.
@@ -248,6 +346,8 @@ Tested Kora/x402 e2e:
 - Use `createSolanaKitSigner` from `@privy-io/node/solana-kit`.
 - Use `broadcast: true` for `solanaClient.charge()`. Pull mode caused blockhash failures.
 - Detect with `WWW-Authenticate` matching `/^Payment\s+id=/i`.
+- Preserve the original HTTP method, headers, and body when retrying after 402.
+- GET, POST, and PATCH paid flows are covered by conformance tests.
 
 ### x402
 - Use `createX402Client` from `@privy-io/node/x402` plus `wrapFetchWithPayment` from `@x402/fetch`.
@@ -257,6 +357,10 @@ Tested Kora/x402 e2e:
 - Devnet USDC mint: `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`.
 - `PAY_TO` must have an existing USDC ATA on devnet.
 - Amounts are atomic token units, e.g. USDC has 6 decimals.
+- Preserve the original HTTP method, headers, and body when retrying after 402.
+- Standards/paywall tests live in `testing/protocol-conformance.ts`,
+  `testing/agent-app/paid-methods.ts`, and
+  `testing/agent-app/paywall-interoperability.ts`.
 
 ### Policy
 - Policy amounts are USD.
@@ -321,7 +425,10 @@ Tested with `private-agent-1777138992`:
 - Withdraw `500_000` lamports.
 - Final encrypted balance after test: `500000`.
 
-Tested UTXO/private-transfer flow with `agent-p`:
+Historical pre-RC UTXO/private-transfer test with `agent-p`:
+- This older test created the UTXO from public SOL. It is retained as protocol
+  history only; the current `create-utxo` path uses encrypted balance as its
+  source, as documented in the RC migration state above.
 - Starting encrypted balance: `0.0005 SOL`.
 - Created a receiver-claimable UTXO from public SOL balance for `0.01 SOL`.
 - Scan returned `publicReceived: 1`.
@@ -370,14 +477,24 @@ ZK prover:
 
 Current usage:
 - SOL price uses Jupiter Price API.
+- Swap V2 quote/execute, Tokens V2 search, Portfolio, and time-based
+  Recurring/DCA are implemented in source for backend, SDK, CLI, MCP, and the
+  per-agent dashboard.
+- CLI commands are `agentis swap quote|execute`, `agentis tokens search`,
+  `agentis portfolio`, and `agentis recurring list|create|cancel`.
+- SDK surfaces are `client.swap`, `client.tokens`, `client.portfolio`, and
+  `client.recurring`; there is intentionally no `client.jupiter` namespace.
 - `agentis earn deposit <agent> --asset USDC --amount <amount> --mainnet` deposits mainnet USDC into Jupiter Earn.
 - `agentis earn positions <agent> --mainnet [--all]` shows mainnet Jupiter Earn positions.
+- `agentis earn withdraw <agent> --asset USDC [--amount <amount>] --mainnet`
+  withdraws a specified amount or redeems the full position when amount is omitted.
 - `agentis earn sweep [--dry-run|--no-dry-run]` reads all hosted agents' mainnet USDC balances and deposits non-zero balances into Jupiter Earn. Default behavior prints the dry-run plan and then executes; `--dry-run` only prints; `--no-dry-run` executes directly.
-- Landing page mentions swaps and Jupiter Earn. Swaps are not implemented yet.
+- Swap and Recurring writes are mainnet-only and policy-controlled.
 
 Jupiter Earn/Lend status:
 - Jupiter Earn is mainnet-only in Agentis. Do not build a devnet Jupiter Earn transaction path.
 - Backend route: `POST /agents/:id/earn/deposit`.
+- Backend route: `POST /agents/:id/earn/withdraw`.
 - Backend route: `GET /agents/:id/earn/positions?network=mainnet`.
 - Backend calls `POST https://api.jup.ag/lend/v1/earn/deposit`, receives a base64 unsigned legacy transaction, refreshes the blockhash, signs/sends through Privy with mainnet CAIP-2, confirms, and records the transaction.
 - Backend reads positions from `GET https://api.jup.ag/lend/v1/earn/positions?users=<wallet>`.

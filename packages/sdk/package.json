@@ -1,6 +1,6 @@
 {
   "name": "@agentis-hq/sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Agentis SDK — AI agent payment infrastructure for Solana",
   "type": "module",
   "main": "./dist/index.js",
@@ -29,7 +29,7 @@
     "dev": "tsup --watch"
   },
   "dependencies": {
-    "@agentis-hq/core": "^0.1.0",
+    "@agentis-hq/core": "^0.2.0",
     "@solana/kit": "^6.8.0",
     "@solana/mpp": "^0.5.2",
     "@x402/core": "~2.10.0",

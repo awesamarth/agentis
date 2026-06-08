@@ -9,6 +9,10 @@ import type {
   UmbraCreateUtxoOptions,
   UmbraRegisterOptions,
   UmbraResponse,
+  JupiterRecurringCreateOptions,
+  JupiterResponse,
+  JupiterSwapOptions,
+  JupiterToken,
 } from './types'
 import type { AgentInfo, Policy, SpendRecord } from '@agentis-hq/core'
 import { AgentisError, PaymentError } from '@agentis-hq/core'
@@ -407,6 +411,35 @@ export class AgentisClient {
     })
   }
 
+  private async _jupiter<T extends JupiterResponse = JupiterResponse>(
+    path: string,
+    init: RequestInit = {}
+  ): Promise<T> {
+    const res = await globalThis.fetch(`${this.config.baseUrl}/sdk/agent/jupiter${path}`, {
+      ...init,
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': this.config.apiKey,
+        ...(init.headers as Record<string, string> ?? {}),
+      },
+    })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      throw new AgentisError((body as any).error ?? `Jupiter request failed: ${path}`)
+    }
+    return body as T
+  }
+
+  private _jupiterPost<T extends JupiterResponse = JupiterResponse>(
+    path: string,
+    body: Record<string, unknown> = {}
+  ): Promise<T> {
+    return this._jupiter<T>(path, {
+      method: 'POST',
+      body: JSON.stringify(jsonSafe(body)),
+    })
+  }
+
   // Direct payment. Native SOL amount is in SOL, e.g. 0.001.
   async pay(to: string, amountSol: number, mint?: string): Promise<string> {
     // Policy check
@@ -516,6 +549,47 @@ export class AgentisClient {
 
     claimLatest: async (): Promise<UmbraResponse> => {
       return this._umbraPost('/claim-latest')
+    },
+  }
+
+  readonly tokens = {
+    search: async (query: string): Promise<JupiterToken[]> => {
+      const response = await this._jupiter<{ tokens: JupiterToken[] }>(
+        `/tokens?query=${encodeURIComponent(query)}`
+      )
+      return response.tokens
+    },
+  }
+
+  readonly swap = {
+    quote: async (options: JupiterSwapOptions): Promise<JupiterResponse> => {
+      return this._jupiterPost('/swap/quote', options as unknown as Record<string, unknown>)
+    },
+    execute: async (options: JupiterSwapOptions): Promise<JupiterResponse> => {
+      return this._jupiterPost('/swap', options as unknown as Record<string, unknown>)
+    },
+  }
+
+  readonly portfolio = async (platforms?: string[]): Promise<JupiterResponse> => {
+    const query = platforms?.length
+      ? `?platforms=${encodeURIComponent(platforms.join(','))}`
+      : ''
+    return this._jupiter(`/portfolio${query}`)
+  }
+
+  readonly recurring = {
+    list: async (options: { status?: 'active' | 'history'; page?: number } = {}): Promise<JupiterResponse> => {
+      const query = new URLSearchParams({
+        status: options.status ?? 'active',
+        page: String(options.page ?? 1),
+      })
+      return this._jupiter(`/recurring?${query}`)
+    },
+    create: async (options: JupiterRecurringCreateOptions): Promise<JupiterResponse> => {
+      return this._jupiterPost('/recurring', options as unknown as Record<string, unknown>)
+    },
+    cancel: async (order: string): Promise<JupiterResponse> => {
+      return this._jupiterPost(`/recurring/${encodeURIComponent(order)}/cancel`)
     },
   }
 

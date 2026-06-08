@@ -15,6 +15,20 @@ import {
   formatSolanaTransactionError,
   preparePrivyTransaction,
 } from '../lib/onchain-policy'
+import {
+  atomicToUi as jupiterAtomicToUi,
+  cancelRecurringOrder,
+  createRecurringOrder,
+  enforceJupiterPolicy,
+  executeSwap,
+  getJupiterPortfolio,
+  getRecurringOrders,
+  getSwapQuote,
+  resolveJupiterToken,
+  searchJupiterTokens,
+  uiAmountToAtomic as jupiterUiAmountToAtomic,
+  validateTradeTokens,
+} from '../lib/jupiter'
 
 const DEVNET_CAIP2 = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
 const BODYLESS_METHODS = new Set(['GET', 'HEAD'])
@@ -95,6 +109,9 @@ sdk.get('/agent', async (c) => {
       maxBudget: null,
       maxPerTx: null,
       allowedDomains: [],
+      allowedMints: [],
+      maxSlippageBps: null,
+      maxDailySwapVolume: null,
       killSwitch: false,
     },
     transactions: agent.transactions ?? [],
@@ -107,7 +124,10 @@ sdk.patch('/agent/policy', async (c) => {
   const patch = await c.req.json()
 
   // Only allow policy fields
-  const allowedFields = ['hourlyLimit', 'dailyLimit', 'monthlyLimit', 'maxBudget', 'maxPerTx', 'allowedDomains', 'killSwitch']
+  const allowedFields = [
+    'hourlyLimit', 'dailyLimit', 'monthlyLimit', 'maxBudget', 'maxPerTx',
+    'allowedDomains', 'allowedMints', 'maxSlippageBps', 'maxDailySwapVolume', 'killSwitch',
+  ]
   const safePolicy: any = { ...(agent.policy ?? {}) }
   for (const key of allowedFields) {
     if (patch[key] !== undefined) safePolicy[key] = patch[key]
@@ -336,6 +356,131 @@ sdk.post('/agent/send', async (c) => {
     return c.json({ signature: result.hash })
   } catch (err) {
     return c.json({ error: formatSolanaTransactionError(err) }, 500)
+  }
+})
+
+async function prepareSdkJupiterTrade(agent: any, body: any, action: 'swap' | 'recurring') {
+  const [inputToken, outputToken] = await Promise.all([
+    resolveJupiterToken(String(body.input ?? body.inputMint ?? '')),
+    resolveJupiterToken(String(body.output ?? body.outputMint ?? '')),
+  ])
+  validateTradeTokens(inputToken, outputToken)
+  const amountAtomic = jupiterUiAmountToAtomic(body.amount, inputToken.decimals)
+  const amountUi = Number(jupiterAtomicToUi(amountAtomic, inputToken.decimals))
+  const requestedSlippage = body.slippageBps === undefined ? undefined : Number(body.slippageBps)
+  if (requestedSlippage !== undefined && (!Number.isInteger(requestedSlippage) || requestedSlippage < 1 || requestedSlippage > 10_000)) {
+    throw new Error('slippageBps must be an integer from 1 to 10000')
+  }
+  const slippageBps = requestedSlippage
+  const { amountUsd } = await enforceJupiterPolicy({
+    agent, inputToken, outputToken, inputAmountUi: amountUi, slippageBps, action,
+  })
+  return { inputToken, outputToken, amountAtomic, amountUi, amountUsd, slippageBps }
+}
+
+sdk.get('/agent/jupiter/tokens', async (c) => {
+  try {
+    return c.json({ tokens: await searchJupiterTokens(c.req.query('query') ?? '') })
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? 'Token search failed' }, 400)
+  }
+})
+
+sdk.post('/agent/jupiter/swap/quote', async (c) => {
+  try {
+    const trade = await prepareSdkJupiterTrade(c.get('agent'), await c.req.json(), 'swap')
+    return c.json({ ...trade, quote: await getSwapQuote(trade) })
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? 'Swap quote failed' }, 400)
+  }
+})
+
+sdk.post('/agent/jupiter/swap', async (c) => {
+  const agent = c.get('agent')
+  try {
+    const trade = await prepareSdkJupiterTrade(agent, await c.req.json(), 'swap')
+    const executed = await executeSwap(privyNode, agent, trade)
+    await recordTransaction(agent.id, {
+      txHash: executed.result.signature,
+      amount: trade.amountUi,
+      amountUsd: trade.amountUsd,
+      recipient: `jupiter-swap:${trade.inputToken.id}:${trade.outputToken.id}`,
+      timestamp: new Date().toISOString(),
+    })
+    return c.json({ ...trade, ...executed })
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? 'Swap failed' }, 400)
+  }
+})
+
+sdk.get('/agent/jupiter/portfolio', async (c) => {
+  const agent = c.get('agent')
+  try {
+    return c.json({
+      network: 'mainnet',
+      walletAddress: agent.walletAddress,
+      portfolio: await getJupiterPortfolio(agent.walletAddress, c.req.query('platforms')),
+    })
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? 'Portfolio failed' }, 500)
+  }
+})
+
+sdk.get('/agent/jupiter/recurring', async (c) => {
+  const agent = c.get('agent')
+  const status = c.req.query('status') === 'history' ? 'history' : 'active'
+  try {
+    return c.json({
+      network: 'mainnet',
+      walletAddress: agent.walletAddress,
+      status,
+      orders: await getRecurringOrders(agent.walletAddress, {
+        status,
+        page: Number(c.req.query('page') ?? 1),
+      }),
+    })
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? 'Recurring orders failed' }, 500)
+  }
+})
+
+sdk.post('/agent/jupiter/recurring', async (c) => {
+  const agent = c.get('agent')
+  try {
+    const body = await c.req.json()
+    const trade = await prepareSdkJupiterTrade(agent, body, 'recurring')
+    const numberOfOrders = Number(body.numberOfOrders)
+    const intervalSeconds = Number(body.intervalSeconds)
+    if (!Number.isInteger(numberOfOrders) || numberOfOrders < 2) throw new Error('numberOfOrders must be at least 2')
+    if (!Number.isInteger(intervalSeconds) || intervalSeconds < 60) throw new Error('intervalSeconds must be at least 60')
+    if (trade.amountUsd < 100) throw new Error('Jupiter recurring orders require at least $100 total value')
+    if (trade.amountUsd / numberOfOrders < 50) throw new Error('Each Jupiter recurring cycle must be worth at least $50')
+    const created = await createRecurringOrder(privyNode, agent, {
+      ...trade,
+      numberOfOrders,
+      intervalSeconds,
+      minPrice: body.minPrice === undefined ? null : Number(body.minPrice),
+      maxPrice: body.maxPrice === undefined ? null : Number(body.maxPrice),
+      startAt: body.startAt === undefined ? null : Number(body.startAt),
+    })
+    await recordTransaction(agent.id, {
+      txHash: created.result.signature,
+      amount: trade.amountUi,
+      amountUsd: trade.amountUsd,
+      recipient: `jupiter-recurring:${trade.inputToken.id}:${trade.outputToken.id}`,
+      timestamp: new Date().toISOString(),
+    })
+    return c.json({ ...trade, ...created })
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? 'Recurring order failed' }, 400)
+  }
+})
+
+sdk.post('/agent/jupiter/recurring/:order/cancel', async (c) => {
+  try {
+    return c.json(await cancelRecurringOrder(privyNode, c.get('agent'), c.req.param('order')))
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? 'Recurring cancellation failed' }, 400)
   }
 })
 

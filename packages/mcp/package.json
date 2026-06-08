@@ -1,6 +1,6 @@
 {
   "name": "@agentis-hq/mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Agentis MCP server for agent wallet, payment, policy, privacy, and yield tools",
   "type": "module",
   "bin": {
@@ -21,7 +21,7 @@
     "dev:worker": "wrangler dev"
   },
   "dependencies": {
-    "@agentis-hq/core": "^0.1.0",
+    "@agentis-hq/core": "^0.2.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@solana/kit": "^6.8.0",
     "zod": "^4.4.1"

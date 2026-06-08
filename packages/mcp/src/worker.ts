@@ -138,6 +138,8 @@ export default {
           'privacy:write',
           'earn:read',
           'earn:write',
+          'jupiter:read',
+          'jupiter:write',
         ],
         bearer_methods_supported: ['header'],
       }, 200, { 'access-control-allow-origin': '*' })

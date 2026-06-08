@@ -23,6 +23,8 @@ const SCOPE_LABELS: Record<string, string> = {
   'privacy:write': 'Execute Umbra privacy actions',
   'earn:read': 'View Jupiter Earn positions',
   'earn:write': 'Manage Jupiter Earn positions',
+  'jupiter:read': 'View Jupiter tokens, portfolio, swaps, and recurring orders',
+  'jupiter:write': 'Execute Jupiter swaps and manage recurring orders',
 }
 
 function OAuthAuthorizeContent() {

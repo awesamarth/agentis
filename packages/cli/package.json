@@ -1,6 +1,6 @@
 {
   "name": "@agentis-hq/cli",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "type": "module",
   "bin": {
     "agentis": "dist/index.js"
@@ -41,8 +41,8 @@
     "check": "bun --check src/index.ts"
   },
   "dependencies": {
-    "@agentis-hq/core": "^0.1.0",
-    "@agentis-hq/sdk": "^0.1.0",
+    "@agentis-hq/core": "^0.2.0",
+    "@agentis-hq/sdk": "^0.2.0",
     "@napi-rs/keyring": "^1.2.0",
     "@noble/ciphers": "^2.2.0",
     "@noble/curves": "^2.2.0",
