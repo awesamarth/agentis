@@ -5,6 +5,15 @@
   "bin": {
     "agentis": "dist/index.js"
   },
+  "homepage": "https://github.com/awesamarth/agentis/tree/main/packages/cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/awesamarth/agentis.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/awesamarth/agentis/issues"
+  },
   "description": "Agentis CLI",
   "keywords": [
     "agentis",
