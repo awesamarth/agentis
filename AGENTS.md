@@ -151,7 +151,11 @@ Remote MCP implementation:
 - Remote access tokens are resource-bound and independently revocable. The
   Worker stores no user credentials.
 - Build with `cd packages/mcp && bun run build:worker`.
-- Deployment is intentionally still pending.
+- Production endpoint: `https://mcp.agentis.systems/mcp`.
+- Remote MCP OAuth E2E passed on June 8, 2026: dynamic client registration,
+  PKCE consent, token exchange, Streamable HTTP initialization, 23-tool listing,
+  sanitized `agentis_list_agents`, and a no-op `agentis_policy_update` using only
+  `wallets:read policy:read policy:write`. The test grant was revoked afterward.
 
 Local stdio run:
 
