@@ -11,6 +11,7 @@ import { privacyCommand } from './commands/privacy'
 import { facilitatorCommand } from './commands/facilitator'
 import { earnCommand } from './commands/earn'
 import { financialCommand } from './commands/jupiter'
+import { CliCommandError, validateCommand } from './lib/command-validation'
 
 const args = process.argv.slice(2)
 const cmd = args[0]
@@ -454,6 +455,8 @@ function showCommandHelp(path: string) {
 }
 
 async function main() {
+  validateCommand(args)
+
   if (cmd === '--version' || cmd === '-v' || cmd === 'version') {
     console.log(version)
     return
@@ -485,8 +488,6 @@ async function main() {
         case 'list':
           await walletList(args.slice(2))
           break
-        default:
-          console.log('Usage: agentis wallet <create|list>')
       }
       break
 
@@ -501,8 +502,6 @@ async function main() {
         case 'balance':
           await agentBalance(args[2])
           break
-        default:
-          console.log('Usage: agentis agent <create|send|balance>')
       }
       break
 
@@ -517,8 +516,6 @@ async function main() {
         case 'init-onchain':
           await policyInitOnchain(args[2])
           break
-        default:
-          console.log('Usage: agentis policy <get|set|init-onchain>')
       }
       break
 
@@ -545,12 +542,14 @@ async function main() {
       await financialCommand(args)
       break
 
-    default:
-      showHelp()
   }
 }
 
 main().catch(err => {
-  console.error('Error:', err.message)
+  if (err instanceof CliCommandError) {
+    console.error(`Error: ${err.message}\n\nRun \`${err.helpCommand}\` for usage.`)
+  } else {
+    console.error('Error:', err instanceof Error ? err.message : String(err))
+  }
   process.exit(1)
 })
