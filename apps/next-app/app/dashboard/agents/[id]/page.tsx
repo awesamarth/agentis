@@ -391,7 +391,10 @@ export default function AgentDetail() {
   const [earnLoaded, setEarnLoaded] = useState(false)
   const [earnLoading, setEarnLoading] = useState(false)
   const [earnDepositing, setEarnDepositing] = useState(false)
+  const [earnWithdrawing, setEarnWithdrawing] = useState(false)
   const [earnAmount, setEarnAmount] = useState('1')
+  const [earnWithdrawAmount, setEarnWithdrawAmount] = useState('1')
+  const [earnWithdrawMax, setEarnWithdrawMax] = useState(false)
   const [earnError, setEarnError] = useState<string | null>(null)
   const [earnMessage, setEarnMessage] = useState<string | null>(null)
   const [tokenQuery, setTokenQuery] = useState('SOL')
@@ -551,6 +554,7 @@ export default function AgentDetail() {
     setEarnPositions([])
     setEarnAvailableUsdc(null)
     setEarnError(null)
+    setEarnWithdrawMax(false)
   }, [id])
 
   async function handleEarnDeposit() {
@@ -590,6 +594,51 @@ export default function AgentDetail() {
       setEarnError(getErrorMessage(err, 'Jupiter Earn deposit failed'))
     } finally {
       setEarnDepositing(false)
+    }
+  }
+
+  async function handleEarnWithdraw() {
+    if (!authenticated) {
+      login()
+      return
+    }
+
+    const amount = Number(earnWithdrawAmount)
+    if (!earnWithdrawMax && (!Number.isFinite(amount) || amount <= 0)) {
+      setEarnError('Enter a valid USDC amount.')
+      return
+    }
+
+    setEarnWithdrawing(true)
+    setEarnError(null)
+    setEarnMessage(null)
+    try {
+      const token = await getAccessToken()
+      if (!token) return
+      const res = await fetch(`${API}/agents/${id}/earn/withdraw`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          network: 'mainnet',
+          asset: 'USDC',
+          ...(earnWithdrawMax ? {} : { amount: earnWithdrawAmount }),
+        }),
+      })
+      const body = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(body?.error ?? 'Jupiter Earn withdrawal failed')
+      setEarnMessage(`withdrew ${body.amount ?? earnWithdrawAmount} USDC${body.signature ? ` · ${String(body.signature).slice(0, 12)}...` : ''}`)
+      setEarnWithdrawMax(false)
+      await Promise.all([
+        fetchEarnSnapshot(),
+        token ? fetchTransactions(token) : Promise.resolve(),
+      ])
+    } catch (err: unknown) {
+      setEarnError(getErrorMessage(err, 'Jupiter Earn withdrawal failed'))
+    } finally {
+      setEarnWithdrawing(false)
     }
   }
 
@@ -1847,7 +1896,7 @@ export default function AgentDetail() {
               </div>
               <button
                 onClick={fetchEarnSnapshot}
-                disabled={earnLoading || earnDepositing}
+                disabled={earnLoading || earnDepositing || earnWithdrawing}
                 className="font-mono text-[0.6rem] text-ink-muted/50 tracking-widest hover:text-ink-muted transition-colors cursor-pointer disabled:opacity-40 inline-flex items-center gap-1.5"
               >
                 <RefreshCw size={12} className={earnLoading ? 'animate-spin' : ''} />
@@ -1920,27 +1969,68 @@ export default function AgentDetail() {
                 )}
               </div>
 
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="flex-1 min-w-52">
-                  <label className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase block mb-1.5">
-                    deposit amount
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={earnAmount}
-                    onChange={e => setEarnAmount(e.target.value.replace(/[^\d.]/g, ''))}
-                    className="w-full h-[46px] bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
-                    placeholder="1"
-                  />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex items-end gap-3">
+                  <div className="flex-1 min-w-0">
+                    <label className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase block mb-1.5">
+                      deposit amount
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={earnAmount}
+                      onChange={e => setEarnAmount(e.target.value.replace(/[^\d.]/g, ''))}
+                      className="w-full h-[46px] bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
+                      placeholder="1"
+                    />
+                  </div>
+                  <button
+                    onClick={handleEarnDeposit}
+                    disabled={earnDepositing || earnWithdrawing || !earnAmount}
+                    className="bg-black text-beige font-mono text-xs tracking-widest px-5 h-[46px] hover:bg-ink transition-colors cursor-pointer disabled:opacity-40 shrink-0"
+                  >
+                    {earnDepositing ? 'depositing...' : 'deposit'}
+                  </button>
                 </div>
-                <button
-                  onClick={handleEarnDeposit}
-                  disabled={earnDepositing || !earnAmount}
-                  className="bg-black text-beige font-mono text-xs tracking-widest px-5 h-[46px] hover:bg-ink transition-colors cursor-pointer disabled:opacity-40"
-                >
-                  {earnDepositing ? 'depositing...' : 'deposit USDC'}
-                </button>
+
+                <div className="flex items-end gap-3">
+                  <div className="flex-1 min-w-0">
+                    <label className="font-mono text-[0.55rem] text-ink-muted tracking-widest uppercase block mb-1.5">
+                      withdraw amount
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={earnWithdrawAmount}
+                        onChange={e => {
+                          setEarnWithdrawAmount(e.target.value.replace(/[^\d.]/g, ''))
+                          setEarnWithdrawMax(false)
+                        }}
+                        className="w-full h-[46px] bg-[#fcfaf7] border border-beige-darker pl-3 pr-14 font-mono text-xs text-black placeholder:text-ink-muted/40 outline-none focus:border-ink-muted transition-colors"
+                        placeholder="1"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEarnWithdrawAmount(formatEarnAmount(visibleEarnTotalUnderlying, 6))
+                          setEarnWithdrawMax(true)
+                        }}
+                        disabled={!earnLoaded || visibleEarnTotalUnderlying <= 0n}
+                        className={`absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[0.6rem] tracking-widest uppercase transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${earnWithdrawMax ? 'text-[#2f7b46]' : 'text-ink-muted hover:text-black'}`}
+                      >
+                        max
+                      </button>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleEarnWithdraw}
+                    disabled={earnWithdrawing || earnDepositing || !earnWithdrawAmount || visibleEarnTotalUnderlying <= 0n}
+                    className="border border-[#79aa86] bg-white/70 text-[#2f7b46] font-mono text-xs tracking-widest px-5 h-[46px] hover:bg-white transition-colors cursor-pointer disabled:opacity-40 shrink-0"
+                  >
+                    {earnWithdrawing ? 'withdrawing...' : 'withdraw'}
+                  </button>
+                </div>
               </div>
 
               {(earnError || earnMessage) && (

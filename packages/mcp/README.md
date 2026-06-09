@@ -55,6 +55,10 @@ The server intentionally skips local encrypted-wallet vault signing for v1. Use 
 Financial tools use provider-neutral names:
 
 ```txt
+agentis_earn_deposit
+agentis_earn_withdraw
+agentis_earn_positions
+agentis_earn_sweep
 agentis_tokens_search
 agentis_swap_quote
 agentis_swap_execute

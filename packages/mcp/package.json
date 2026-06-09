@@ -1,6 +1,6 @@
 {
   "name": "@agentis-hq/mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Agentis MCP server for agent wallet, payment, policy, privacy, and yield tools",
   "type": "module",
   "bin": {

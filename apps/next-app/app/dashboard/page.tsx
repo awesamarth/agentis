@@ -46,6 +46,15 @@ type EarnSweepDeposit = {
   result?: { signature?: string }
 }
 
+type EarnWithdrawal = {
+  agent: Pick<Agent, 'id' | 'name' | 'walletAddress'>
+  amount: number
+  ok: boolean
+  skipped?: boolean
+  error?: string
+  result?: { signature?: string }
+}
+
 type EarnAccountPositionAgent = {
   agent: Pick<Agent, 'id' | 'name' | 'walletAddress' | 'policyMode' | 'privacyEnabled'>
   ok: boolean
@@ -132,6 +141,9 @@ export default function Dashboard() {
   const [earnPositions, setEarnPositions] = useState<EarnAccountPositions | null>(null)
   const [earnPositionsLoading, setEarnPositionsLoading] = useState(false)
   const [earnPositionsError, setEarnPositionsError] = useState<string | null>(null)
+  const [earnWithdrawals, setEarnWithdrawals] = useState<EarnWithdrawal[] | null>(null)
+  const [earnWithdrawingAll, setEarnWithdrawingAll] = useState(false)
+  const [earnWithdrawError, setEarnWithdrawError] = useState<string | null>(null)
   const earnInitialLoadRef = useRef(false)
   const earnSnapshotInFlightRef = useRef<Promise<void> | null>(null)
 
@@ -359,6 +371,35 @@ export default function Dashboard() {
     }
   }
 
+  async function withdrawAllEarn() {
+    if (!authenticated) {
+      login()
+      return
+    }
+    setEarnWithdrawingAll(true)
+    setEarnWithdrawError(null)
+    setEarnWithdrawals(null)
+    try {
+      const token = await getAccessToken()
+      if (!token) return
+      const res = await fetch(`${API}/agents/earn/withdraw-all`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+      })
+      const body = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(body?.error ?? 'Earn withdrawal failed')
+      setEarnWithdrawals(body.withdrawals ?? [])
+      await fetchEarnSnapshot()
+    } catch (err: unknown) {
+      setEarnWithdrawError(getErrorMessage(err, 'Earn withdrawal failed'))
+    } finally {
+      setEarnWithdrawingAll(false)
+    }
+  }
+
   const sweepableAgents = sweepPlan?.agents.filter(item => item.action === 'sweep') ?? []
   const suppliedAgents = earnPositions?.agents.filter(item => BigInt(item.totalUnderlyingAtomic || '0') > 0n) ?? []
   const earnRows = agents.map(agent => {
@@ -491,13 +532,13 @@ export default function Dashboard() {
                   <h2 className="font-mono text-sm text-black tracking-widest uppercase">Jupiter Earn</h2>
                 </div>
                 <p className="font-mono text-[0.65rem] text-ink-muted leading-relaxed">
-                  Mainnet USDC across hosted agents can be deposited into Jupiter Earn from here.
+                  Deposit available mainnet USDC or redeem active Jupiter Earn positions across hosted agents.
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={() => { void fetchEarnSnapshot() }}
-                  disabled={earnLoading || sweepExecuting}
+                  disabled={earnLoading || sweepExecuting || earnWithdrawingAll}
                   className="font-mono text-[0.6rem] text-ink-muted border border-[#b8d8c0] bg-white/60 px-3 h-9 hover:border-[#79aa86] transition-colors cursor-pointer disabled:opacity-40 inline-flex items-center gap-1.5"
                 >
                   <RefreshCw size={12} className={earnLoading ? 'animate-spin' : ''} />
@@ -509,6 +550,13 @@ export default function Dashboard() {
                   className="bg-black text-beige font-mono text-xs tracking-widest px-5 h-9 hover:bg-ink transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {sweepExecuting ? 'sweeping...' : 'sweep USDC'}
+                </button>
+                <button
+                  onClick={withdrawAllEarn}
+                  disabled={earnWithdrawingAll || earnPositionsLoading || suppliedAgents.length === 0}
+                  className="border border-[#79aa86] bg-white/70 text-[#2f7b46] font-mono text-xs tracking-widest px-5 h-9 hover:bg-white transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {earnWithdrawingAll ? 'withdrawing...' : 'withdraw all'}
                 </button>
               </div>
             </div>
@@ -558,18 +606,24 @@ export default function Dashboard() {
               </div>
             )}
 
-            {(sweepError || earnPositionsError || sweepDeposits) && (
+            {(sweepError || earnPositionsError || earnWithdrawError || sweepDeposits || earnWithdrawals) && (
               <div className="mt-4 border-t border-[#b8d8c0]/80 pt-3">
-                {sweepError || earnPositionsError ? (
+                {sweepError || earnPositionsError || earnWithdrawError ? (
                   <div className="space-y-1.5">
                     {sweepError && <p className="font-mono text-[0.65rem] text-red-700 break-all">{sweepError}</p>}
                     {earnPositionsError && <p className="font-mono text-[0.65rem] text-red-700 break-all">{earnPositionsError}</p>}
+                    {earnWithdrawError && <p className="font-mono text-[0.65rem] text-red-700 break-all">{earnWithdrawError}</p>}
                   </div>
                 ) : (
                   <div className="space-y-1.5">
                     {sweepDeposits?.filter(item => !item.skipped).map(item => (
                       <p key={item.agent.id} className={`font-mono text-[0.65rem] break-all ${item.ok ? 'text-ink-muted' : 'text-red-700'}`}>
                         {item.agent.name}: {item.ok ? `deposited ${item.amount} USDC${item.result?.signature ? ` · ${item.result.signature.slice(0, 12)}...` : ''}` : item.error}
+                      </p>
+                    ))}
+                    {earnWithdrawals?.filter(item => !item.skipped).map(item => (
+                      <p key={item.agent.id} className={`font-mono text-[0.65rem] break-all ${item.ok ? 'text-ink-muted' : 'text-red-700'}`}>
+                        {item.agent.name}: {item.ok ? `withdrew ${item.amount} USDC${item.result?.signature ? ` · ${item.result.signature.slice(0, 12)}...` : ''}` : item.error}
                       </p>
                     ))}
                   </div>

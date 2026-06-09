@@ -565,6 +565,31 @@ server.registerTool(
 )
 
 server.registerTool(
+  'agentis_earn_withdraw',
+  {
+    title: 'Withdraw from Jupiter Earn',
+    description: 'Withdraw mainnet USDC from an agent Jupiter Earn position. Omit amount to redeem the full position.',
+    inputSchema: {
+      agent: agentRef,
+      amount: z.number().positive().optional(),
+      asset: z.literal('USDC').optional().default('USDC'),
+    },
+  },
+  async ({ agent, amount, asset }) => {
+    const resolved = await resolveAgent(agent)
+    const data = await apiFetch(`/agents/${resolved.id}/earn/withdraw`, {
+      method: 'POST',
+      body: JSON.stringify({
+        network: 'mainnet',
+        asset,
+        ...(amount === undefined ? {} : { amount }),
+      }),
+    })
+    return result({ agent: safeAgent(resolved), ...data })
+  },
+)
+
+server.registerTool(
   'agentis_earn_positions',
   {
     title: 'Get Jupiter Earn positions',

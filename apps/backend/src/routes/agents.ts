@@ -321,13 +321,17 @@ async function depositAgentUsdcIntoEarn(agent: any, amountUi: number | string) {
   }
 }
 
-async function withdrawAgentUsdcFromEarn(agent: any, amountUi?: number | string) {
+async function withdrawAgentUsdcFromEarn(
+  agent: any,
+  amountUi?: number | string,
+  positionInput?: any,
+) {
   const amountAtomic = amountUi === undefined ? null : uiAmountToAtomic(amountUi, 6)
   if (amountUi !== undefined && !amountAtomic) {
     throw new Error('amount must fit USDC decimals')
   }
 
-  const position = await getAgentUsdcEarnPosition(agent)
+  const position = positionInput ?? await getAgentUsdcEarnPosition(agent)
   const shares = getEarnPositionSharesAtomic(position)
   const underlying = getEarnPositionUnderlyingAtomic(position)
   if (shares <= 0n || underlying <= 0n) {
@@ -584,6 +588,53 @@ agents.get('/earn/positions', async (c) => {
     totalUnderlyingAtomic: totalUnderlyingAtomic.toString(),
     totalUnderlyingUi: atomicToUiString(totalUnderlyingAtomic, 6),
     agents: results,
+  })
+})
+
+// POST /agents/earn/withdraw-all — redeem every hosted agent's active USDC Earn position
+agents.post('/earn/withdraw-all', async (c) => {
+  const userId = c.get('userId')
+  const userAgents = await getAgentsByUser(userId)
+  const withdrawals = []
+
+  for (const agent of userAgents) {
+    try {
+      const position = await getAgentUsdcEarnPosition(agent)
+      const shares = getEarnPositionSharesAtomic(position)
+      const underlying = getEarnPositionUnderlyingAtomic(position)
+      if (shares <= 0n || underlying <= 0n) {
+        withdrawals.push({
+          agent: { id: agent.id, name: agent.name, walletAddress: agent.walletAddress },
+          ok: true,
+          skipped: true,
+          amount: 0,
+        })
+        continue
+      }
+
+      const result = await withdrawAgentUsdcFromEarn(agent, undefined, position)
+      withdrawals.push({
+        agent: { id: agent.id, name: agent.name, walletAddress: agent.walletAddress },
+        ok: true,
+        skipped: false,
+        amount: result.amount,
+        result,
+      })
+    } catch (err) {
+      withdrawals.push({
+        agent: { id: agent.id, name: agent.name, walletAddress: agent.walletAddress },
+        ok: false,
+        skipped: false,
+        amount: 0,
+        error: formatSolanaTransactionError(err),
+      })
+    }
+  }
+
+  return c.json({
+    network: 'mainnet',
+    asset: 'USDC',
+    withdrawals,
   })
 })
 

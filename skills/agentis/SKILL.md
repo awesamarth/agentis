@@ -175,6 +175,7 @@ agentis_policy_update
 agentis_policy_init_onchain
 agentis_policy_read_onchain
 agentis_earn_deposit
+agentis_earn_withdraw
 agentis_earn_positions
 agentis_earn_sweep
 agentis_tokens_search
@@ -198,7 +199,7 @@ agentis_register_facilitator
 agentis_publish_facilitator
 ```
 
-MCP currently supports Earn deposit, positions, and sweep. Use the CLI for Jupiter Earn withdraw unless an MCP withdraw tool is added.
+MCP supports Earn deposit, partial or full withdrawal, positions, and sweep. Omit `amount` from `agentis_earn_withdraw` to redeem the full USDC Earn position.
 
 ## SDK
 

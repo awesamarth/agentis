@@ -128,7 +128,7 @@
     },
     "packages/mcp": {
       "name": "@agentis-hq/mcp",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "bin": {
         "agentis-mcp": "dist/index.js",
       },
