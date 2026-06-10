@@ -173,13 +173,6 @@ type JupiterPortfolioElement = {
   value?: number
 }
 
-type JupiterRecurringOrder = {
-  orderKey?: string
-  publicKey?: string
-  id?: string
-  status?: string
-}
-
 type JupiterSwapResponse = {
   amountUi?: number
   amountUsd?: number
@@ -397,8 +390,6 @@ export default function AgentDetail() {
   const [earnWithdrawMax, setEarnWithdrawMax] = useState(false)
   const [earnError, setEarnError] = useState<string | null>(null)
   const [earnMessage, setEarnMessage] = useState<string | null>(null)
-  const [tokenQuery, setTokenQuery] = useState('SOL')
-  const [tokenResults, setTokenResults] = useState<JupiterToken[]>([])
   const [swapFrom, setSwapFrom] = useState('SOL')
   const [swapTo, setSwapTo] = useState('USDC')
   const [swapAmount, setSwapAmount] = useState('0.01')
@@ -406,12 +397,6 @@ export default function AgentDetail() {
   const [swapQuote, setSwapQuote] = useState<JupiterSwapResponse | null>(null)
   const [portfolioElements, setPortfolioElements] = useState<JupiterPortfolioElement[]>([])
   const [portfolioLoaded, setPortfolioLoaded] = useState(false)
-  const [recurringOrders, setRecurringOrders] = useState<JupiterRecurringOrder[]>([])
-  const [recurringFrom, setRecurringFrom] = useState('USDC')
-  const [recurringTo, setRecurringTo] = useState('SOL')
-  const [recurringAmount, setRecurringAmount] = useState('100')
-  const [recurringCount, setRecurringCount] = useState('2')
-  const [recurringInterval, setRecurringInterval] = useState('86400')
   const [jupiterWorking, setJupiterWorking] = useState<string | null>(null)
   const [jupiterError, setJupiterError] = useState<string | null>(null)
   const [jupiterMessage, setJupiterMessage] = useState<string | null>(null)
@@ -667,20 +652,6 @@ export default function AgentDetail() {
     }
   }
 
-  async function handleTokenSearch() {
-    if (!tokenQuery.trim()) return
-    setJupiterWorking('tokens')
-    setJupiterError(null)
-    try {
-      const body = await jupiterFetch(`/tokens?query=${encodeURIComponent(tokenQuery.trim())}`)
-      setTokenResults(Array.isArray(body.tokens) ? body.tokens : [])
-    } catch (err: unknown) {
-      setJupiterError(getErrorMessage(err, 'Token search failed'))
-    } finally {
-      setJupiterWorking(null)
-    }
-  }
-
   async function handleSwap(action: 'quote' | 'execute') {
     setJupiterWorking(`swap-${action}`)
     setJupiterError(null)
@@ -722,59 +693,6 @@ export default function AgentDetail() {
       setPortfolioLoaded(true)
     } catch (err: unknown) {
       setJupiterError(getErrorMessage(err, 'Portfolio load failed'))
-    } finally {
-      setJupiterWorking(null)
-    }
-  }
-
-  async function handleRecurringList() {
-    setJupiterWorking('recurring-list')
-    setJupiterError(null)
-    try {
-      const body = await jupiterFetch('/recurring?status=active')
-      const payload = body.orders
-      const orders = Array.isArray(payload) ? payload : Array.isArray(payload?.orders) ? payload.orders : []
-      setRecurringOrders(orders)
-    } catch (err: unknown) {
-      setJupiterError(getErrorMessage(err, 'Recurring orders load failed'))
-    } finally {
-      setJupiterWorking(null)
-    }
-  }
-
-  async function handleRecurringCreate() {
-    setJupiterWorking('recurring-create')
-    setJupiterError(null)
-    setJupiterMessage(null)
-    try {
-      const body = await jupiterFetch('/recurring', {
-        method: 'POST',
-        body: JSON.stringify({
-          input: recurringFrom.trim(),
-          output: recurringTo.trim(),
-          amount: recurringAmount,
-          numberOfOrders: Number(recurringCount),
-          intervalSeconds: Number(recurringInterval),
-        }),
-      })
-      setJupiterMessage(`recurring order created${body.result?.signature ? ` · ${String(body.result.signature).slice(0, 12)}...` : ''}`)
-      await handleRecurringList()
-    } catch (err: unknown) {
-      setJupiterError(getErrorMessage(err, 'Recurring order creation failed'))
-    } finally {
-      setJupiterWorking(null)
-    }
-  }
-
-  async function handleRecurringCancel(order: string) {
-    setJupiterWorking(`recurring-cancel-${order}`)
-    setJupiterError(null)
-    try {
-      await jupiterFetch(`/recurring/${encodeURIComponent(order)}/cancel`, { method: 'POST' })
-      setJupiterMessage('recurring order cancelled')
-      await handleRecurringList()
-    } catch (err: unknown) {
-      setJupiterError(getErrorMessage(err, 'Recurring order cancellation failed'))
     } finally {
       setJupiterWorking(null)
     }
@@ -2116,51 +2034,7 @@ export default function AgentDetail() {
                 </div>
               </div>
 
-              <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="min-w-0">
-                  <div className="flex items-center justify-between gap-3 mb-3">
-                    <div>
-                      <p className="font-mono text-sm text-black">Token search</p>
-                      <p className="font-mono text-[0.6rem] text-ink-muted">Resolve metadata and safety signals.</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 mb-3">
-                    <input
-                      value={tokenQuery}
-                      onChange={e => setTokenQuery(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleTokenSearch()}
-                      placeholder="symbol, name, or mint"
-                      className="min-w-0 flex-1 h-10 bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs text-black outline-none focus:border-ink-muted"
-                    />
-                    <button
-                      onClick={handleTokenSearch}
-                      disabled={jupiterWorking !== null}
-                      className="border border-beige-darker px-3 h-10 font-mono text-xs text-ink cursor-pointer disabled:opacity-40"
-                    >
-                      search
-                    </button>
-                  </div>
-                  <div className="border border-beige-darker divide-y divide-beige-darker max-h-44 overflow-y-auto">
-                    {tokenResults.length === 0 ? (
-                      <p className="p-3 font-mono text-[0.6rem] text-ink-muted/50">no search loaded</p>
-                    ) : tokenResults.slice(0, 8).map(token => (
-                      <button
-                        key={token.id}
-                        onClick={() => setSwapTo(token.id)}
-                        className="w-full p-3 flex items-center justify-between gap-3 text-left hover:bg-[#fcfaf7] cursor-pointer"
-                      >
-                        <span className="min-w-0">
-                          <span className="block font-mono text-xs text-black">{token.symbol ?? 'UNKNOWN'} · {token.name ?? 'unnamed'}</span>
-                          <span className="block font-mono text-[0.55rem] text-ink-muted truncate">{token.id}</span>
-                        </span>
-                        <span className={`font-mono text-[0.55rem] shrink-0 ${token.audit?.isSus ? 'text-red-700' : token.isVerified ? 'text-green-700' : 'text-ink-muted'}`}>
-                          {token.audit?.isSus ? 'suspicious' : token.isVerified ? 'verified' : 'unverified'}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
+              <div className="p-5">
                 <div className="min-w-0">
                   <div className="flex items-center justify-between gap-3 mb-3">
                     <div>
@@ -2191,56 +2065,6 @@ export default function AgentDetail() {
                       </div>
                     ))}
                   </div>
-                </div>
-              </div>
-
-              <div className="p-5">
-                <div className="flex items-center justify-between gap-4 mb-4">
-                  <div>
-                    <p className="font-mono text-sm text-black">Recurring orders</p>
-                    <p className="font-mono text-[0.6rem] text-ink-muted">Time-based DCA. Minimum $100 total and $50 per cycle.</p>
-                  </div>
-                  <button
-                    onClick={handleRecurringList}
-                    disabled={jupiterWorking !== null}
-                    className="font-mono text-[0.6rem] text-ink-muted hover:text-black cursor-pointer disabled:opacity-40 inline-flex items-center gap-1.5"
-                  >
-                    <RefreshCw size={12} className={jupiterWorking === 'recurring-list' ? 'animate-spin' : ''} />
-                    refresh
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-3">
-                  <input value={recurringFrom} onChange={e => setRecurringFrom(e.target.value)} placeholder="from" className="h-10 bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs outline-none focus:border-ink-muted" />
-                  <input value={recurringTo} onChange={e => setRecurringTo(e.target.value)} placeholder="to" className="h-10 bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs outline-none focus:border-ink-muted" />
-                  <input value={recurringAmount} onChange={e => setRecurringAmount(e.target.value.replace(/[^\d.]/g, ''))} placeholder="total amount" className="h-10 bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs outline-none focus:border-ink-muted" />
-                  <input value={recurringCount} onChange={e => setRecurringCount(e.target.value.replace(/\D/g, ''))} placeholder="orders" className="h-10 bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs outline-none focus:border-ink-muted" />
-                  <input value={recurringInterval} onChange={e => setRecurringInterval(e.target.value.replace(/\D/g, ''))} placeholder="interval sec" className="h-10 bg-[#fcfaf7] border border-beige-darker px-3 font-mono text-xs outline-none focus:border-ink-muted" />
-                </div>
-                <button
-                  onClick={handleRecurringCreate}
-                  disabled={jupiterWorking !== null}
-                  className="bg-black text-beige px-4 h-10 font-mono text-xs tracking-widest hover:bg-ink cursor-pointer disabled:opacity-40 mb-4"
-                >
-                  {jupiterWorking === 'recurring-create' ? 'creating...' : 'create recurring order'}
-                </button>
-                <div className="border border-beige-darker divide-y divide-beige-darker">
-                  {recurringOrders.length === 0 ? (
-                    <p className="p-3 font-mono text-[0.6rem] text-ink-muted/50">refresh to load active orders</p>
-                  ) : recurringOrders.map(order => {
-                    const orderId = order.orderKey ?? order.publicKey ?? order.id ?? ''
-                    return (
-                      <div key={orderId} className="p-3 flex items-center justify-between gap-3">
-                        <span className="font-mono text-[0.6rem] text-ink truncate">{orderId}</span>
-                        <button
-                          onClick={() => handleRecurringCancel(orderId)}
-                          disabled={!orderId || jupiterWorking !== null}
-                          className="font-mono text-[0.6rem] text-red-700 hover:text-red-900 cursor-pointer disabled:opacity-40"
-                        >
-                          cancel
-                        </button>
-                      </div>
-                    )
-                  })}
                 </div>
               </div>
             </div>
