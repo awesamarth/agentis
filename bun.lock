@@ -24,7 +24,7 @@
         "@solana/mpp": "^0.5.2",
         "@solana/spl-token": "^0.4.14",
         "@solana/web3.js": "^1.98.4",
-        "@umbra-privacy/sdk": "5.0.0-rc.3",
+        "@umbra-privacy/sdk": "5.0.0-rc.6",
         "@umbra-privacy/web-zk-prover": "^2.0.1",
         "@x402/core": "~2.10.0",
         "@x402/evm": "^2.10.0",
@@ -1091,9 +1091,9 @@
 
     "@umbra-privacy/indexer-read-service-client": ["@umbra-privacy/indexer-read-service-client@2.0.1", "", { "dependencies": { "@bufbuild/protobuf": "^2.0.0", "@umbra-privacy/indexer-proto-gen": "2.0.1" } }, "sha512-sIlN8TwUBjKUO8ZFE9teGbO3GiqjPMpB2uqlFeF2O7XGNBXkQ5g9PjqNiCBZ8xJOIq8bEJNxUceezj64EAhOjA=="],
 
-    "@umbra-privacy/sdk": ["@umbra-privacy/sdk@5.0.0-rc.3", "", { "dependencies": { "@bufbuild/protobuf": "^2.0.0", "@noble/ciphers": "^2.1.1", "@noble/curves": "^2.0.1", "@noble/hashes": "^2.0.1", "@solana/kit": "^6.0.1", "@solana/wallet-standard-features": "^1.3.0", "@umbra-privacy/arcium-codama": "2.0.1", "@umbra-privacy/umbra-codama": "3.0.0-rc.2", "@wallet-standard/core": "^1.1.0" }, "peerDependencies": { "snarkjs": "^0.7.6" }, "optionalPeers": ["snarkjs"] }, "sha512-b2en3o6c9oy0m7vPud7HYIQdUCUqBI2iBHSFIvOX2wMU9K99ArZVUPfTQX2q7+a6UD5kyzgXZHHMn3O3qaMPAw=="],
+    "@umbra-privacy/sdk": ["@umbra-privacy/sdk@5.0.0-rc.6", "", { "dependencies": { "@bufbuild/protobuf": "^2.0.0", "@noble/ciphers": "^2.1.1", "@noble/curves": "^2.0.1", "@noble/hashes": "^2.0.1", "@solana/kit": "^6.0.1", "@solana/wallet-standard-features": "^1.3.0", "@umbra-privacy/arcium-codama": "2.0.1", "@umbra-privacy/umbra-codama": "3.0.0-rc.6", "@wallet-standard/core": "^1.1.0" }, "peerDependencies": { "snarkjs": "^0.7.6" }, "optionalPeers": ["snarkjs"] }, "sha512-DypsQ35fEBeh3uSY85DvWi0lsG1MjAV1hFHQ869I1FMd+p6xEPTAGRPb9kLuK7ZGNFX7T56GJw9EDCyAF85/uw=="],
 
-    "@umbra-privacy/umbra-codama": ["@umbra-privacy/umbra-codama@3.0.0-rc.2", "", { "dependencies": { "@solana-program/system": "^0.11.0", "@solana-program/token-2022": "^0.9.0", "@solana/kit": "^6.0.1", "@solana/sysvars": "^6.0.1" } }, "sha512-DjDDPyrvTm5SsYyYvAohRANyeH/mjonhJ7r9YZ8jHRfcLcRit5yWsM4ATOTb2hHEa2MKuBKPc2/a8H+a0s4Rvg=="],
+    "@umbra-privacy/umbra-codama": ["@umbra-privacy/umbra-codama@3.0.0-rc.6", "", { "dependencies": { "@solana-program/system": "^0.11.0", "@solana-program/token-2022": "^0.9.0", "@solana/kit": "^6.0.1", "@solana/sysvars": "^6.0.1" } }, "sha512-93XlStzoP2NpLNNv82t7P1ZTY2tGjyMooIc5nqdDfSXzAuRMsLURCQUx/jC8O0Fv33jepxJ6OfbprtAyauw9ng=="],
 
     "@umbra-privacy/web-zk-prover": ["@umbra-privacy/web-zk-prover@2.0.1", "", { "peerDependencies": { "@umbra-privacy/sdk": "2.0.3", "snarkjs": "^0.7.6" } }, "sha512-iRHwjTalJUp5MZ4MsEx1fsdKHP9VT6UnneQRopC0aVFV1Ty4QSRU3VMufoPIMQT/NvTUNa9xVKngLTqfFkDAgQ=="],
 

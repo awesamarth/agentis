@@ -1,10 +1,17 @@
 import { PrivyClient } from '@privy-io/node'
 import { createSolanaKitSigner } from '@privy-io/node/solana-kit'
 import { address as toAddress } from '@solana/kit'
-import { getPollingTransactionForwarder, getUmbraClient } from '@umbra-privacy/sdk'
+import {
+  getPollingComputationMonitor,
+  getPollingTransactionForwarder,
+  getUmbraClient,
+} from '@umbra-privacy/sdk'
 
 const DEVNET_CAIP2 = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
-const DEVNET_RPC_URL = 'https://api.devnet.solana.com'
+const DEVNET_RPC_URL =
+  process.env.UMBRA_DEVNET_RPC_URL ?? 'https://api.devnet.solana.com'
+const DEVNET_ACCOUNT_RPC_URL =
+  process.env.UMBRA_DEVNET_ACCOUNT_RPC_URL ?? DEVNET_RPC_URL
 const DEVNET_RPC_SUBSCRIPTIONS_URL = 'wss://api.devnet.solana.com'
 const DEVNET_INDEXER_URL = 'https://utxo-indexer.api-devnet.umbraprivacy.com'
 
@@ -75,8 +82,10 @@ export async function createUmbraClient(
   const transactionForwarder = getPollingTransactionForwarder({
     rpcUrl: DEVNET_RPC_URL,
   })
-
-  return getUmbraClient(
+  const computationMonitor = getPollingComputationMonitor({
+    rpcUrl: DEVNET_ACCOUNT_RPC_URL,
+  })
+  const client = await getUmbraClient(
     {
       signer: createPrivyUmbraSigner(privyNode, walletId, walletAddress) as any,
       network: 'devnet',
@@ -84,6 +93,7 @@ export async function createUmbraClient(
       rpcSubscriptionsUrl: DEVNET_RPC_SUBSCRIPTIONS_URL,
       indexerApiEndpoint: DEVNET_INDEXER_URL,
     },
-    { transactionForwarder }
+    { computationMonitor, transactionForwarder }
   )
+  return client
 }

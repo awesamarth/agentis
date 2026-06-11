@@ -50,24 +50,28 @@ Local packages point to `src/` directly; no package build step is normally neede
 - Backend: `cd apps/backend && bun run index.ts`
 - Dashboard: `cd apps/next-app && bun dev`
 - CLI during dev: `cd packages/cli && bun src/index.ts ...`
+- Always use `bun x <package>`, never `bunx`. Bun's `bunx` path is unreliable
+  on this machine, while `bun x` works correctly.
 - Backend must be run from `apps/backend/` so `.env` is loaded.
 - Ports commonly used: dashboard `3000`, backend `3001`, x402 test `4000`, MPP test `4001`.
 
-## Current Checkpoint — June 8, 2026
+## Current Checkpoint — June 11, 2026
 
-The x402/MPP hardening, CLI OAuth migration, and remote MCP launch are complete.
+The x402/MPP hardening, CLI OAuth migration, remote MCP launch, Jupiter financial
+operations, and Jupiter Earn withdrawal controls are deployed.
 Production is currently:
 
 - Dashboard: `https://agentis.systems`
 - Backend/OAuth issuer: `https://api.agentis.systems`
 - Docs: `https://docs.agentis.systems`
 - Remote MCP: `https://mcp.agentis.systems/mcp`
-- Published CLI: `@agentis-hq/cli@0.3.2`
+- Published CLI: `@agentis-hq/cli@0.4.1`
+- Published MCP package: `@agentis-hq/mcp@0.2.1`
 - Latest handoff commits:
-  - `20b29e8` — x402/MPP polish and MCP/OAuth revamp
-  - `3329682` — CLI `0.3.1` timeout hotfix
-  - `1caacd4` — remote MCP scope/output hardening
-  - `497c037` — remote MCP launch documentation
+  - `5d84698` — Jupiter swap, portfolio, token search, and recurring rails
+  - `6b99fff` — CLI command validation fix and `0.4.1` release
+  - `0f42930` — Jupiter Earn withdrawal controls and MCP `0.2.1`
+  - `0923e93` — remove token search and recurring controls from the frontend
 
 Production configuration:
 - Railway service `backend` is linked to the `agentis` project and is online.
@@ -86,7 +90,7 @@ Production deploy runbook:
 - Remote MCP Worker changes require a separate deploy from `packages/mcp`:
   `bun run build:worker`, then
   `bun x wrangler deploy --domain mcp.agentis.systems`.
-- Use `bun x`, not `bunx`, for package executables in this repo.
+- Use `bun x`, never `bunx`, for package executables in this repo.
 - Worker config is `packages/mcp/wrangler.toml`. Keep
   `MCP_INTROSPECTION_SECRET` identical in Railway and the Worker.
 
@@ -94,7 +98,7 @@ Verified production remote MCP flow:
 - OAuth protected-resource and authorization-server discovery.
 - Dynamic client registration and PKCE browser consent.
 - Resource-bound access token exchange and private introspection.
-- Streamable HTTP initialize, 23-tool listing, and sanitized agent listing.
+- Streamable HTTP initialize, 31-tool listing, and sanitized agent listing.
 - A no-op policy update on `cli-test-agent` succeeded with only
   `wallets:read policy:read policy:write`; `wallets:write` was not granted.
 - Test refresh tokens were revoked after E2E.
@@ -105,13 +109,16 @@ Important caveats:
 - The root `.env` currently contains a Cloudflare API token as a raw single
   line, not `KEY=value`. It is gitignored. Never print or commit it; rotate it
   when administrative setup is finished.
-- npm CLI `0.3.2` includes the dedicated policy route from `1caacd4`.
+- npm CLI `0.4.1` includes the Jupiter commands and strict command validation.
 - JSON DB remains the main production durability/scaling risk.
 - Remote MCP local-wallet operations remain intentionally unsupported.
 
-Current unreleased source checkpoint:
+Current Jupiter checkpoint:
 - Jupiter Swap V2, Tokens V2 search, Portfolio, and time-based Recurring/DCA are
-  implemented across backend, SDK, CLI, MCP, and the per-agent dashboard.
+  deployed across backend, SDK, CLI, and MCP.
+- The per-agent dashboard intentionally exposes Swap and Portfolio only. Token
+  Search and Recurring Orders remain available through CLI, SDK, and MCP but
+  were removed from the frontend to keep the interface focused.
 - Public naming is provider-neutral: `agentis swap`, `agentis tokens search`,
   `agentis portfolio`, and `agentis recurring`. Do not add an
   `agentis jupiter` command namespace.
@@ -124,36 +131,50 @@ Current unreleased source checkpoint:
 - The live Recurring API currently requires `includeFailedTx=false` even though
   the docs describe it as optional, returns orders under `time`, and requires
   numeric `inAmount`; the backend normalizes these quirks.
-- Production CLI `0.3.2`, backend, dashboard, and 23-tool MCP Worker do not yet
-  include this unreleased Jupiter source. New OAuth logins request
-  `jupiter:read` and `jupiter:write`; existing credentials must re-login after
-  deployment to receive those scopes.
+- Jupiter Earn supports deposit, positions, partial withdrawal, full redeem,
+  and account-wide withdrawal controls. The remote MCP Worker and npm MCP
+  package include `agentis_earn_withdraw`.
+- New OAuth logins request `jupiter:read` and `jupiter:write`; credentials
+  created before the Jupiter deployment must re-login to receive those scopes.
 
 ## Next Work
 
 Recommended order:
-1. Review and deploy the Jupiter source, publish a new CLI release, deploy the
-   updated MCP Worker, then re-login the CLI for the new OAuth scopes.
-2. Run one deliberately small mainnet Swap V2 execution and one Recurring
-   create/cancel E2E using a user-approved agent and amounts.
+1. Deploy an OpenClaw or Hermes agent connected to Agentis and record a real
+   end-to-end demo of the agent using Agentis financial tools.
+2. Test remote MCP from real third-party hosts such as Codex and Claude, not
+   only the SDK harness.
 3. Database migration away from JSON while preserving key hashes, OAuth
    clients/grants, agents, policies, transactions, and facilitator records.
-4. Test remote MCP from real third-party hosts such as Codex, Claude, OpenClaw,
-   or Hermes, not only the SDK harness.
-5. Add MCP and dashboard Jupiter Earn withdraw controls.
-6. Mainnet-readiness pass: secrets, rate limits, audit logs, token/action
+4. Mainnet-readiness pass: secrets, rate limits, audit logs, token/action
    allowlists, RPC reliability, monitoring, and production transaction limits.
 
 Do not redo the completed OAuth/MCP deployment unless a regression is observed.
 
 ## Umbra RC SDK
-The backend uses `@umbra-privacy/sdk@5.0.0-rc.3`. The Umbra SDK/docs are unstable enough that new changes must inspect installed package exports/types/dist instead of relying on old docs or older Agentis assumptions.
+The backend uses `@umbra-privacy/sdk@5.0.0-rc.6`, which directly pins
+`@umbra-privacy/umbra-codama@3.0.0-rc.6`. The Umbra SDK/docs are unstable
+enough that new changes must inspect installed package exports/types/dist and
+the current `umbra-defi/examples` repo instead of relying on older assumptions.
 
 Current Umbra migration state:
+- RC6 migration passed locally on June 11, 2026 with fresh hosted agent
+  `umbra-rc6-1781179779` (`4NgQtMrrSSky5UiAyasaqQwRTcmCuuBz8ymN5CPM3p63`):
+  registration, wSOL encrypted deposit, encrypted-balance-sourced self UTXO
+  creation, native scan, and claim-latest all returned `200`.
+- The final focused cycle deposited `100_000` atomic wSOL, created a `100_000`
+  atomic self UTXO, and claimed `99_653` atomic back into the encrypted balance.
+- Umbra RPC is configurable through `UMBRA_DEVNET_RPC_URL` and
+  `UMBRA_DEVNET_ACCOUNT_RPC_URL`. Both are set locally to an Alchemy devnet RPC;
+  never commit or print the URL because it contains the API key.
+- Use native RC6 scanning. The old custom columnar indexer decoder was removed;
+  it populated the note version incorrectly and caused
+  `version[0] must not be zero` during claims.
+- The backend injects polling transaction and computation monitors so Umbra does
+  not depend on public Solana WebSocket reliability.
 - `GET /umbra/scan`, direct encrypted-balance deposit/withdraw, encrypted-balance-sourced UTXO creation, and `claim-latest` were retested locally against the backend on May 30, 2026.
 - Live hosted CLI demo passed on May 31, 2026 with fresh agents `live-umbra-rc-0531` and `live-umbra-rc-recv-0531`: register, wSOL encrypted deposit, withdraw, self UTXO create/scan/claim, cross-agent receiver UTXO create/scan/claim, and stale already-claimed retry handling all succeeded.
 - Scan must not call `ensureUmbraMintKey`; repair/rotation is unrelated to scanning and caused misleading logs.
-- The RC SDK scanner failed on devnet indexer absolute row `0` with `Failed to parse String to BigInt`; `apps/backend/src/routes/umbra.ts` now injects `fetchStealthPoolNoteDataForScan(...)` to skip index `0` for scan only.
 - `create-utxo` now uses encrypted balance as the source (`ETA -> stealth pool`) instead of public ATA. Self UTXO and cross-agent receiver UTXO flows both claimed successfully through the local backend.
 - `claim-latest` handles stale indexer rows by skipping `NullifierAlreadyBurnt` entries and treating Umbra relayer `completed` status as success.
 - Do not chase `repair` unless explicitly working on registration/mint-key rotation. For the current debugging path, fix and test one Umbra operation at a time.
@@ -247,7 +268,7 @@ Remote MCP implementation:
 - Build with `cd packages/mcp && bun run build:worker`.
 - Production endpoint: `https://mcp.agentis.systems/mcp`.
 - Remote MCP OAuth E2E passed on June 8, 2026: dynamic client registration,
-  PKCE consent, token exchange, Streamable HTTP initialization, 23-tool listing,
+  PKCE consent, token exchange, Streamable HTTP initialization, 31-tool listing,
   sanitized `agentis_list_agents`, and a no-op `agentis_policy_update` using only
   `wallets:read policy:read policy:write`. The test grant was revoked afterward.
 - `agentis_list_agents` intentionally returns a compact safe projection. Do not
@@ -478,8 +499,8 @@ ZK prover:
 Current usage:
 - SOL price uses Jupiter Price API.
 - Swap V2 quote/execute, Tokens V2 search, Portfolio, and time-based
-  Recurring/DCA are implemented in source for backend, SDK, CLI, MCP, and the
-  per-agent dashboard.
+  Recurring/DCA are implemented for backend, SDK, CLI, and MCP. The per-agent
+  dashboard exposes Swap and Portfolio only.
 - CLI commands are `agentis swap quote|execute`, `agentis tokens search`,
   `agentis portfolio`, and `agentis recurring list|create|cancel`.
 - SDK surfaces are `client.swap`, `client.tokens`, `client.portfolio`, and

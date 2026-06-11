@@ -5,14 +5,6 @@ import { getAgentByApiKey, updateAgent } from '../lib/db'
 import { createUmbraClient } from '../lib/umbra-signer'
 import { getUmbraRelayer } from '@umbra-privacy/sdk'
 import {
-  ReadServiceClient,
-  decodeBase64ToAesCiphertext,
-  decodeBase64ToU256LeBytes,
-  decodeBase64ToX25519PublicKey,
-  readU128LeFromBytes,
-  splitBase64Address,
-} from '@umbra-privacy/sdk'
-import {
   getEncryptedBalanceQuerierFunction,
   getUserAccountQuerierFunction,
 } from '@umbra-privacy/sdk/query'
@@ -75,7 +67,6 @@ const DEVNET_MINT = 'So11111111111111111111111111111111111111112'
 const DEVNET_DUSDC_MINT = '4oG4sjmopf5MzvTHLE8rpVJ2uyczxfsw2K84SUTpNDx7'
 const DEVNET_DUSDT_MINT = 'DXQwBNGgyQ2BzGWxEriJPVmXYFQBsQbXvfvfSNTaJkL6'
 const DEVNET_RELAYER_URL = 'https://relayer.api-devnet.umbraprivacy.com'
-const DEVNET_INDEXER_URL = 'https://utxo-indexer.api-devnet.umbraprivacy.com'
 
 function parseAmount(value: string | number | undefined, fallback: bigint) {
   if (value === undefined) return fallback
@@ -125,132 +116,6 @@ async function getEncryptedBalanceValue(client: Awaited<ReturnType<typeof create
     state: result.state,
     balance: result.balance.toString(),
     raw: result,
-  }
-}
-
-async function fetchStealthPoolNoteDataForScan(
-  client: Awaited<ReturnType<typeof createUmbraClient>>,
-  startIndex: bigint,
-  endIndex?: bigint,
-  limit?: bigint | number,
-): Promise<any> {
-  const safeStartIndex = startIndex === 0n ? 1n : startIndex
-  if (endIndex !== undefined && endIndex < safeStartIndex) {
-    return {
-      items: new Map(),
-      hasMore: false,
-      nextCursor: undefined,
-      totalCount: 0n,
-    }
-  }
-
-  void client
-
-  const indexerClient = new ReadServiceClient({ endpoint: DEVNET_INDEXER_URL })
-  const response = await indexerClient.getUtxoDataColumnar({
-    start: safeStartIndex,
-    end: endIndex,
-    limit: limit === undefined ? undefined : BigInt(limit),
-  })
-  const cols = response.columns
-  if (!cols) {
-    return {
-      items: new Map(),
-      hasMore: response.has_more,
-      nextCursor: response.next_cursor ?? undefined,
-      totalCount: response.total_count,
-    }
-  }
-
-  const rowCount = cols.absolute_index.length
-  const items = new Map()
-  const getRow = <T>(values: readonly T[], rowIndex: number, name: string) => {
-    const value = values[rowIndex]
-    if (value === undefined) {
-      throw new Error(`Indexer response missing ${name} at row ${rowIndex}`)
-    }
-    return value
-  }
-  const decodeU128Base64 = (value: string) =>
-    BigInt(readU128LeFromBytes(Uint8Array.from(Buffer.from(value, 'base64'))))
-
-  for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
-    const senderAddress = splitBase64Address(getRow(cols.h1_sender_address, rowIndex, 'h1_sender_address'))
-    const mintAddress = splitBase64Address(getRow(cols.h1_mint_address, rowIndex, 'h1_mint_address'))
-    const item = {
-      absoluteIndex: getRow(cols.absolute_index, rowIndex, 'absolute_index'),
-      treeIndex: getRow(cols.tree_index, rowIndex, 'tree_index'),
-      insertionIndex: getRow(cols.insertion_index, rowIndex, 'insertion_index'),
-      finalCommitment: decodeBase64ToU256LeBytes(getRow(cols.final_commitment, rowIndex, 'final_commitment')),
-      h1Components: {
-        version: decodeU128Base64(getRow(cols.h1_version, rowIndex, 'h1_version')),
-        commitmentIndex: decodeU128Base64(getRow(cols.h1_commitment_index, rowIndex, 'h1_commitment_index')),
-        senderAddressLow: senderAddress.low,
-        senderAddressHigh: senderAddress.high,
-        relayerFixedSolFees: BigInt(getRow(cols.h1_relayer_fixed_sol_fees, rowIndex, 'h1_relayer_fixed_sol_fees')),
-        mintAddressLow: mintAddress.low,
-        mintAddressHigh: mintAddress.high,
-        timestamp: {
-          year: getRow(cols.h1_year, rowIndex, 'h1_year'),
-          month: getRow(cols.h1_month, rowIndex, 'h1_month'),
-          day: getRow(cols.h1_day, rowIndex, 'h1_day'),
-          hour: getRow(cols.h1_hour, rowIndex, 'h1_hour'),
-          minute: getRow(cols.h1_minute, rowIndex, 'h1_minute'),
-          second: getRow(cols.h1_second, rowIndex, 'h1_second'),
-        },
-        poolVolumeSpl: BigInt(getRow(cols.h1_pool_volume_spl, rowIndex, 'h1_pool_volume_spl')),
-        poolVolumeSol: BigInt(getRow(cols.h1_pool_volume_sol, rowIndex, 'h1_pool_volume_sol')),
-      },
-      h1Hash: decodeBase64ToU256LeBytes(getRow(cols.h1_hash, rowIndex, 'h1_hash')),
-      h2Hash: decodeBase64ToU256LeBytes(getRow(cols.h2_hash, rowIndex, 'h2_hash')),
-      aesEncryptedData: decodeBase64ToAesCiphertext(getRow(cols.aes_encrypted_data, rowIndex, 'aes_encrypted_data')),
-      depositorX25519PublicKey: decodeBase64ToX25519PublicKey(getRow(cols.depositor_x25519_public_key, rowIndex, 'depositor_x25519_public_key')),
-      timestamp: getRow(cols.timestamp, rowIndex, 'timestamp'),
-      slot: getRow(cols.slot, rowIndex, 'slot'),
-      eventType: getRow(cols.event_type, rowIndex, 'event_type'),
-    }
-    items.set(item.insertionIndex, item)
-  }
-
-  return {
-    items,
-    hasMore: response.has_more,
-    nextCursor: response.next_cursor ?? undefined,
-    totalCount: response.total_count,
-  }
-}
-
-function createScanOnlyUmbraClient(client: Awaited<ReturnType<typeof createUmbraClient>>) {
-  return {
-    ...(client as any),
-    // The RC scanner runs a user-account key consistency assertion before it
-    // decrypts indexer notes. Scanning is read-only and must not be blocked by
-    // repair/rotation state; state-changing operations still use the real client.
-    accountInfoProvider: async () => new Map(),
-  } as typeof client
-}
-
-async function ensureUmbraMintKey(agent: NonNullable<Agent>, mint: string) {
-  try {
-    return await repairPrivyWalletUmbraMintKey(
-      privyNode,
-      agent.walletId,
-      agent.walletAddress,
-      mint,
-    )
-  } catch (err: any) {
-    // Freshly-created agents or already-consistent accounts should not be blocked
-    // by a best-effort repair path. The underlying Umbra operation will still fail
-    // with a precise error if the key mismatch remains.
-    if (
-      typeof err?.message === 'string' &&
-      err.message.toLowerCase().includes('does not match')
-    ) {
-      throw err
-    }
-
-    console.warn('[umbra/repair-mint-key] skipped', err)
-    return null
   }
 }
 
@@ -362,7 +227,6 @@ umbra.post('/deposit', async (c) => {
     const mint = body.mint ?? DEVNET_MINT
     const amount = parseAmount(body.amount, 1_000_000n)
 
-    await ensureUmbraMintKey(agent, mint)
     const client = await createUmbraClient(privyNode, agent.walletId, agent.walletAddress)
     const deposit = getATAIntoETADirectDepositorFunction({ client })
     const result = await deposit(toAddress(agent.walletAddress), toAddress(mint), amount as any)
@@ -384,7 +248,6 @@ umbra.get('/balance', async (c) => {
 
   try {
     const mint = c.req.query('mint') ?? DEVNET_MINT
-    await ensureUmbraMintKey(agent, mint)
     const client = await createUmbraClient(privyNode, agent.walletId, agent.walletAddress)
     const result = await getEncryptedBalanceValue(client, mint)
 
@@ -409,7 +272,6 @@ umbra.post('/withdraw', async (c) => {
     const mint = body.mint ?? DEVNET_MINT
     const amount = parseAmount(body.amount, 1_000_000n)
 
-    await ensureUmbraMintKey(agent, mint)
     const client = await createUmbraClient(privyNode, agent.walletId, agent.walletAddress)
     const withdraw = getETAIntoATAWithdrawerFunction({ client })
     const result = await withdraw(toAddress(agent.walletAddress), toAddress(mint), amount as any)
@@ -435,7 +297,6 @@ umbra.post('/create-utxo', async (c) => {
     const amount = parseAmount(body.amount, 10_000_000n)
     const to = body.to ?? agent.walletAddress
 
-    await ensureUmbraMintKey(agent, mint)
     const client = await createUmbraClient(privyNode, agent.walletId, agent.walletAddress)
     const zkProver = getNodeCreateStealthPoolNoteFromEncryptedBalanceProver() as any
     const createUtxo = to === agent.walletAddress
@@ -465,14 +326,7 @@ umbra.get('/scan', async (c) => {
 
   try {
     const client = await createUmbraClient(privyNode, agent.walletId, agent.walletAddress)
-    const scanClient = createScanOnlyUmbraClient(client)
-    const scan = getBurnableStealthPoolNoteScannerFunction(
-      { client: scanClient },
-      {
-        fetchStealthPoolNoteData: (startIndex, endIndex, limit) =>
-          fetchStealthPoolNoteDataForScan(client, startIndex, endIndex, limit),
-      }
-    )
+    const scan = getBurnableStealthPoolNoteScannerFunction({ client })
     const result = await scan()
 
     return c.json({
@@ -498,20 +352,12 @@ umbra.post('/claim-latest', async (c) => {
   const agent = c.get('agent')
 
   try {
-    await ensureUmbraMintKey(agent, DEVNET_MINT)
     const client = await createUmbraClient(privyNode, agent.walletId, agent.walletAddress)
-    const scanClient = createScanOnlyUmbraClient(client)
     const trackedMints = [DEVNET_MINT, DEVNET_DUSDC_MINT, DEVNET_DUSDT_MINT]
     const beforeBalances = Object.fromEntries(
       await Promise.all(trackedMints.map(async (mint) => [mint, await getEncryptedBalanceValue(client, mint)]))
     )
-    const scan = getBurnableStealthPoolNoteScannerFunction(
-      { client: scanClient },
-      {
-        fetchStealthPoolNoteData: (startIndex, endIndex, limit) =>
-          fetchStealthPoolNoteDataForScan(client, startIndex, endIndex, limit),
-      }
-    )
+    const scan = getBurnableStealthPoolNoteScannerFunction({ client })
     const result = await scan()
     const receiverClaimables = [
       ...result.etaToStealthPoolReceiverBurnable,
