@@ -16,7 +16,7 @@ afterAll(async () => {
 })
 
 describe('OAuth grant storage', () => {
-  test('authorization codes are one-time and refresh rotation revokes old tokens', async () => {
+  test('authorization codes are one-time and concurrent refreshes remain valid', async () => {
     const db = await import(`./db.ts?oauth-test=${Date.now()}`)
     const expiresAt = new Date(Date.now() + 60_000).toISOString()
     await db.createOAuthAuthorizationCode({
@@ -55,18 +55,29 @@ describe('OAuth grant storage', () => {
     })
     expect(await db.getOAuthGrantByAccessToken('agt_oauth_old')).toBeDefined()
 
-    await db.rotateOAuthGrantTokens({
-      grantId: 'grant-1',
-      accessToken: 'agt_oauth_new',
-      accessTokenExpiresAt: expiresAt,
-      refreshToken: 'agt_refresh_new',
-      refreshTokenExpiresAt: expiresAt,
-    })
-    expect(await db.getOAuthGrantByAccessToken('agt_oauth_old')).toBeUndefined()
-    expect(await db.getOAuthGrantByRefreshToken('agt_refresh_old')).toBeUndefined()
-    expect(await db.getOAuthGrantByAccessToken('agt_oauth_new')).toBeDefined()
+    const refreshed = await Promise.all([
+      db.refreshOAuthGrantAccessToken({
+        refreshToken: 'agt_refresh_old',
+        clientId: 'test-client',
+        accessToken: 'agt_oauth_new',
+        accessTokenExpiresAt: expiresAt,
+      }),
+      db.refreshOAuthGrantAccessToken({
+        refreshToken: 'agt_refresh_old',
+        clientId: 'test-client',
+        accessToken: 'agt_oauth_newer',
+        accessTokenExpiresAt: expiresAt,
+      }),
+    ])
+    expect(refreshed.every(Boolean)).toBe(true)
 
-    await db.revokeOAuthToken('agt_refresh_new')
+    expect(await db.getOAuthGrantByRefreshToken('agt_refresh_old')).toBeDefined()
+    expect(await db.getOAuthGrantByAccessToken('agt_oauth_old')).toBeDefined()
+    expect(await db.getOAuthGrantByAccessToken('agt_oauth_new')).toBeDefined()
+    expect(await db.getOAuthGrantByAccessToken('agt_oauth_newer')).toBeDefined()
+
+    await db.revokeOAuthToken('agt_refresh_old')
     expect(await db.getOAuthGrantByAccessToken('agt_oauth_new')).toBeUndefined()
+    expect(await db.getOAuthGrantByAccessToken('agt_oauth_newer')).toBeUndefined()
   })
 })

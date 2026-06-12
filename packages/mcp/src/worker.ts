@@ -6,6 +6,7 @@ type Env = {
   AGENTIS_API_URL?: string
   AGENTIS_MCP_RESOURCE?: string
   MCP_INTROSPECTION_SECRET: string
+  AGENTIS_DEVNET_RPC_URL?: string
   AGENTIS_MAINNET_RPC_URL?: string
 }
 
@@ -91,6 +92,7 @@ async function handleMcp(request: Request, env: Env): Promise<Response> {
   const server = createAgentisMcpServer({
     accessToken: token,
     apiBase: authorizationServer(env),
+    devnetRpcUrl: env.AGENTIS_DEVNET_RPC_URL,
     mainnetRpcUrl: env.AGENTIS_MAINNET_RPC_URL,
   })
   const transport = new WebStandardStreamableHTTPServerTransport({

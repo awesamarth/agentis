@@ -121,11 +121,31 @@ export type OAuthGrant = {
   resource?: string
   accessTokenHash: string
   accessTokenExpiresAt: string
+  previousAccessTokens?: Array<{
+    hash: string
+    expiresAt: string
+  }>
   refreshTokenHash: string
   refreshTokenExpiresAt: string
   createdAt: string
   updatedAt: string
   revokedAt?: string
+}
+
+let oauthGrantMutationQueue: Promise<void> = Promise.resolve()
+
+async function serializeOAuthGrantMutation<T>(operation: () => Promise<T>): Promise<T> {
+  let release = () => {}
+  const previous = oauthGrantMutationQueue
+  oauthGrantMutationQueue = new Promise<void>(resolve => {
+    release = resolve
+  })
+  await previous
+  try {
+    return await operation()
+  } finally {
+    release()
+  }
 }
 
 export type FacilitatorRecord = {
@@ -658,10 +678,15 @@ export async function createOAuthGrant(input: {
 export async function getOAuthGrantByAccessToken(token: string): Promise<OAuthGrant | undefined> {
   const db = await readDb()
   const hash = hashKey(token)
+  const now = new Date()
   return db.oauthGrants.find(grant =>
     !grant.revokedAt &&
-    new Date(grant.accessTokenExpiresAt) > new Date() &&
-    safeCompare(grant.accessTokenHash, hash)
+    (
+      (new Date(grant.accessTokenExpiresAt) > now && safeCompare(grant.accessTokenHash, hash)) ||
+      grant.previousAccessTokens?.some(previous =>
+        new Date(previous.expiresAt) > now && safeCompare(previous.hash, hash)
+      )
+    )
   )
 }
 
@@ -675,33 +700,53 @@ export async function getOAuthGrantByRefreshToken(token: string): Promise<OAuthG
   )
 }
 
-export async function rotateOAuthGrantTokens(input: {
-  grantId: string
+export async function refreshOAuthGrantAccessToken(input: {
+  refreshToken: string
+  clientId: string
   accessToken: string
   accessTokenExpiresAt: string
-  refreshToken: string
-  refreshTokenExpiresAt: string
-}): Promise<OAuthGrant> {
-  const db = await readDb()
-  const index = db.oauthGrants.findIndex(grant => grant.id === input.grantId && !grant.revokedAt)
-  if (index === -1) throw new Error('OAuth grant not found')
-  db.oauthGrants[index] = {
-    ...db.oauthGrants[index]!,
-    accessTokenHash: hashKey(input.accessToken),
-    accessTokenExpiresAt: input.accessTokenExpiresAt,
-    refreshTokenHash: hashKey(input.refreshToken),
-    refreshTokenExpiresAt: input.refreshTokenExpiresAt,
-    updatedAt: new Date().toISOString(),
-  }
-  await writeDb(db)
-  return db.oauthGrants[index]!
+}): Promise<OAuthGrant | undefined> {
+  return serializeOAuthGrantMutation(async () => {
+    const db = await readDb()
+    const refreshTokenHash = hashKey(input.refreshToken)
+    const now = new Date()
+    const index = db.oauthGrants.findIndex(grant =>
+      !grant.revokedAt &&
+      grant.clientId === input.clientId &&
+      new Date(grant.refreshTokenExpiresAt) > now &&
+      safeCompare(grant.refreshTokenHash, refreshTokenHash)
+    )
+    if (index === -1) return undefined
+
+    const current = db.oauthGrants[index]!
+    const previousAccessTokens = [
+      ...(current.previousAccessTokens ?? []).filter(token => new Date(token.expiresAt) > now),
+      ...(new Date(current.accessTokenExpiresAt) > now
+        ? [{ hash: current.accessTokenHash, expiresAt: current.accessTokenExpiresAt }]
+        : []),
+    ].filter((token, tokenIndex, tokens) =>
+      tokens.findIndex(candidate => candidate.hash === token.hash) === tokenIndex
+    ).slice(-8)
+
+    db.oauthGrants[index] = {
+      ...current,
+      accessTokenHash: hashKey(input.accessToken),
+      accessTokenExpiresAt: input.accessTokenExpiresAt,
+      previousAccessTokens,
+      updatedAt: now.toISOString(),
+    }
+    await writeDb(db)
+    return db.oauthGrants[index]!
+  })
 }
 
 export async function revokeOAuthToken(token: string): Promise<void> {
   const db = await readDb()
   const hash = hashKey(token)
   const index = db.oauthGrants.findIndex(grant =>
-    safeCompare(grant.accessTokenHash, hash) || safeCompare(grant.refreshTokenHash, hash)
+    safeCompare(grant.accessTokenHash, hash) ||
+    grant.previousAccessTokens?.some(previous => safeCompare(previous.hash, hash)) ||
+    safeCompare(grant.refreshTokenHash, hash)
   )
   if (index === -1) return
   db.oauthGrants[index] = {

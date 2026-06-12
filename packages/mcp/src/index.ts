@@ -11,6 +11,7 @@ if (!accessToken) {
 const server = createAgentisMcpServer({
   accessToken,
   apiBase: process.env.AGENTIS_API_URL,
+  devnetRpcUrl: process.env.AGENTIS_DEVNET_RPC_URL,
   mainnetRpcUrl: process.env.AGENTIS_MAINNET_RPC_URL,
 })
 await server.connect(new StdioServerTransport())

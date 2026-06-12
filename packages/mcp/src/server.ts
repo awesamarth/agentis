@@ -45,11 +45,13 @@ type SweepPlanItem = {
 export type AgentisMcpServerOptions = {
   accessToken: string
   apiBase?: string
+  devnetRpcUrl?: string
   mainnetRpcUrl?: string
 }
 
 export function createAgentisMcpServer(options: AgentisMcpServerOptions): McpServer {
 const apiBase = (options.apiBase ?? DEFAULT_API_BASE).replace(/\/$/, '')
+const devnetRpcUrl = options.devnetRpcUrl ?? DEFAULT_DEVNET_RPC
 const accessToken = options.accessToken
 
 function requireAccessToken(): string {
@@ -147,7 +149,7 @@ async function rpc<T>(url: string, method: string, params: unknown[]): Promise<T
 }
 
 async function getDevnetBalance(walletAddress: string, mint?: string) {
-  const native = await rpc<{ value: number }>(DEFAULT_DEVNET_RPC, 'getBalance', [
+  const native = await rpc<{ value: number }>(devnetRpcUrl, 'getBalance', [
     walletAddress,
     { commitment: 'confirmed' },
   ])
@@ -173,7 +175,7 @@ async function getDevnetBalance(walletAddress: string, mint?: string) {
         }
       }
     }>
-  }>(DEFAULT_DEVNET_RPC, 'getTokenAccountsByOwner', [
+  }>(devnetRpcUrl, 'getTokenAccountsByOwner', [
     walletAddress,
     { programId: TOKEN_PROGRAM },
     { encoding: 'jsonParsed', commitment: 'confirmed' },

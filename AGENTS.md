@@ -112,6 +112,10 @@ Important caveats:
 - npm CLI `0.4.1` includes the Jupiter commands and strict command validation.
 - JSON DB remains the main production durability/scaling risk.
 - Remote MCP local-wallet operations remain intentionally unsupported.
+- OAuth access tokens last 1 hour and refresh grants last 45 days. Refresh
+  tokens remain stable within the grant, and concurrent refreshes retain all
+  newly issued access tokens until their normal expiry so MCP clients cannot
+  invalidate their own startup session.
 
 Current Jupiter checkpoint:
 - Jupiter Swap V2, Tokens V2 search, Portfolio, and time-based Recurring/DCA are
@@ -261,7 +265,7 @@ Remote MCP implementation:
 - OAuth protected-resource metadata:
   `/.well-known/oauth-protected-resource`.
 - OAuth authorization server is implemented by backend `/oauth/*` routes with
-  authorization code + PKCE, refresh-token rotation, revocation, dynamic client
+  authorization code + PKCE, 45-day refresh grants, revocation, dynamic client
   registration, and private token introspection.
 - Remote access tokens are resource-bound and independently revocable. The
   Worker stores no user credentials.

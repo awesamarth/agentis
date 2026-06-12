@@ -10,10 +10,9 @@ import {
   getOAuthAuthorizationRequest,
   getOAuthClient,
   getOAuthGrantByAccessToken,
-  getOAuthGrantByRefreshToken,
+  refreshOAuthGrantAccessToken,
   registerOAuthClient,
   revokeOAuthToken,
-  rotateOAuthGrantTokens,
 } from '../lib/db'
 
 const oauth = new Hono()
@@ -33,7 +32,7 @@ const DEFAULT_SCOPES = [
 ]
 const SCOPE_SET = new Set(DEFAULT_SCOPES)
 const ACCESS_TOKEN_TTL_MS = 60 * 60 * 1000
-const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const REFRESH_TOKEN_TTL_MS = 45 * 24 * 60 * 60 * 1000
 const AUTHORIZATION_CODE_TTL_MS = 5 * 60 * 1000
 
 function apiBase(): string {
@@ -213,6 +212,7 @@ oauth.post('/request/:id/complete', async (c) => {
 
 oauth.post('/token', async (c) => {
   const body = await formBody(c)
+  if (!body.client_id) return oauthError(c, 'invalid_request', 'client_id is required')
   const client = await getOAuthClient(body.client_id)
   if (!client) return oauthError(c, 'invalid_client', 'Unknown OAuth client', 401)
 
@@ -251,18 +251,23 @@ oauth.post('/token', async (c) => {
 
   if (body.grant_type === 'refresh_token') {
     if (!body.refresh_token) return oauthError(c, 'invalid_request', 'refresh_token is required')
-    const grant = await getOAuthGrantByRefreshToken(body.refresh_token)
-    if (!grant || grant.clientId !== client.clientId) {
+    const accessToken = `agt_oauth_${randomBytes(32).toString('hex')}`
+    const accessTokenExpiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_MS).toISOString()
+    const grant = await refreshOAuthGrantAccessToken({
+      refreshToken: body.refresh_token,
+      clientId: client.clientId,
+      accessToken,
+      accessTokenExpiresAt,
+    })
+    if (!grant) {
       return oauthError(c, 'invalid_grant', 'Refresh token is invalid, expired, or revoked')
     }
-    const tokens = tokenPair()
-    await rotateOAuthGrantTokens({ grantId: grant.id, ...tokens })
     c.header('cache-control', 'no-store')
     return c.json({
-      access_token: tokens.accessToken,
+      access_token: accessToken,
       token_type: 'Bearer',
       expires_in: ACCESS_TOKEN_TTL_MS / 1000,
-      refresh_token: tokens.refreshToken,
+      refresh_token: body.refresh_token,
       scope: grant.scope.join(' '),
     })
   }
