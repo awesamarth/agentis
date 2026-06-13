@@ -7,6 +7,7 @@ import {
   Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL
 } from '@solana/web3.js'
 import { solToUsd } from '../lib/price'
+import { enforceDirectSendPolicy } from '../lib/direct-send-policy'
 import { registerPrivyWalletWithUmbra } from '../lib/umbra-registration'
 import umbra from './umbra'
 import sdk from './sdk'
@@ -1234,6 +1235,9 @@ agents.post('/:id/send', async (c) => {
   }
 
   const amountUsd = await solToUsd(amountSol)
+  if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
+    return c.json({ error: 'Unable to determine SOL/USD price for policy enforcement' }, 503)
+  }
 
   // Backend policy checks are used for backend-mode agents. On-chain agents enforce
   // core spend limits in the transaction via Quasar once initialized.
@@ -1243,47 +1247,15 @@ agents.post('/:id/send', async (c) => {
       return c.json({ error: 'On-chain policy is not initialized. Fund the agent wallet, then initialize policy.' }, 403)
     }
   } else if (policy) {
-    if (policy.killSwitch) {
-      return c.json({ error: 'Kill switch is active — agent payments disabled' }, 403)
-    }
-    if (policy.maxPerTx !== null && amountSol > policy.maxPerTx) {
-      return c.json({ error: `Exceeds max per transaction limit (${policy.maxPerTx} SOL)` }, 403)
-    }
-
-    const now = Date.now()
-    const txns = agent.transactions ?? []
-
-    if (policy.hourlyLimit !== null) {
-      const hourSpend = txns
-        .filter(t => now - new Date(t.timestamp).getTime() < 60 * 60 * 1000)
-        .reduce((sum, t) => sum + t.amount, 0)
-      if (hourSpend + amountSol > policy.hourlyLimit) {
-        return c.json({ error: `Hourly spend limit exceeded (${policy.hourlyLimit})` }, 403)
-      }
-    }
-
-    if (policy.dailyLimit !== null) {
-      const daySpend = txns
-        .filter(t => now - new Date(t.timestamp).getTime() < 24 * 60 * 60 * 1000)
-        .reduce((sum, t) => sum + t.amount, 0)
-      if (daySpend + amountSol > policy.dailyLimit) {
-        return c.json({ error: `Daily spend limit exceeded (${policy.dailyLimit})` }, 403)
-      }
-    }
-
-    if (policy.monthlyLimit !== null) {
-      const currentMonth = new Date().toISOString().slice(0, 7)
-      const monthSpend = agent.monthSpend?.month === currentMonth ? agent.monthSpend.spend : 0
-      if (monthSpend + amountSol > policy.monthlyLimit) {
-        return c.json({ error: `Monthly spend limit exceeded (${policy.monthlyLimit})` }, 403)
-      }
-    }
-
-    if (policy.maxBudget !== null) {
-      const totalSpend = txns.reduce((sum, t) => sum + t.amount, 0)
-      if (totalSpend + amountSol > policy.maxBudget) {
-        return c.json({ error: `Total budget cap exceeded (${policy.maxBudget})` }, 403)
-      }
+    try {
+      enforceDirectSendPolicy({
+        policy,
+        amountUsd,
+        recipient: to,
+        transactions: agent.transactions,
+      })
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : 'Policy check failed' }, 403)
     }
   }
 
