@@ -8,6 +8,7 @@ import { Mppx, solana as solanaClient } from '@solana/mpp/client'
 import { createSolanaKitSigner } from '@privy-io/node/solana-kit'
 import { address as toAddress } from '@solana/kit'
 import { solToUsd, getTokenPriceUsd } from '../lib/price'
+import { enforceDirectSendPolicy } from '../lib/direct-send-policy'
 import {
   createCheckAndRecordSpendInstruction,
   createUpdatePolicyInstruction,
@@ -300,20 +301,24 @@ sdk.post('/agent/send', async (c) => {
   }
 
   const amountUsdEstimate = mint ? amountSol * await getTokenPriceUsd(mint) : await solToUsd(amountSol)
+  if (!Number.isFinite(amountUsdEstimate) || amountUsdEstimate <= 0) {
+    return c.json({ error: 'Unable to determine token/USD price for policy enforcement' }, 503)
+  }
 
   if (agent.policyMode === 'onchain') {
     if (!agent.onchainPolicy?.initialized) {
       return c.json({ error: 'On-chain policy is not initialized. Fund the agent wallet, then initialize policy.' }, 403)
     }
-  } else {
-    // Policy: kill switch
-    if (agent.policy?.killSwitch) {
-      return c.json({ error: 'Kill switch is active — agent payments disabled' }, 403)
-    }
-
-    // Policy: maxPerTx (in USD)
-    if (agent.policy?.maxPerTx !== null && agent.policy?.maxPerTx !== undefined && amountUsdEstimate > agent.policy.maxPerTx) {
-      return c.json({ error: `Exceeds max per transaction limit ($${agent.policy.maxPerTx})` }, 403)
+  } else if (agent.policy) {
+    try {
+      enforceDirectSendPolicy({
+        policy: agent.policy,
+        amountUsd: amountUsdEstimate,
+        recipient: to,
+        transactions: agent.transactions,
+      })
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : 'Policy check failed' }, 403)
     }
   }
 

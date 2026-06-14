@@ -65,6 +65,9 @@ async function solToUsd(sol: number): Promise<number> {
   const res = await fetch(`https://api.jup.ag/price/v3?ids=${SOL_MINT}`)
   const data = await res.json() as any
   const price = data[SOL_MINT]?.usdPrice ?? 0
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error('Unable to determine SOL/USD price for policy enforcement')
+  }
   cachedSolPrice = { usd: price, fetchedAt: now }
   return sol * price
 }
@@ -152,7 +155,13 @@ async function sendLocalSol(nameOrId: string, to: string, amountSol: number, dis
     process.exit(1)
   }
 
-  const amountUsd = await solToUsd(amountSol)
+  let amountUsd: number
+  try {
+    amountUsd = await solToUsd(amountSol)
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : 'Unable to determine SOL/USD price for policy enforcement')
+    process.exit(1)
+  }
   try {
     checkPolicy({ ...wallet.policy, allowedDomains: [] }, amountUsd, `solana:${to}`, wallet.spendHistory)
   } catch (err: any) {

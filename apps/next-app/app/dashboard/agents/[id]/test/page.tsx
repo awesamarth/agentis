@@ -32,6 +32,7 @@ type Policy = {
 type TxRecord = {
   txHash: string
   amount: number
+  amountUsd?: number
   recipient: string
   timestamp: string
 }
@@ -156,34 +157,46 @@ export default function AgentTestConsole() {
     }
   }
 
-  // Guest-side policy enforcement (mirrors backend logic)
-  function checkGuestPolicy(guestAgent: GuestAgent, amountSol: number): string | null {
+  async function getSolPriceUsd(): Promise<number> {
+    const response = await fetch(`${API}/sol-price`)
+    if (!response.ok) throw new Error('Unable to determine SOL/USD price for policy enforcement')
+    const { usd } = await response.json() as { usd?: number }
+    if (!Number.isFinite(usd) || Number(usd) <= 0) {
+      throw new Error('Unable to determine SOL/USD price for policy enforcement')
+    }
+    return Number(usd)
+  }
+
+  // Guest-side policy enforcement mirrors the backend's USD-denominated limits.
+  function checkGuestPolicy(guestAgent: GuestAgent, amountUsd: number, solPriceUsd: number): string | null {
     const policy = guestAgent.policy
     if (!policy) return null
 
     if (policy.killSwitch) return 'Kill switch is active — agent payments disabled'
-    if (policy.maxPerTx !== null && amountSol > policy.maxPerTx) {
-      return `Exceeds max per transaction limit (${policy.maxPerTx} SOL)`
+    if (policy.maxPerTx !== null && amountUsd > policy.maxPerTx) {
+      return `Exceeds max per transaction limit ($${policy.maxPerTx})`
     }
 
     const txns = guestAgent.transactions ?? []
     const now = Date.now()
+    const transactionUsd = (transaction: TxRecord) =>
+      transaction.amountUsd ?? transaction.amount * solPriceUsd
 
     if (policy.hourlyLimit !== null) {
       const hourSpend = txns
         .filter(t => now - new Date(t.timestamp).getTime() < 60 * 60 * 1000)
-        .reduce((sum, t) => sum + t.amount, 0)
-      if (hourSpend + amountSol > policy.hourlyLimit) {
-        return `Hourly spend limit exceeded (${policy.hourlyLimit})`
+        .reduce((sum, t) => sum + transactionUsd(t), 0)
+      if (hourSpend + amountUsd > policy.hourlyLimit) {
+        return `Hourly spend limit exceeded ($${policy.hourlyLimit})`
       }
     }
 
     if (policy.dailyLimit !== null) {
       const daySpend = txns
         .filter(t => now - new Date(t.timestamp).getTime() < 24 * 60 * 60 * 1000)
-        .reduce((sum, t) => sum + t.amount, 0)
-      if (daySpend + amountSol > policy.dailyLimit) {
-        return `Daily spend limit exceeded (${policy.dailyLimit})`
+        .reduce((sum, t) => sum + transactionUsd(t), 0)
+      if (daySpend + amountUsd > policy.dailyLimit) {
+        return `Daily spend limit exceeded ($${policy.dailyLimit})`
       }
     }
 
@@ -191,23 +204,23 @@ export default function AgentTestConsole() {
       const currentMonth = new Date().toISOString().slice(0, 7)
       const monthSpend = txns
         .filter(t => t.timestamp.slice(0, 7) === currentMonth)
-        .reduce((sum, t) => sum + t.amount, 0)
-      if (monthSpend + amountSol > policy.monthlyLimit) {
-        return `Monthly spend limit exceeded (${policy.monthlyLimit})`
+        .reduce((sum, t) => sum + transactionUsd(t), 0)
+      if (monthSpend + amountUsd > policy.monthlyLimit) {
+        return `Monthly spend limit exceeded ($${policy.monthlyLimit})`
       }
     }
 
     if (policy.maxBudget !== null) {
-      const totalSpend = txns.reduce((sum, t) => sum + t.amount, 0)
-      if (totalSpend + amountSol > policy.maxBudget) {
-        return `Total budget cap exceeded (${policy.maxBudget})`
+      const totalSpend = txns.reduce((sum, t) => sum + transactionUsd(t), 0)
+      if (totalSpend + amountUsd > policy.maxBudget) {
+        return `Total budget cap exceeded ($${policy.maxBudget})`
       }
     }
 
     return null
   }
 
-  function recordGuestTransaction(txHash: string, amountSol: number, to: string) {
+  function recordGuestTransaction(txHash: string, amountSol: number, amountUsd: number, to: string) {
     try {
       const raw = localStorage.getItem(GUEST_STORAGE_KEY)
       const guests: GuestAgent[] = raw ? JSON.parse(raw) : []
@@ -217,6 +230,7 @@ export default function AgentTestConsole() {
       guests[idx]!.transactions!.push({
         txHash,
         amount: amountSol,
+        amountUsd,
         recipient: to,
         timestamp: new Date().toISOString(),
       })
@@ -227,7 +241,13 @@ export default function AgentTestConsole() {
         const g = prev as GuestAgent
         return {
           ...g,
-          transactions: [...(g.transactions ?? []), { txHash, amount: amountSol, recipient: to, timestamp: new Date().toISOString() }]
+          transactions: [...(g.transactions ?? []), {
+            txHash,
+            amount: amountSol,
+            amountUsd,
+            recipient: to,
+            timestamp: new Date().toISOString(),
+          }]
         }
       })
     } catch {
@@ -281,9 +301,11 @@ export default function AgentTestConsole() {
     try {
       if (isGuest) {
         const guestAgent = agent as GuestAgent
+        const solPriceUsd = await getSolPriceUsd()
+        const amountUsd = amountSol * solPriceUsd
 
         // Client-side policy check
-        const policyError = checkGuestPolicy(guestAgent, amountSol)
+        const policyError = checkGuestPolicy(guestAgent, amountUsd, solPriceUsd)
         if (policyError) {
           addLog('error', `Policy rejected`, policyError)
           return
@@ -291,7 +313,7 @@ export default function AgentTestConsole() {
 
         addLog('info', 'Policy check passed — signing in browser...')
         const signature = await sendAsGuest(guestAgent, recipient.trim(), amountSol)
-        recordGuestTransaction(signature, amountSol, recipient.trim())
+        recordGuestTransaction(signature, amountSol, amountUsd, recipient.trim())
         addLog('success', 'Transaction sent', signature)
         setAmount('')
         pollConfirmation(signature)

@@ -134,6 +134,16 @@ export class AgentisClient {
     }))
   }
 
+  private async _solToUsd(amountSol: number): Promise<number> {
+    const response = await globalThis.fetch(`${this.config.baseUrl}/sol-price`)
+    if (!response.ok) throw new PaymentError('Unable to determine SOL/USD price for policy enforcement')
+    const { usd } = await response.json() as { usd?: number }
+    if (!Number.isFinite(usd) || Number(usd) <= 0) {
+      throw new PaymentError('Unable to determine SOL/USD price for policy enforcement')
+    }
+    return amountSol * Number(usd)
+  }
+
   // Drop-in fetch replacement
   async fetch(url: string, options?: RequestInit): Promise<Response> {
     const request = new Request(url, options)
@@ -442,9 +452,9 @@ export class AgentisClient {
 
   // Direct payment. Native SOL amount is in SOL, e.g. 0.001.
   async pay(to: string, amountSol: number, mint?: string): Promise<string> {
-    // Policy check
-    const amountUsd = amountSol // rough — backend does real check too
-    checkPolicy(this.agent.policy, amountUsd, to, this.spendHistory)
+    // Native SOL can be checked locally; token pricing remains authoritative on the backend.
+    const amountUsd = mint ? null : await this._solToUsd(amountSol)
+    if (amountUsd !== null) checkPolicy(this.agent.policy, amountUsd, to, this.spendHistory)
 
     const res = await globalThis.fetch(`${this.config.baseUrl}/sdk/agent/send`, {
       method: 'POST',
@@ -461,7 +471,11 @@ export class AgentisClient {
     }
 
     const { signature } = await res.json()
-    this.spendHistory.push({ amount: amountUsd, timestamp: new Date().toISOString(), url: to })
+    if (amountUsd !== null) {
+      this.spendHistory.push({ amount: amountUsd, timestamp: new Date().toISOString(), url: to })
+    } else {
+      await this._bootstrap()
+    }
     return signature
   }
 
