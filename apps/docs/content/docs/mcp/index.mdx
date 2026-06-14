@@ -1,35 +1,128 @@
 ---
 title: MCP
-description: Connect AI agents to Agentis through remote MCP or local stdio.
+description: Connect any MCP-compatible AI agent to Agentis wallets and financial tools.
 ---
 
-The Agentis MCP server lets AI agents list wallets, create agents, fetch paid URLs, update policy, inspect balances, run privacy flows, and use Jupiter Earn.
+Agentis Remote MCP gives AI agents scoped access to wallets, payments, policies,
+swaps, yield, portfolio data, and privacy tools on Solana.
 
-## Remote MCP
+For most users, **Remote MCP is the recommended setup**. It requires no local
+package, account key, or manual credential configuration.
 
-The remote endpoint uses MCP Streamable HTTP and OAuth 2.1 authorization code
-flow with PKCE. Compatible MCP clients discover Agentis OAuth metadata, open
-the Agentis consent screen, and receive an independently revocable access
-token. User credentials are not stored in the MCP Worker.
+## Connect to Remote MCP
 
-The deployment target is:
+Add this URL as a remote or Streamable HTTP MCP server in your MCP-compatible
+client:
 
 ```txt
 https://mcp.agentis.systems/mcp
 ```
 
-The production endpoint is live. Compatible clients can connect to it directly
-and complete authorization through the Agentis consent screen.
+Then:
+
+1. Your MCP client opens the Agentis authorization page in your browser.
+2. Sign in to Agentis and review the permissions requested by the client.
+3. Approve the connection.
+4. Return to your MCP client. The Agentis tools are now available to your agent.
+
+The exact button names vary by client. Look for an option such as **Add MCP
+server**, **Connect remote server**, or **Custom MCP server**, then select
+Streamable HTTP and enter the URL above.
+
+<Callout type="info">
+  Remote MCP uses OAuth 2.1 authorization code flow with PKCE. Do not paste an
+  Agentis account key or agent API key into a remote MCP client.
+</Callout>
+
+## Verify the connection
+
+Ask your agent:
+
+```txt
+List my Agentis wallets.
+```
+
+This calls the read-only `agentis_list_agents` tool. You can then try:
+
+```txt
+Show the balance and spending policy for my Agentis wallet named leno.
+```
+
+For a policy check that does not move funds:
+
+```txt
+Check whether leno is allowed to spend $1.
+```
+
+If a client needs scopes that were not granted during the original connection,
+reconnect it and approve the expanded permissions on the Agentis consent screen.
+
+## What your agent can do
+
+### Wallets and payments
+
+- list and create hosted agent wallets
+- read balances and transaction history
+- send SOL after policy checks
+- pay MPP and x402 protected APIs
+
+### Policies
+
+- inspect and update spending policies
+- run policy checks without spending funds
+- initialize and read Quasar on-chain policy state
+
+Policy amounts are USD-denominated.
+
+### Swaps, yield, and portfolio
+
+- search Solana token metadata
+- quote and execute policy-controlled swaps
+- read Jupiter portfolio positions
+- deposit into and withdraw from Jupiter Earn
+- inspect Earn positions and sweep eligible USDC balances
+- create, list, and cancel recurring orders
+
+Jupiter operations use mainnet funds. Review the requested action, amount, and
+policy before approving a write operation.
+
+### Privacy
+
+- register an agent with Umbra
+- inspect encrypted balances
+- deposit and withdraw supported assets
+- create receiver-claimable UTXOs
+- scan and claim private transfers
+
+Umbra tools currently operate on supported hosted agent wallets.
+
+## Security and authorization
+
+Remote MCP is a stateless Streamable HTTP service:
+
+- access is authorized through Agentis OAuth
+- access tokens are bound to the Agentis MCP resource
+- clients receive only the scopes approved on the consent screen
+- each OAuth grant can be revoked independently
+- the MCP Worker does not store your Agentis account credentials
+- hosted wallet signing remains inside Agentis
+
+OAuth access tokens are refreshed by compatible clients using the associated
+refresh grant. You can reconnect if your client loses or revokes its session.
 
 ## Local stdio
 
+Local stdio remains available for clients that cannot connect to remote
+Streamable HTTP servers. It requires an Agentis account key on the same machine
+as the MCP process.
+
+Install the package:
+
 ```bash
-npm install -g @agentis-hq/mcp
+bun add -g @agentis-hq/mcp
 ```
 
-Or use the package directly from an MCP client.
-
-## Configure
+Configure your local MCP client:
 
 ```json
 {
@@ -44,7 +137,7 @@ Or use the package directly from an MCP client.
 }
 ```
 
-Use `AGENTIS_API_URL` only when targeting a local or staging backend:
+Set `AGENTIS_API_URL` only when targeting a local or staging backend:
 
 ```json
 {
@@ -55,24 +148,8 @@ Use `AGENTIS_API_URL` only when targeting a local or staging backend:
 }
 ```
 
-## Local account key
+Local stdio uses an account API key for compatibility. Remote MCP uses OAuth and
+does not require an account key.
 
-Local stdio uses an account API key, not an individual agent API key. Remote
-MCP uses OAuth.
-
-You can generate an account key from the dashboard or through the CLI login flow.
-
-## What MCP can do
-
-MCP tools include:
-
-- list and create hosted agents
-- read balances and transactions
-- send SOL
-- fetch MPP and x402 paid URLs
-- read and update policies
-- initialize and read on-chain policy state
-- deposit and inspect Jupiter Earn positions
-- run Umbra status, registration, balance, deposit, withdraw, scan, UTXO, and claim flows
-
-Local encrypted-wallet vault operations are intentionally CLI-only for v1.
+Local encrypted-wallet vault signing is intentionally CLI-only. MCP tools
+operate hosted Agentis wallets.
