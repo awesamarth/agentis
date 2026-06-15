@@ -42,6 +42,23 @@ type SweepPlanItem = {
   amountUi: string
 }
 
+const USD_POLICY_FIELDS = {
+  maxPerTx: 'USD per transaction',
+  hourlyLimit: 'USD per rolling hour',
+  dailyLimit: 'USD per rolling day',
+  monthlyLimit: 'USD per calendar month',
+  maxBudget: 'USD lifetime total',
+  maxDailySwapVolume: 'USD per rolling 24 hours',
+} as const
+
+export function policyUnitMetadata() {
+  return {
+    currency: 'USD',
+    fieldUnits: USD_POLICY_FIELDS,
+    explanation: 'All monetary policy limits are denominated in USD. For example, maxPerTx: 1 means a maximum of $1 USD per transaction, not 1 SOL or one token unit.',
+  }
+}
+
 export type AgentisMcpServerOptions = {
   accessToken: string
   apiBase?: string
@@ -91,6 +108,7 @@ function safeAgent(agent: Agent) {
     privacyEnabled: agent.privacyEnabled ?? false,
     umbraStatus: agent.umbraStatus ?? 'disabled',
     policy: agent.policy,
+    policyUnits: policyUnitMetadata(),
     onchainPolicy: agent.onchainPolicy,
   }
 }
@@ -292,7 +310,6 @@ async function executeSweep(plan: SweepPlanItem[]) {
   return deposits
 }
 
-const nullableUsd = z.number().nonnegative().nullable().optional()
 const agentRef = z.string().describe('Agent name or id')
 
 const server = new McpServer(
@@ -391,11 +408,11 @@ server.registerTool(
   'agentis_send_sol',
   {
     title: 'Send SOL',
-    description: 'Send devnet SOL from a hosted Agentis agent. Uses backend or on-chain policy enforcement.',
+    description: 'Send devnet SOL from a hosted Agentis agent. amountSol is denominated in SOL, but Agentis converts its live value to USD before enforcing USD-denominated spending policy limits such as maxPerTx.',
     inputSchema: {
       agent: agentRef,
       to: z.string().min(32),
-      amountSol: z.number().positive(),
+      amountSol: z.number().positive().describe('Amount of SOL to send. Policy limits are not in SOL; Agentis converts this amount to USD before checking them.'),
     },
   },
   async ({ agent, to, amountSol }) => {
@@ -448,7 +465,7 @@ server.registerTool(
   'agentis_policy_get',
   {
     title: 'Get policy',
-    description: 'Get backend policy plus on-chain policy metadata for an agent.',
+    description: 'Get backend policy plus on-chain policy metadata for an agent. All monetary policy fields are denominated in USD: maxPerTx: 1 means $1 USD, not 1 SOL.',
     inputSchema: { agent: agentRef },
   },
   async ({ agent }) => {
@@ -456,6 +473,7 @@ server.registerTool(
     return result({
       agent: safeAgent(resolved),
       policy: resolved.policy,
+      policyUnits: policyUnitMetadata(),
       policyMode: resolved.policyMode ?? 'backend',
       onchainPolicy: resolved.onchainPolicy,
     })
@@ -466,10 +484,10 @@ server.registerTool(
   'agentis_policy_check',
   {
     title: 'Check policy',
-    description: 'Locally check whether a hypothetical spend is allowed by the agent policy.',
+    description: 'Locally check whether a hypothetical USD-denominated spend is allowed by the agent policy.',
     inputSchema: {
       agent: agentRef,
-      amountUsd: z.number().nonnegative(),
+      amountUsd: z.number().nonnegative().describe('Hypothetical spend amount in USD, not SOL or token units.'),
       url: z.string().optional(),
     },
   },
@@ -488,19 +506,19 @@ server.registerTool(
   'agentis_policy_update',
   {
     title: 'Update policy',
-    description: 'Update policy fields. For initialized on-chain agents this submits an on-chain policy update transaction.',
+    description: 'Update policy fields. All monetary limits are USD-denominated. For example, maxPerTx: 1 sets a $1 USD cap, not a 1 SOL cap. For initialized on-chain agents this submits an on-chain policy update transaction.',
     inputSchema: {
       agent: agentRef,
       killSwitch: z.boolean().optional(),
-      maxPerTx: nullableUsd,
-      hourlyLimit: nullableUsd,
-      dailyLimit: nullableUsd,
-      monthlyLimit: nullableUsd,
-      maxBudget: nullableUsd,
+      maxPerTx: z.number().nonnegative().nullable().optional().describe('Maximum USD value allowed per transaction. Set null for unlimited.'),
+      hourlyLimit: z.number().nonnegative().nullable().optional().describe('Maximum cumulative spend in USD per rolling hour. Set null for unlimited.'),
+      dailyLimit: z.number().nonnegative().nullable().optional().describe('Maximum cumulative spend in USD per rolling day. Set null for unlimited.'),
+      monthlyLimit: z.number().nonnegative().nullable().optional().describe('Maximum cumulative spend in USD per calendar month. Set null for unlimited.'),
+      maxBudget: z.number().nonnegative().nullable().optional().describe('Maximum lifetime cumulative spend in USD. Set null for unlimited.'),
       allowedDomains: z.array(z.string()).optional(),
       allowedMints: z.array(z.string()).optional(),
       maxSlippageBps: z.number().int().min(1).max(10_000).nullable().optional(),
-      maxDailySwapVolume: nullableUsd,
+      maxDailySwapVolume: z.number().nonnegative().nullable().optional().describe('Maximum Jupiter swap and recurring volume in USD per rolling 24 hours. Set null for unlimited.'),
     },
   },
   async ({ agent, ...patch }) => {
