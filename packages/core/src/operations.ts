@@ -13,9 +13,9 @@ export const operationInput = z.object({
   to: z.string().min(1).max(128),
   amountAtomic: positiveAtomic,
   maxFeeAtomic: positiveAtomic,
-  reason: z.string().trim().min(1).max(500),
+  reason: z.string().trim().max(500).default(''),
 }).strict()
-export type OperationInput = z.infer<typeof operationInput>
+export type OperationInput = z.input<typeof operationInput>
 
 export const walletPolicy = z.object({
   mode: z.enum(['ask', 'automatic', 'paused']),

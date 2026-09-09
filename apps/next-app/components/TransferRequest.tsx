@@ -38,7 +38,7 @@ export default function TransferRequest() {
       <label>Recipient<input name="to" className={inputClass} required placeholder={network?.key === 'solana' ? 'Solana address' : '0x…'} /></label>
       <label>Amount ({asset?.symbol})<input name="amount" className={inputClass} required inputMode="decimal" placeholder="0.00001" /></label>
       <label>Fee budget ({network?.currency})<input key={network?.key} name="fee" className={inputClass} required inputMode="decimal" defaultValue={network?.key === 'solana' ? '0.003' : network?.key === 'base' ? '0.0001' : '0.01'} /></label>
-      <label className="sm:col-span-2">What is this payment for?<input name="reason" className={inputClass} required maxLength={500} /></label>
+      <label className="sm:col-span-2">What is this payment for? (optional)<input name="reason" className={inputClass} maxLength={500} /></label>
       {submit.error && <p role="alert" className="sm:col-span-2">{submit.error.message}</p>}
       <button disabled={submit.isPending} className="bg-black p-4 font-mono text-xs uppercase tracking-widest text-beige disabled:opacity-40 sm:col-span-2">{submit.isPending ? 'Requesting…' : 'Review payment'}</button>
     </form>
