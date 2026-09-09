@@ -12,7 +12,14 @@ export function privyIdentity(appId: string, appSecret: string, authorizationKey
       let detail = error instanceof Error ? error.message : 'Unknown provider error'
       for (const secret of [appSecret, authorizationKey, userJwt]) if (secret) detail = detail.replaceAll(secret, '[redacted]')
       detail = detail.replace(/https?:\/\/\S+/g, '[url]').replace(/[A-Za-z0-9_+/=-]{24,}/g, '[redacted]').replace(/[\r\n\t]/g, ' ').slice(0, 600)
+      if (userJwt) {
+        try {
+          const [header, payload] = userJwt.split('.').slice(0, 2).map(part => JSON.parse(Buffer.from(part!, 'base64url').toString()))
+          console.error('Privy wallet auth token checks', { algorithm: ['ES256', 'EdDSA', 'RS256'].includes(header.alg) ? header.alg : 'other', audienceMatches: payload.aud === appId || (Array.isArray(payload.aud) && payload.aud.includes(appId)), secondsToExpiry: typeof payload.exp === 'number' ? Math.floor(payload.exp - Date.now() / 1000) : null })
+        } catch { console.error('Privy wallet auth token checks', { malformed: true }) }
+      }
       console.error('Privy wallet setup failed', { stage, status, detail })
+      if (status === 400 && detail.includes('Invalid JWT token provided')) fail(401, 'wallet_reauthentication_required', 'Privy rejected the wallet authorization session. Sign out and sign in again, then retry setup. No ownership update was authorized.')
       fail(503, 'wallet_setup_failed', `Wallet setup failed during ${stage} (provider status: ${status}). Your wallet address has not been replaced.`)
     }
   }
