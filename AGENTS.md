@@ -1,4 +1,4 @@
-# Agentis — Working Handoff
+# Agentis — Project Notes
 
 Keep this a current snapshot, not a diary. Replace stale notes; history belongs in Git. Decisions and implemented behavior are not the same.
 
