@@ -1,28 +1,17 @@
-# backend
+# Agentis backend
 
-To install dependencies:
-
-```bash
-bun install
-```
-
-To run:
-
-```bash
-bun run index.ts
-```
-
-This project was created using `bun init` in bun v1.3.0. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
-
-## OAuth And Remote MCP
-
-Set these values in production:
+Bun/Hono API and worker sharing transactional Postgres/Drizzle operations.
 
 ```sh
-PUBLIC_API_URL=https://api.agentis.systems
-DASHBOARD_URL=https://agentis.systems
-MCP_INTROSPECTION_SECRET=<shared-random-secret>
+# Root: bun install && bun run build:packages
+# Root: docker compose -p agentis-rewrite up -d --wait
+# Configure private backend environment using .env.example, then:
+bun run db:migrate
+bun run index.ts
+# Separate terminal:
+bun run worker
 ```
 
-`MCP_INTROSPECTION_SECRET` must match the Cloudflare Worker secret. Local
-development falls back to `agentis-local-mcp-secret`.
+`DATABASE_URL` is required; no JSON fallback or automatic startup migrations. Execution defaults disabled. Only explicit local Anvil mode executes; Privy is read-only auth/wallet verification for now.
+
+See `../../docs/architecture.md` for API, approval security, limitations and local setup. Backend tests create isolated loopback-only databases: `bun run test:backend` from root.

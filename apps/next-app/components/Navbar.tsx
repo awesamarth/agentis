@@ -8,7 +8,7 @@ export default function Navbar({ showCrumb }: { showCrumb?: string }) {
   const { ready, authenticated, user, login, logout } = usePrivy()
 
   return (
-    <nav className="flex items-center justify-between px-12 py-6 border-b border-beige-darker">
+    <nav className="flex items-center justify-between px-6 py-5 sm:px-12 sm:py-6 border-b border-beige-darker">
       <div className="flex items-center gap-3">
         <Link href="/" className="flex items-center gap-3">
           <div className="w-8 h-8 bg-black flex items-center justify-center font-serif text-beige text-lg font-black cursor-pointer">
@@ -21,17 +21,17 @@ export default function Navbar({ showCrumb }: { showCrumb?: string }) {
         )}
       </div>
 
-      <div className="flex items-center gap-6">
+      <div className="flex items-center gap-3 sm:gap-6">
         <a
           href="https://docs.agentis.systems"
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1.5 font-mono text-xs text-ink-muted tracking-widest hover:text-ink transition-colors"
+          className="hidden items-center gap-1.5 sm:inline-flex font-mono text-xs text-ink-muted tracking-widest hover:text-ink transition-colors"
         >
           docs
           <ArrowUpRight className="h-3 w-3" strokeWidth={1.8} aria-hidden="true" />
         </a>
-        <Link href="/dashboard" className="font-mono text-xs text-ink-muted tracking-widest hover:text-ink transition-colors">
+        <Link href="/dashboard" className="hidden sm:block font-mono text-xs text-ink-muted tracking-widest hover:text-ink transition-colors">
           dashboard
         </Link>
         {ready && authenticated ? (
@@ -48,9 +48,6 @@ export default function Navbar({ showCrumb }: { showCrumb?: string }) {
           </>
         ) : (
           <>
-            <a href="/dashboard" className="font-mono text-xs text-ink-muted tracking-widest hover:text-ink transition-colors">
-              try without login →
-            </a>
             <button
               onClick={login}
               className="bg-black text-beige font-mono text-xs tracking-widest px-5 py-2 hover:bg-ink transition-colors cursor-pointer"

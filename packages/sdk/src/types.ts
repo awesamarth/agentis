@@ -1,125 +1,17 @@
-// Re-export from core for SDK consumers
-export type { Policy, AgentInfo, TxRecord, SpendRecord } from '@agentis-hq/core'
-export { AgentisError, KillSwitchError, PolicyError, InsufficientFundsError, PaymentError } from '@agentis-hq/core'
-
-// SDK-specific types
-export type AgentisConfig = {
-  apiKey: string
-  baseUrl?: string
-  autoEarn?: boolean
-  onPayment?: (details: PaymentDetails) => void
-  simulate?: boolean
-}
-
-export type PaymentDetails = {
-  url: string
-  amount: string
-  currency: string
-  recipient: string
-  txHash?: string
-  protocol: 'mpp' | 'x402'
-}
-
-export type AgentTokenBalance = {
-  mint: string
-  rawAmount: string
-  decimals: number
-  amount: number
-  symbol?: string
-}
-
-export type AgentBalance = AgentTokenBalance
-
-export type AgentBalances = {
-  walletAddress: string
-  native: AgentTokenBalance
-  tokens: AgentTokenBalance[]
-  balances: AgentTokenBalance[]
-}
-
-export type PolicyCheckInput = {
-  amountUsd: number
-  url?: string
-}
-
-export type PolicyCheckResult = {
-  allowed: boolean
-  reason?: string
-}
-
-export type UmbraAmountOptions = {
-  mint?: string
-  amount?: string | number | bigint
-}
-
-export type UmbraRegisterOptions = {
-  confidential?: boolean
-  anonymous?: boolean
-}
-
-export type UmbraCreateUtxoOptions = UmbraAmountOptions & {
-  to?: string
-}
-
-export type UmbraResponse = Record<string, unknown>
-
-export type JupiterToken = {
-  id: string
-  name?: string
-  symbol?: string
-  icon?: string
-  decimals: number
-  tokenProgram?: string
-  isVerified?: boolean | null
-  organicScore?: number
-  organicScoreLabel?: 'high' | 'medium' | 'low'
-  liquidity?: number
-  usdPrice?: number
-  tags?: string[]
-  audit?: Record<string, unknown>
-}
-
-export type JupiterSwapOptions = {
-  input: string
-  output: string
-  amount: string | number
-  slippageBps?: number
-}
-
-export type JupiterRecurringCreateOptions = JupiterSwapOptions & {
-  numberOfOrders: number
-  intervalSeconds: number
-  minPrice?: number | null
-  maxPrice?: number | null
-  startAt?: number | null
-}
-
-export type JupiterResponse = Record<string, unknown>
-
-export type MPPChallenge = {
-  amount: string
-  currency: string
-  recipient: string
-  sessionId?: string
-  nonce?: string
-  expiresAt?: string
-}
-
-// v1 format (body JSON)
+// Payment discovery fixtures only; these types do not authorize payment execution.
 export type X402PaymentRequirements = {
   scheme: string
   network: string
-  maxAmountRequired?: string  // v1
-  amount?: string             // v2
+  maxAmountRequired?: string
+  amount?: string
   resource?: string
   description?: string
   mimeType?: string
-  payTo?: string              // v1
+  payTo?: string
   maxTimeoutSeconds: number
   asset: string
-  extra?: { feePayer?: string } // v2
+  extra?: { feePayer?: string }
 }
-
 export type X402Response = {
   x402Version: number
   accepts: X402PaymentRequirements[]

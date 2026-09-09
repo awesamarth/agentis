@@ -1,181 +1,37 @@
-import { afterEach, describe, expect, test } from 'bun:test'
-import { AgentisClient } from './client'
-
-const originalFetch = globalThis.fetch
-const API_KEY = 'agt_live_test'
-const BASE_URL = 'https://api.agentis.test'
-const TARGET_URL = 'https://paid.example.test/echo?mode=full'
-const DEVNET_USDC = '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'
-
-const agent = {
-  id: 'agent-test',
-  name: 'test-agent',
-  walletAddress: '11111111111111111111111111111111',
-  policyMode: 'backend',
-  privacyEnabled: false,
-  policy: {
-    hourlyLimit: null,
-    dailyLimit: null,
-    monthlyLimit: null,
-    maxBudget: null,
-    maxPerTx: null,
-    allowedDomains: [],
-    killSwitch: false,
-  },
-  transactions: [],
-}
-
-function x402Challenge(): Response {
-  const requirements = {
-    x402Version: 2,
-    accepts: [{
-      scheme: 'exact',
-      network: 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1',
-      amount: '1000',
-      asset: DEVNET_USDC,
-      payTo: agent.walletAddress,
-      maxTimeoutSeconds: 60,
-    }],
-  }
-  return new Response(null, {
-    status: 402,
-    headers: {
-      'payment-required': btoa(JSON.stringify(requirements)),
-    },
+import { describe, expect, test } from 'bun:test'
+import { AgentisClient, AgentisApiError } from './client'
+import type { Operation, OperationInput } from '@agentis-hq/core/operations'
+const input: OperationInput = { walletId: '00000000-0000-4000-8000-000000000001', action: 'transfer', chainId: 'eip155:31337', asset: 'native', to: '0x0000000000000000000000000000000000001234', amountAtomic: '1000', maxFeeAtomic: '10', reason: 'API task' }
+const operation: Operation = { ...input, id: input.walletId, status: 'pending_approval', operationHash: 'a'.repeat(64), policyVersion: 1, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60000).toISOString(), approvalUrl: 'http://localhost:3000/operations/id', transactionHash: null, error: null, receipt: null }
+describe('SDK operation contract', () => {
+  test('forwards exact amounts and stable idempotency key; pending approval is a result', async () => {
+    const client = new AgentisClient({ baseUrl: 'http://localhost:3001', token: 'executor', fetch: (async (url, init) => {
+      expect(String(url)).toEndWith('/v1/operations')
+      expect(new Headers(init?.headers).get('Idempotency-Key')).toBe('task-1')
+      expect(JSON.parse(String(init?.body))).toEqual(input)
+      expect(init?.redirect).toBe('error')
+      return Response.json(operation, { status: 202 })
+    }) as typeof fetch })
+    expect(await client.operations.create(input, { idempotencyKey: 'task-1' })).toEqual(operation)
   })
-}
-
-function mppChallenge(): Response {
-  const request = {
-    amount: '1000',
-    currency: DEVNET_USDC,
-    recipient: agent.walletAddress,
-    methodDetails: { decimals: 6 },
-  }
-  const encoded = btoa(JSON.stringify(request))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '')
-  return new Response(null, {
-    status: 402,
-    headers: {
-      'www-authenticate': `Payment id="test", realm="test", method="solana", intent="charge", request="${encoded}"`,
-      'cache-control': 'no-store',
-    },
+  test('approval includes the exact binding, not just an operation ID', async () => {
+    const client = new AgentisClient({ baseUrl: 'https://api.example.com', token: async () => 'owner-jwt', fetch: (async (_url, init) => {
+      expect(JSON.parse(String(init?.body))).toEqual({ operationHash: operation.operationHash })
+      return Response.json({ ...operation, status: 'queued' })
+    }) as typeof fetch })
+    expect((await client.operations.approve(operation.id, operation.operationHash)).status).toBe('queued')
   })
-}
-
-afterEach(() => {
-  globalThis.fetch = originalFetch
-})
-
-describe('AgentisClient.fetch', () => {
-  test('forwards an x402 POST body and accepts a 201 response', async () => {
-    const calls: Request[] = []
-    globalThis.fetch = async (input, init) => {
-      const request = new Request(input, init)
-      calls.push(request)
-
-      if (request.url === `${BASE_URL}/sdk/agent`) return Response.json(agent)
-      if (request.url === TARGET_URL) return x402Challenge()
-      if (request.url === `${BASE_URL}/sdk/agent/fetch-paid`) {
-        const payload = await request.json()
-        expect(payload.method).toBe('POST')
-        expect(payload.headers['content-type']).toBe('application/json')
-        expect(atob(payload.bodyBase64)).toBe('{"hello":"world"}')
-
-        const body = JSON.stringify({ created: true })
-        return Response.json({
-          status: 201,
-          headers: {
-            'content-type': 'application/json',
-            'content-length': '999',
-          },
-          bodyBase64: btoa(body),
-        })
-      }
-      throw new Error(`Unexpected request: ${request.url}`)
-    }
-
-    const client = await AgentisClient.create({ apiKey: API_KEY, baseUrl: BASE_URL })
-    const response = await client.fetch(TARGET_URL, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{"hello":"world"}',
-    })
-
-    expect(response.status).toBe(201)
-    expect(response.headers.has('content-length')).toBe(false)
-    expect(await response.json()).toEqual({ created: true })
-    expect(calls).toHaveLength(3)
+  test('wait returns approval/unknown rather than retrying payment', async () => {
+    let requests = 0
+    const client = new AgentisClient({ baseUrl: 'http://localhost:3001', token: 'executor', fetch: (async () => { requests++; return Response.json({ ...operation, status: 'unknown' }) }) as typeof fetch })
+    expect((await client.operations.wait(operation.id)).status).toBe('unknown')
+    expect(requests).toBe(1)
+    const signal = AbortSignal.abort()
+    await expect(client.operations.wait(operation.id, { signal })).rejects.toThrow()
   })
-
-  test('forwards an MPP PATCH body and accepts a 202 binary response', async () => {
-    const responseBytes = new Uint8Array([0, 1, 2, 250, 255])
-    globalThis.fetch = async (input, init) => {
-      const request = new Request(input, init)
-
-      if (request.url === `${BASE_URL}/sdk/agent`) return Response.json(agent)
-      if (request.url === TARGET_URL) return mppChallenge()
-      if (request.url === `${BASE_URL}/sdk/agent/fetch-paid-mpp`) {
-        const payload = await request.json()
-        expect(payload.method).toBe('PATCH')
-        expect(payload.headers['content-type']).toBe('application/octet-stream')
-        expect(Array.from(Uint8Array.from(atob(payload.bodyBase64), char => char.charCodeAt(0))))
-          .toEqual([9, 8, 7])
-
-        return Response.json({
-          status: 202,
-          headers: {
-            'content-type': 'application/octet-stream',
-            'content-encoding': 'gzip',
-          },
-          bodyBase64: btoa(String.fromCharCode(...responseBytes)),
-        })
-      }
-      throw new Error(`Unexpected request: ${request.url}`)
-    }
-
-    const client = await AgentisClient.create({ apiKey: API_KEY, baseUrl: BASE_URL })
-    const response = await client.fetch(TARGET_URL, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/octet-stream' },
-      body: new Uint8Array([9, 8, 7]),
-    })
-
-    expect(response.status).toBe(202)
-    expect(response.headers.has('content-encoding')).toBe(false)
-    expect(Array.from(new Uint8Array(await response.arrayBuffer()))).toEqual(Array.from(responseBytes))
-  })
-
-  test('returns non-402 responses without using the payment proxy', async () => {
-    let calls = 0
-    globalThis.fetch = async (input, init) => {
-      const request = new Request(input, init)
-      calls++
-      if (request.url === `${BASE_URL}/sdk/agent`) return Response.json(agent)
-      return new Response(null, { status: 204 })
-    }
-
-    const client = await AgentisClient.create({ apiKey: API_KEY, baseUrl: BASE_URL })
-    const response = await client.fetch(TARGET_URL, { method: 'DELETE' })
-
-    expect(response.status).toBe(204)
-    expect(calls).toBe(2)
-  })
-
-  test('surfaces payment backend and facilitator failures', async () => {
-    globalThis.fetch = async (input, init) => {
-      const request = new Request(input, init)
-      if (request.url === `${BASE_URL}/sdk/agent`) return Response.json(agent)
-      if (request.url === TARGET_URL) return x402Challenge()
-      if (request.url === `${BASE_URL}/sdk/agent/fetch-paid`) {
-        return Response.json({ error: 'Facilitator unavailable' }, { status: 502 })
-      }
-      throw new Error(`Unexpected request: ${request.url}`)
-    }
-
-    const client = await AgentisClient.create({ apiKey: API_KEY, baseUrl: BASE_URL })
-    expect(client.fetch(TARGET_URL)).rejects.toThrow('Facilitator unavailable')
+  test('typed API errors and unsafe base URL rejection', async () => {
+    const client = new AgentisClient({ baseUrl: 'https://api.example.com', token: 'executor', fetch: (async () => Response.json({ error: { code: 'owner_required', message: 'Owner only' } }, { status: 403 })) as typeof fetch })
+    await expect(client.operations.approve(operation.id, operation.operationHash)).rejects.toBeInstanceOf(AgentisApiError)
+    expect(() => new AgentisClient({ baseUrl: 'http://example.com', token: 'secret' })).toThrow()
   })
 })

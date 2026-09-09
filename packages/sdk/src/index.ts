@@ -1,17 +1,2 @@
-export { AgentisClient } from './client'
-export { SOL_MINT } from './payment'
-export type {
-  AgentisConfig,
-  AgentBalance,
-  AgentBalances,
-  AgentTokenBalance,
-  PaymentDetails,
-  PolicyCheckInput,
-  PolicyCheckResult,
-  UmbraAmountOptions,
-  UmbraCreateUtxoOptions,
-  UmbraRegisterOptions,
-  UmbraResponse,
-} from './types'
-export type { Policy, AgentInfo } from '@agentis-hq/core'
-export { KillSwitchError, PolicyError, InsufficientFundsError, PaymentError, AgentisError } from '@agentis-hq/core'
+export { AgentisClient, AgentisApiError, type AgentisConfig, type AgentisWallet, type AgentisAgent, type AgentSettings } from './client'
+export type { Operation, OperationInput, OperationStatus, WalletPolicy } from '@agentis-hq/core/operations'

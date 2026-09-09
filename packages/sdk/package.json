@@ -1,7 +1,7 @@
 {
   "name": "@agentis-hq/sdk",
   "version": "0.2.0",
-  "description": "Agentis SDK — AI agent payment infrastructure for Solana",
+  "description": "Agentis SDK — scoped financial operations, approvals and receipts",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -29,15 +29,25 @@
     "dev": "tsup --watch"
   },
   "dependencies": {
-    "@agentis-hq/core": "^0.2.0",
-    "@solana/kit": "^6.8.0",
+    "@agentis-hq/core": "^0.2.0"
+  },
+  "peerDependencies": {
     "@solana/mpp": "^0.5.2",
     "@x402/core": "~2.10.0",
     "@x402/svm": "~2.10.0",
-    "gill": "^0.14.0",
     "mppx": "^0.5.17"
   },
+  "peerDependenciesMeta": {
+    "@solana/mpp": { "optional": true },
+    "@x402/core": { "optional": true },
+    "@x402/svm": { "optional": true },
+    "mppx": { "optional": true }
+  },
   "devDependencies": {
+    "@solana/mpp": "^0.5.2",
+    "@x402/core": "~2.10.0",
+    "@x402/svm": "~2.10.0",
+    "mppx": "^0.5.17",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0"
   }

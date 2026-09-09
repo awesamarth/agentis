@@ -1,216 +1,73 @@
 # Agentis
 
-Complete financial infrastructure for AI agents on Solana.
+SDK-first financial execution for agents. Developers integrate once; their users control wallet access, approvals, budgets and receipts.
 
-Agentis gives AI agents wallets, payment rails, spending controls, privacy flows, and yield access. It is built for agents that need to hold funds, pay for work, obey budgets, move privately, and put idle capital to use.
+**Rewrite checkpoint, not a production release.** Base is the target default chain; only local Anvil native transfers execute in this working tree. Privy authentication and read-only user-owned wallet linking are implemented; Privy signing/Intents, paid fetch, other chains and plugins are not enabled. Previously published packages/deployments still run the old prototype.
 
-Agentis is live at [agentis.systems](https://agentis.systems). Documentation is available at [docs.agentis.systems](https://docs.agentis.systems).
+## Local development
 
-## Why Agentis
-
-AI agents are starting to transact onchain. They need to pay APIs, access x402 and MPP endpoints, interact with protocols, coordinate with other agents, and move funds on behalf of users.
-
-A wallet alone is not enough for that. A serious spending agent needs:
-
-- a wallet it can operate
-- policy limits before money moves
-- payment support for machine-payable endpoints
-- privacy when flows should not be public
-- yield for idle funds
-- interfaces that both humans and agents can use
-
-Agentis brings those pieces into one Solana-native control plane.
-
-## What Agentis Includes
-
-### Agent wallets
-
-Create hosted agent wallets from the dashboard, CLI, or MCP server. Agentis also supports local encrypted wallets through the CLI for users who want local custody.
-
-### Payments
-
-Agents can pay x402 and MPP protected endpoints through the Agentis SDK, CLI, or MCP server. `agentis.fetch()` and `agentis fetch` handle payment-required responses, check policy, and route the payment through the selected agent wallet.
-
-### Policy enforcement
-
-Agentis policies are checked before spends happen. Policies can include max-per-transaction limits, daily budgets, total budgets, allowed domains, and kill switches. Quasar-based on-chain policy checks are supported for direct SOL sends on Solana devnet.
-
-### Privacy
-
-Private agent wallets use Umbra privacy flows. Agents can register for privacy, inspect encrypted balance, deposit, withdraw, create receiver-claimable UTXOs, scan, and claim.
-
-### Jupiter Earn
-
-Agentis can deposit idle mainnet USDC into Jupiter Earn, show Earn positions, withdraw supplied USDC, and sweep non-zero USDC balances across hosted agents.
-
-### Human and agent interfaces
-
-Agentis can be operated from:
-
-- Dashboard, for humans managing agents visually
-- CLI, for local workflows and scripts
-- SDK, for apps and agent runtimes
-- MCP, for AI assistants and coding agents
-- SKILL.md, so agents can understand how to use Agentis
-
-## Quick Start
-
-Create an account on the [Agentis dashboard](https://agentis.systems/dashboard), then create and fund an agent wallet.
-
-Set policy limits before giving an AI agent control:
-
-- max per transaction
-- daily or monthly budget
-- allowed domains
-- kill switch
-
-Then install the Agentis skill in your AI agent environment:
-
-```bash
-npx skills add awesamarth/agentis
+```sh
+bun install
+bun run build:packages
+docker compose -p agentis-rewrite up -d --wait
+# Set DATABASE_URL in your private backend environment using .env.example.
+cd apps/backend
+bun run db:migrate
+bun run index.ts
+# Separate terminal, same backend environment:
+bun run worker
 ```
 
-The intended flow is: a human creates an agent wallet, applies policy, then an AI agent operates that wallet through Agentis while staying inside those limits. You can control the same wallet from the dashboard, CLI, SDK, MCP server, or through an AI agent using the Agentis skill.
+Dashboard: `cd apps/next-app && bun dev`. Set `NEXT_PUBLIC_BACKEND_URL=http://localhost:3001` and your Privy app ID. No environment files containing secrets are committed.
 
-For local assistants and coding agents with shell access, install the CLI first. The Agentis skill gives the agent enough context to use `agentis --help`, pick the right commands, and operate wallets through the CLI:
-
-```bash
-npm install -g @agentis-hq/cli
-agentis login
-agentis agent list
-agentis fetch https://example.com/paid-data --agent my-agent
-```
-
-Use MCP as the secondary path when you do not want a global CLI installed, or when your AI agent host already has Agentis MCP tools connected.
-
-See the [quick start docs](https://docs.agentis.systems/docs/agentis) for the full path.
-
-## Agent Skill
-
-Agentis includes an installable `SKILL.md` for compatible coding agents. The skill tells an AI agent how to choose between the dashboard, CLI, SDK, and MCP server, and how to operate Agentis safely.
-
-Install it with the Vercel Agent Skills CLI:
-
-```bash
-npx skills add awesamarth/agentis
-```
-
-The skill lives at [`skills/agentis/SKILL.md`](skills/agentis/SKILL.md).
-
-## CLI
-
-Install globally:
-
-```bash
-npm install -g @agentis-hq/cli
-agentis
-```
-
-Common commands:
-
-```bash
-agentis login
-agentis wallet create --name my-agent
-agentis wallet create --name local-agent --local
-agentis agent list
-agentis agent balance my-agent
-agentis fetch https://example.com/paid-data --agent my-agent
-agentis policy set my-agent --max-per-tx 1 --daily 10
-agentis earn positions my-agent --mainnet
-agentis privacy status --agent my-agent
-```
-
-Read the [CLI docs](https://docs.agentis.systems/docs/cli) or the package README at [`packages/cli`](packages/cli).
+Execution defaults to **disabled**. For local Anvil, see [architecture and runbook](docs/architecture.md). No automatic migration of JSON data or mainnet execution.
 
 ## SDK
-
-Install:
-
-```bash
-npm install @agentis-hq/sdk
-```
-
-Use Agentis from an app backend or agent runtime:
 
 ```ts
 import { AgentisClient } from '@agentis-hq/sdk'
 
-const agentis = await AgentisClient.create({
-  apiKey: process.env.AGENTIS_API_KEY!,
+const agentis = new AgentisClient({
+  baseUrl: 'http://localhost:3001',
+  token: process.env.AGENTIS_TOKEN!, // wallet-scoped executor grant
 })
-
-const res = await agentis.fetch('https://example.com/paid-data')
-const data = await res.json()
-
-await agentis.policy.update({
-  maxPerTx: 1,
-  dailyLimit: 10,
-})
+const operation = await agentis.operations.create({
+  walletId: process.env.AGENTIS_WALLET_ID!,
+  action: 'transfer',
+  chainId: 'eip155:31337',
+  asset: 'native',
+  to: '0x0000000000000000000000000000000000001234',
+  amountAtomic: '1000000000000000',
+  maxFeeAtomic: '1000000000000000',
+  reason: 'Local demo transfer',
+}, { idempotencyKey: 'demo-task-1' })
+// Reuse this key for retries of this task, never for a different task.
+console.log(operation.status, operation.approvalUrl)
 ```
 
-The SDK is intended for trusted server-side or agent-runtime environments. Do not expose Agentis API keys in browser clients.
+Runnable local owner → grant → approval → receipt example: `bun examples/operation.ts` (requires the local API/worker and a funded disposable Anvil wallet).
 
-Read the [SDK docs](https://docs.agentis.systems/docs/sdk) or the package README at [`packages/sdk`](packages/sdk).
+Approval is a normal asynchronous result. Agents cannot administer policy or approve themselves. The owner uses the dashboard or an owner-authenticated SDK client to approve the displayed `operationHash`. `operations.wait()` returns on approval-required, unknown or terminal status; it never resubmits payment.
 
-## MCP
+## Validation
 
-Agentis ships a local stdio MCP server for AI assistants that support MCP.
-
-```bash
-npm install -g @agentis-hq/mcp
+```sh
+bun run check                   # builds packages, then typechecks interfaces/backend/dashboard
+bun run test                    # unit tests + isolated Postgres/Anvil integration tests
+cd apps/next-app && bun run lint
 ```
 
-Example MCP config:
+`test:backend` requires Docker Postgres above and Anvil on PATH. It creates/drops only uniquely named test databases on loopback, and starts/stops its own Anvil process using a random disposable key. No live funds are touched.
 
-```json
-{
-  "mcpServers": {
-    "agentis": {
-      "command": "agentis-mcp",
-      "env": {
-        "AGENTIS_ACCOUNT_KEY": "agt_user_..."
-      }
-    }
-  }
-}
-```
+## Boundaries
 
-The MCP server exposes account-level tools for listing agents, creating agents, reading balances, sending SOL, fetching paid URLs, updating policy, using Jupiter Earn, and operating Umbra privacy flows.
+- One operation pipeline and transactional budget reservations, including fee caps.
+- Current budget model: **native atomic units per configured wallet/chain**, not cross-chain USD.
+- Local Anvil approvals are application-level demo authorization; verified independent Privy user authorization is still outstanding.
+- Unknown submissions retain reservations and block the wallet lane. Reconciliation never blindly broadcasts another transaction.
+- Guest Solana devnet wallets remain in browser localStorage; explicitly insecure against same-origin scripts/device compromise. Never fund on mainnet.
+- Local CLI wallet files use SLIP-0010 Ed25519 derivation and filesystem permissions, not empty-password encryption.
+- Jupiter/Umbra/Link/paid-fetch plugins are explicitly unavailable pending migration. Remote MCP is also unavailable; local stdio uses executor grants.
+- The Agentis facilitator product and Quasar enforcement wiring have been removed.
 
-Read the [MCP docs](https://docs.agentis.systems/docs/mcp) or the package README at [`packages/mcp`](packages/mcp).
-
-## Packages
-
-| Package | Purpose |
-| --- | --- |
-| [`@agentis-hq/core`](https://www.npmjs.com/package/@agentis-hq/core) | Shared types and policy engine |
-| [`@agentis-hq/sdk`](https://www.npmjs.com/package/@agentis-hq/sdk) | Runtime SDK for agent wallets and paid fetches |
-| [`@agentis-hq/cli`](https://www.npmjs.com/package/@agentis-hq/cli) | Command line interface |
-| [`@agentis-hq/mcp`](https://www.npmjs.com/package/@agentis-hq/mcp) | Local stdio MCP server |
-
-## Security Model
-
-Agentis separates account access from agent access.
-
-- Account keys are used by the CLI and MCP server to operate an account's agents.
-- Agent API keys are scoped to individual agent wallets and are used by the SDK.
-- Full keys are shown only when created or regenerated.
-- Backend reads return masked key metadata, not plaintext keys.
-- Policies are checked before signing or proxying spends.
-
-Mainnet actions, including Jupiter Earn, move real funds. Review agent policies and balances before enabling autonomous workflows.
-
-## Status
-
-Agentis is early, live, and actively changing. The current product supports hosted agent wallets, local CLI wallets, policy controls, x402/MPP paid fetches, Umbra privacy flows, Jupiter Earn, the dashboard, CLI, SDK, MCP server, and agent skill instructions.
-
-Swaps, richer production observability, and exportable self-custodial hosted wallets are planned next steps.
-
-## Links
-
-- Website: [agentis.systems](https://agentis.systems)
-- Dashboard: [agentis.systems/dashboard](https://agentis.systems/dashboard)
-- Docs: [docs.agentis.systems](https://docs.agentis.systems)
-- CLI package: [`@agentis-hq/cli`](https://www.npmjs.com/package/@agentis-hq/cli)
-- SDK package: [`@agentis-hq/sdk`](https://www.npmjs.com/package/@agentis-hq/sdk)
-- MCP package: [`@agentis-hq/mcp`](https://www.npmjs.com/package/@agentis-hq/mcp)
+See [AGENTS.md](AGENTS.md) for the living handoff and [docs/architecture.md](docs/architecture.md) for decisions, API routes, verification gaps and next steps.

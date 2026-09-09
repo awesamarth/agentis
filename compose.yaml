@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: agentis
+      POSTGRES_PASSWORD: agentis-local-only
+      POSTGRES_DB: agentis_dev
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - agentis_rewrite_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentis -d agentis_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  agentis_rewrite_pg:

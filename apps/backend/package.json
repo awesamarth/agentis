@@ -3,30 +3,31 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "dev": "bun --watch index.ts",
+    "worker": "bun src/worker.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "bun src/db/migrate.ts",
+    "check": "tsc --noEmit --incremental false"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "drizzle-kit": "^0.31.10"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
     "@agentis-hq/core": "workspace:*",
-    "@agentis-hq/sdk": "workspace:*",
-    "@privy-io/node": "^0.15.0",
-    "@privy-io/server-auth": "^1.32.5",
-    "@solana-program/system": "^0.12.0",
-    "@solana/kit": "^6.8.0",
-    "@solana/mpp": "^0.5.2",
-    "@solana/spl-token": "^0.4.14",
-    "@solana/web3.js": "^1.98.4",
-    "@umbra-privacy/sdk": "5.0.0-rc.6",
-    "@umbra-privacy/web-zk-prover": "^2.0.1",
-    "@x402/core": "~2.10.0",
-    "@x402/evm": "^2.10.0",
-    "@x402/fetch": "~2.10.0",
-    "@x402/svm": "~2.10.0",
-    "gill": "^0.14.0",
+    "@privy-io/node": "0.34.0",
+    "@solana-program/token": "0.11.0",
+    "@solana/kit": "6.8.0",
+    "@solana/web3.js": "3.0.0-rc.3",
+    "drizzle-orm": "^0.45.2",
     "hono": "^4.12.14",
-    "mppx": "^0.5.17"
+    "ox": "0.14.15",
+    "postgres": "^3.4.9",
+    "viem": "^2.56.3",
+    "zod": "^4.5.4"
   }
 }

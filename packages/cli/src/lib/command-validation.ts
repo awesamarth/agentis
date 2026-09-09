@@ -1,19 +1,7 @@
 const commandTree: Record<string, readonly string[] | null> = {
-  login: null,
-  logout: null,
-  whoami: null,
-  version: null,
+  capabilities: null,
   wallet: ['create', 'list'],
-  agent: ['create', 'send', 'balance'],
-  fetch: null,
-  earn: ['deposit', 'withdraw', 'positions', 'sweep'],
-  tokens: ['search'],
-  swap: ['quote', 'execute'],
-  portfolio: null,
-  recurring: ['list', 'create', 'cancel'],
-  facilitator: ['create', 'list', 'publish'],
-  privacy: ['status', 'register', 'balance', 'deposit', 'withdraw', 'create-utxo', 'scan', 'claim-latest'],
-  policy: ['get', 'set', 'init-onchain'],
+  operations: ['create', 'list', 'get', 'wait', 'approve', 'reject'],
 }
 
 export class CliCommandError extends Error {

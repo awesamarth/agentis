@@ -1,0 +1,1 @@
+ALTER TABLE "operations" ADD COLUMN "settledAt" timestamp with time zone;

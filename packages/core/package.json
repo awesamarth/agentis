@@ -12,6 +12,12 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
+    "./operations": {
+      "types": "./dist/operations.d.ts",
+      "import": "./dist/operations.js",
+      "require": "./dist/operations.cjs"
+    },
+    "./solana-transfer": { "types": "./dist/solana-transfer.d.ts", "import": "./dist/solana-transfer.js", "require": "./dist/solana-transfer.cjs" },
     "./package.json": "./package.json"
   },
   "files": [
@@ -22,8 +28,14 @@
     "build": "tsup",
     "dev": "tsup --watch"
   },
+  "peerDependencies": { "@solana/web3.js": "3.0.0-rc.3", "@solana/kit": "6.8.0", "@solana-program/token": "0.11.0" },
+  "peerDependenciesMeta": { "@solana/web3.js": { "optional": true }, "@solana/kit": { "optional": true }, "@solana-program/token": { "optional": true } },
   "devDependencies": {
+    "@solana/web3.js": "3.0.0-rc.3", "@solana/kit": "6.8.0", "@solana-program/token": "0.11.0",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "zod": "^4.5.4"
   }
 }

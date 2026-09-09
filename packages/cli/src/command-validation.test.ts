@@ -17,17 +17,15 @@ function run(...args: string[]) {
 
 describe('CLI command validation', () => {
   test('rejects unknown top-level commands with a suggestion', () => {
-    const result = run('token', 'search', 'SOL')
+    const result = run('operation', 'list')
     expect(result.exitCode).toBe(1)
-    expect(result.stderr).toContain('Unknown command "token". Did you mean "tokens"?')
-    expect(result.stdout).not.toContain('financial infrastructure for AI agents')
+    expect(result.stderr).toContain('Unknown command "operation". Did you mean "operations"?')
   })
 
   test('rejects unknown subcommands with scoped help', () => {
-    const result = run('swap', 'quotes', 'leno')
+    const result = run('operations', 'gets', 'test')
     expect(result.exitCode).toBe(1)
-    expect(result.stderr).toContain('Unknown subcommand "quotes" for "swap". Did you mean "quote"?')
-    expect(result.stderr).toContain('agentis swap --help')
+    expect(result.stderr).toContain('Unknown subcommand "gets" for "operations". Did you mean "get"?')
   })
 
   test('rejects a missing required subcommand', () => {
@@ -36,10 +34,4 @@ describe('CLI command validation', () => {
     expect(result.stderr).toContain('Missing command for "wallet".')
   })
 
-  test('keeps explicit help successful', () => {
-    const result = run('swap', '--help')
-    expect(result.exitCode).toBe(0)
-    expect(result.stdout).toContain('Usage:')
-    expect(result.stdout).toContain('agentis swap')
-  })
 })

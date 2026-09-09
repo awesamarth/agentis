@@ -104,6 +104,7 @@ function parseMPPRequest(
     }
     // amount is in atomic units (e.g. 1000 = $0.001 USDC with 6 decimals)
     const decimals = req.methodDetails?.decimals ?? 6
+    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) return null
     const atomicAmount = Number(req.amount)
     if (!Number.isSafeInteger(atomicAmount) || atomicAmount <= 0) return null
     if (!req.currency || !req.recipient) return null
@@ -118,28 +119,5 @@ function parseMPPRequest(
   }
 }
 
-// Parse amount from MPP challenge — kept for backwards compat
-export function parseAmount(amountStr: string, currency: string): number {
-  const num = parseFloat(amountStr.replace(/[^0-9.]/g, ''))
-  return isNaN(num) ? 0 : num
-}
-
-// Stablecoin mints — amount is already USD, no conversion needed
-const STABLECOIN_MINTS = new Set([
-  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC mainnet
-  'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', // USDT mainnet
-  '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH', // USDG mainnet
-  '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU', // USDC devnet (Circle faucet)
-])
-
-export const SOL_MINT = 'So11111111111111111111111111111111111111112'
-
-export function isStablecoin(mint: string): boolean {
-  return STABLECOIN_MINTS.has(mint)
-}
-
-export function tokenAmountFromRequirements(req: X402PaymentRequirements): number {
-  // amount is in atomic token units (USDC = 6 decimals), v1 uses maxAmountRequired
-  const units = parseInt(req.maxAmountRequired ?? req.amount ?? '0', 10)
-  return units / 1e6
-}
+// No valuation/decimal guessing here. A future paid-fetch plugin must resolve
+// token metadata and bind checked terms to execution before paying.

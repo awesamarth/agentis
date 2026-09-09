@@ -1,8 +1,0 @@
-[project]
-name = "quasar-proj"
-
-[toolchain]
-type = "solana"
-
-[testing]
-framework = "quasarsvm-web3js"

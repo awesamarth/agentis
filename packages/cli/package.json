@@ -30,7 +30,6 @@
   },
   "files": [
     "dist",
-    "templates",
     "assets",
     "README.md",
     "package.json"
@@ -38,20 +37,13 @@
   "scripts": {
     "dev": "bun run src/index.ts",
     "build": "tsup",
-    "check": "bun --check src/index.ts"
+    "check": "tsc --noEmit --incremental false"
   },
   "dependencies": {
-    "@agentis-hq/core": "^0.2.0",
     "@agentis-hq/sdk": "^0.2.0",
-    "@napi-rs/keyring": "^1.2.0",
-    "@noble/ciphers": "^2.2.0",
-    "@noble/curves": "^2.2.0",
-    "@noble/hashes": "^2.2.0",
-    "@scure/bip32": "^2.2.0",
     "@scure/bip39": "^2.2.0",
-    "@solana-program/system": "^0.12.0",
-    "@solana/kit": "^6.8.0",
-    "uuid": "^14.0.0"
+    "@solana/web3.js": "3.0.0-rc.3",
+    "micro-ed25519-hdkey": "^0.1.2"
   },
   "devDependencies": {
     "@types/bun": "latest",

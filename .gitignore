@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Retired Quasar source is removed; preserve/ignore existing local build artifacts and keys.
+/quasar-proj/
+
 # Build outputs
 dist/
 dist-worker/

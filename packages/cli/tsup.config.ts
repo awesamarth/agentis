@@ -9,7 +9,4 @@ export default defineConfig({
   dts: false,
   splitting: false,
   sourcemap: false,
-  external: [
-    /^@napi-rs\//,
-  ],
 })

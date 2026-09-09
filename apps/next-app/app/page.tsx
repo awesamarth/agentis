@@ -6,43 +6,43 @@ import { useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 
 const moneyStack = [
-  { label: 'hold', detail: 'hosted and local wallets' },
-  { label: 'pay', detail: 'MPP and x402 requests' },
-  { label: 'limit', detail: 'backend and on-chain policy' },
-  { label: 'hide', detail: 'Umbra private flows' },
-  { label: 'earn', detail: 'Jupiter Earn positions' },
+  { label: 'request', detail: 'one SDK integration' },
+  { label: 'approve', detail: 'human-controlled access' },
+  { label: 'limit', detail: 'bounded delegation' },
+  { label: 'execute', detail: 'explicit capabilities' },
+  { label: 'track', detail: 'operations and receipts' },
 ]
 
 const productSections = [
   {
     kicker: 'agent wallets',
     title: 'Every agent starts with a money account.',
-    body: 'Create hosted Solana wallets, manage API keys, see balances, and keep the agent wallet separate from the human who owns it.',
-    items: ['Privy-backed hosted wallets', 'masked API keys', 'dashboard and CLI control'],
+    body: 'Keep the agent’s delegated wallet access separate from the human who owns it. Privy wallet linking is available; hosted execution is undergoing verification.',
+    items: ['user-owned wallets', 'scoped executor grants', 'dashboard and CLI control'],
   },
   {
     kicker: 'payments',
     title: 'Agents can pay for work without leaving policy behind.',
-    body: 'Agentis handles MPP and x402 payment requests through the same wallet and spend-control path used by direct transfers.',
-    items: ['MPP paid fetch', 'x402 paid fetch', 'direct SOL sends'],
+    body: 'The rewrite routes financial operations through one authorization and receipt lifecycle. Local Anvil transfers work; x402 and MPP plugins are being migrated.',
+    items: ['explicit operation state', 'approval requests', 'stable retry keys'],
   },
   {
     kicker: 'policy',
     title: 'Budgets are enforced before money moves.',
-    body: 'Set limits, allowed domains, per-transaction caps, and kill switches. For direct SOL sends, Agentis can also route policy checks through the Quasar program on Solana devnet.',
-    items: ['hourly and daily limits', 'kill switch', 'Quasar on-chain policy'],
+    body: 'Agents cannot change their own permissions or approve themselves. The foundation reserves budgets transactionally and rejects operations outside their grants.',
+    items: ['budget reservations', 'pause and revoke', 'owner-only approvals'],
   },
   {
     kicker: 'privacy',
-    title: 'Private flows are available when agents need them.',
-    body: 'Umbra support gives private agents encrypted balances, deposits, withdrawals, scans, and receiver-claimable UTXO flows from the agent page.',
-    items: ['Umbra registration', 'encrypted balance', 'UTXO scan and claim'],
+    title: 'Privacy belongs in an optional capability.',
+    body: 'Umbra will return as a plugin behind the same execution boundary—not a separate signing path. It is unavailable in the current rewrite preview.',
+    items: ['optional plugin', 'explicit permissions', 'migration pending'],
   },
   {
     kicker: 'yield',
-    title: 'Idle USDC can move into Jupiter Earn.',
-    body: 'Agentis shows existing Jupiter Earn positions and can deposit mainnet USDC for a single agent or sweep available balances across hosted agents.',
-    items: ['USDC deposits', 'position tracking', 'agent sweep'],
+    title: 'Financial integrations extend the core.',
+    body: 'Jupiter treasury capabilities and secondary Link payments are planned plugins. No mainnet execution is enabled in this preview.',
+    items: ['Jupiter plugin', 'Link secondary', 'migration pending'],
   },
   {
     kicker: 'interfaces',
@@ -146,18 +146,18 @@ export default function LandingPage() {
                   A
                 </span>
                 <span className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-ink-muted">
-                  built on Solana
+                  Built for agents that move money
                 </span>
               </div>
 
               <h1 className="animate-fade-up max-w-none font-serif text-5xl font-black leading-[0.92] tracking-normal text-black opacity-0 [animation-delay:80ms] sm:text-6xl md:text-[4.7rem] lg:text-[5.7rem] xl:text-[6.65rem] 2xl:text-[7.25rem]">
-                <span className="block whitespace-nowrap">The complete</span>
-                <span className="block whitespace-nowrap">financial stack</span>
-                <span className="block whitespace-nowrap italic text-ink-muted">for AI agents.</span>
+                <span className="block">The complete</span>
+                <span className="block">financial stack</span>
+                <span className="block italic text-ink-muted">for AI agents.</span>
               </h1>
 
               <p className="animate-fade-up mt-6 max-w-[42rem] font-sans text-base font-light leading-relaxed text-ink-muted opacity-0 [animation-delay:160ms] sm:text-lg xl:max-w-[46rem] xl:text-xl">
-                Wallets, payments, policy enforcement, privacy, and yield for Solana agents across dashboard, CLI, SDK, and MCP.
+                Let agents make payments within your limits, ask for approval when needed, and track every transaction.
               </p>
 
               <div className="animate-fade-up mt-8 flex flex-col gap-4 opacity-0 [animation-delay:240ms] sm:flex-row sm:items-center">
@@ -263,7 +263,7 @@ export default function LandingPage() {
               Dashboard for humans. SDK and MCP for agents. CLI for both.
             </h2>
             <p className="mt-7 max-w-2xl font-sans text-lg font-light leading-relaxed text-beige/70">
-              Create an agent wallet, fund it, set limits, call paid APIs, move privately, and put idle USDC to work from the same Agentis account.
+              One SDK for operation requests, approval links and receipts. The current foundation executes locally; hosted signing and financial plugins are being verified.
             </p>
             <Link
               href="https://docs.agentis.systems"
@@ -289,7 +289,7 @@ export default function LandingPage() {
 
       <footer className="flex flex-col gap-3 border-t border-beige-darker px-6 py-6 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-ink-muted sm:flex-row sm:items-center sm:justify-between sm:px-12">
         <span>agentis.systems</span>
-        <span>Colosseum build · 2026</span>
+        <span>ETHOnline rewrite · 2026</span>
       </footer>
     </main>
   )

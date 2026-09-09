@@ -1,17 +1,14 @@
 ---
-title: Guides
-description: Focused Agentis walkthroughs will live here.
+title: Local integration guide
+description: Test the operation lifecycle without real funds
 ---
 
-Guides are placeholders for deeper walkthroughs.
+1. Build workspace packages with Bun.
+2. Start the dedicated Postgres service using the root Compose file.
+3. Configure a private backend environment and apply Drizzle migrations explicitly.
+4. Run the API and worker separately. Execution defaults disabled; configure Anvil only for local tests.
+5. Create an owner-controlled wallet grant, request an operation using its executor token, approve with the owner, and retrieve the receipt.
 
-Planned guides:
+`bun run test` runs unit tests plus isolated loopback Postgres and Anvil integration tests. See `docs/architecture.md` in the repository for exact commands.
 
-- Create an agent wallet
-- Pay an x402 API
-- Set spend limits
-- Deposit idle USDC into Jupiter Earn
-- Use Umbra privacy
-- Publish an x402 facilitator
-
-For now, start with [Quick Start](../agentis/index.mdx), then use the CLI, SDK, or MCP sections for concrete commands and code.
+Privy execution, provider-enforced human authorization, funding, other chains and optional financial plugins are still being integrated. Local application approvals are not presented as verified Privy cryptographic approvals.

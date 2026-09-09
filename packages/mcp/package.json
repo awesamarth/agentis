@@ -15,16 +15,16 @@
   ],
   "scripts": {
     "dev": "bun run src/index.ts",
-    "check": "bun --check src/index.ts",
+    "check": "tsc --noEmit --incremental false",
     "build": "tsup",
     "build:worker": "wrangler deploy --dry-run --outdir dist-worker",
     "dev:worker": "wrangler dev"
   },
   "dependencies": {
     "@agentis-hq/core": "^0.2.0",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "@solana/kit": "^6.8.0",
-    "zod": "^4.4.1"
+    "@agentis-hq/sdk": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "4.5.4"
   },
   "devDependencies": {
     "@types/bun": "latest",

@@ -1,0 +1,1 @@
+ALTER TABLE "wallets" ADD COLUMN "serverAuthorized" boolean DEFAULT false NOT NULL;

@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1788826064826,
+      "tag": "0000_abandoned_ronan",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788826445371,
+      "tag": "0001_mighty_havok",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788870218272,
+      "tag": "0002_flawless_avengers",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788960442822,
+      "tag": "0003_shared_usd_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788966443191,
+      "tag": "0004_independent_agents",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788968788339,
+      "tag": "0005_hosted_server_authorization",
+      "breakpoints": true
+    }
+  ]
+}

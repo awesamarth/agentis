@@ -1,621 +1,77 @@
-import type {
-  AgentBalances,
-  AgentTokenBalance,
-  AgentisConfig,
-  PaymentDetails,
-  PolicyCheckInput,
-  PolicyCheckResult,
-  UmbraAmountOptions,
-  UmbraCreateUtxoOptions,
-  UmbraRegisterOptions,
-  UmbraResponse,
-  JupiterRecurringCreateOptions,
-  JupiterResponse,
-  JupiterSwapOptions,
-  JupiterToken,
-} from './types'
-import type { AgentInfo, Policy, SpendRecord } from '@agentis-hq/core'
-import { AgentisError, PaymentError } from '@agentis-hq/core'
-import { checkPolicy } from '@agentis-hq/core'
-import {
-  parse402WithBody,
-  tokenAmountFromRequirements,
-  isStablecoin,
-  SOL_MINT,
-} from './payment'
+import type { Operation, OperationInput, WalletPolicy, AuthorizationRequest, UsdLimits } from '@agentis-hq/core/operations'
 
-const DEFAULT_BASE_URL = 'https://api.agentis.systems'
-const SOLANA_DEVNET_RPC = 'https://api.devnet.solana.com'
-const UMBRA_SOL_MINT = SOL_MINT
-const TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+export type AgentisAgent = { id: string; name: string; limits: UsdLimits; mode: 'ask' | 'automatic' | 'paused'; allowedRecipients: string[]; networks: string[]; defaultNetwork: string }
+export type AgentSettings = Pick<AgentisAgent, 'name' | 'limits' | 'mode' | 'allowedRecipients'> & { selection: { networks: string[]; defaultNetwork: string }; enableExecution?: boolean }
+export type AgentisWallet = { id: string; agentId: string | null; serverAuthorized: boolean; address: string; chainId: string; policy: WalletPolicy; policyVersion: number; enabled: boolean }
 
-function jsonSafe(value: unknown): unknown {
-  if (typeof value === 'bigint') return value.toString()
-  if (Array.isArray(value)) return value.map(jsonSafe)
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, entryValue]) => [key, jsonSafe(entryValue)])
-    )
-  }
-  return value
+export type AgentisConfig = {
+  baseUrl: string
+  /** Executor grant, or a fresh Privy owner access token. Never expose an owner token to an agent. */
+  token: string | (() => string | Promise<string>)
+  fetch?: typeof globalThis.fetch
 }
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  const chunkSize = 0x8000
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize))
-  }
-  return btoa(binary)
+export class AgentisApiError extends Error {
+  constructor(public status: number, public code: string, message: string) { super(message) }
 }
-
-function base64ToBytes(value: string): ArrayBuffer {
-  const binary = atob(value)
-  const bytes = new Uint8Array(binary.length)
-  for (let index = 0; index < binary.length; index++) {
-    bytes[index] = binary.charCodeAt(index)
-  }
-  return bytes.buffer as ArrayBuffer
-}
-
-async function serializeRequest(request: Request): Promise<{
-  method: string
-  headers: Record<string, string>
-  bodyBase64?: string
-}> {
-  const method = request.method.toUpperCase()
-  const bodyBase64 = method === 'GET' || method === 'HEAD'
-    ? undefined
-    : bytesToBase64(new Uint8Array(await request.arrayBuffer()))
-
-  return {
-    method,
-    headers: Object.fromEntries(request.headers.entries()),
-    ...(bodyBase64 ? { bodyBase64 } : {}),
-  }
-}
-
-function responseFromProxy(result: {
-  status: number
-  headers?: Record<string, string>
-  body?: string
-  bodyBase64?: string
-}): Response {
-  const headers = new Headers(result.headers)
-  // The backend fetch has already decoded transfer/content encoding.
-  headers.delete('content-encoding')
-  headers.delete('content-length')
-
-  const body = result.bodyBase64
-    ? base64ToBytes(result.bodyBase64)
-    : result.body
-
-  return new Response(body, {
-    status: result.status,
-    headers,
-  })
-}
-
 export class AgentisClient {
-  private config: Required<AgentisConfig>
-  private agent!: AgentInfo
-  private spendHistory: SpendRecord[] = []
-
-  private constructor(config: AgentisConfig) {
-    this.config = {
-      baseUrl: DEFAULT_BASE_URL,
-      autoEarn: false,
-      simulate: false,
-      onPayment: () => {},
-      ...config,
-    }
+  private baseUrl: string
+  constructor(private config: AgentisConfig) {
+    const url = new URL(config.baseUrl)
+    if (url.username || url.password || url.search || url.hash || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)))) throw new Error('API URL must use HTTPS or loopback HTTP')
+    this.baseUrl = config.baseUrl.replace(/\/$/, '')
   }
-
-  static async create(config: AgentisConfig): Promise<AgentisClient> {
-    const client = new AgentisClient(config)
-    await client._bootstrap()
-    return client
-  }
-
-  private async _bootstrap(): Promise<void> {
-    const res = await fetch(`${this.config.baseUrl}/sdk/agent`, {
-      headers: { 'x-api-key': this.config.apiKey },
+  private async request<T>(path: string, method = 'GET', body?: unknown, headers: Record<string, string> = {}, signal?: AbortSignal): Promise<T> {
+    const token = typeof this.config.token === 'function' ? await this.config.token() : this.config.token
+    const response = await (this.config.fetch ?? globalThis.fetch)(`${this.baseUrl}/v1${path}`, {
+      method, redirect: 'error', signal: signal ?? AbortSignal.timeout(15_000),
+      headers: { ...headers, 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new AgentisError((err as any).error ?? 'Failed to initialize agent — check your API key')
-    }
-    this.agent = await res.json()
-    // Seed spend history from DB transactions (amounts in USD)
-    this.spendHistory = this.agent.transactions.map(tx => ({
-      amount: tx.amountUsd ?? tx.amount, // amountUsd preferred, fallback to raw SOL for old records
-      timestamp: tx.timestamp,
-      url: tx.recipient,
-    }))
+    if (response.status === 204) return undefined as T
+    const data = await response.json() as { error?: { code?: string; message?: string } }
+    if (!response.ok) throw new AgentisApiError(response.status, data.error?.code ?? 'api_error', data.error?.message ?? 'Agentis request failed')
+    return data as T
   }
+  capabilities = () => this.request<Record<string, unknown>>('/capabilities')
+  onboarding = {
+    get: () => this.request<{ settings: { networks: string[]; defaultNetwork: string; totalBudgetUsd: string | null; completedAt: string } | null; networks: Array<{ key: string; name: string; chainId: string; chainType: string; currency: string; decimals: number; assets: Array<{ id: OperationInput['asset']; symbol: string; decimals: number }>; explorer: string; executionReady: boolean; testnet: boolean }> }>('/onboarding'),
 
-  private async _solToUsd(amountSol: number): Promise<number> {
-    const response = await globalThis.fetch(`${this.config.baseUrl}/sol-price`)
-    if (!response.ok) throw new PaymentError('Unable to determine SOL/USD price for policy enforcement')
-    const { usd } = await response.json() as { usd?: number }
-    if (!Number.isFinite(usd) || Number(usd) <= 0) {
-      throw new PaymentError('Unable to determine SOL/USD price for policy enforcement')
-    }
-    return amountSol * Number(usd)
   }
-
-  // Drop-in fetch replacement
-  async fetch(url: string, options?: RequestInit): Promise<Response> {
-    const request = new Request(url, options)
-
-    // First attempt — no payment
-    const response = await globalThis.fetch(request.clone())
-
-    if (response.status !== 402) return response
-
-    // Parse payment requirements for policy check
-    const parsed = await parse402WithBody(response)
-    if (!parsed) return response // not a recognized payment format, return as-is
-
-    // Determine amount in token units, then convert to USD for policy check
-    let amountUsd = 0
-    let tokenAmount = 0
-    let asset = ''
-    if (parsed.protocol === 'mpp') {
-      amountUsd = parsed.amount
-      tokenAmount = parsed.amount
-      asset = parsed.currency
-    } else {
-      tokenAmount = tokenAmountFromRequirements(parsed.requirements)
-      asset = parsed.requirements.asset
-      if (isStablecoin(asset)) {
-        amountUsd = tokenAmount
-      } else if (asset === SOL_MINT) {
-        try {
-          const priceRes = await globalThis.fetch(`${this.config.baseUrl}/sol-price`)
-          if (priceRes.ok) {
-            const { usd } = await priceRes.json() as { usd: number }
-            amountUsd = tokenAmount * usd
-          } else {
-            amountUsd = tokenAmount
-          }
-        } catch {
-          amountUsd = tokenAmount
-        }
-      } else {
-        amountUsd = tokenAmount
-      }
-    }
-
-    // Policy check (all limits are in USD)
-    checkPolicy(this.agent.policy, amountUsd, url, this.spendHistory)
-
-    if (this.config.simulate) {
-      console.log(`[agentis simulate] Would pay $${amountUsd.toFixed(4)} to access ${url}`)
-      return response
-    }
-
-    const forwardedRequest = await serializeRequest(request)
-
-    if (parsed.protocol === 'mpp') {
-      // MPP: proxy through backend which uses @solana/mpp client + Privy signer
-      const proxyRes = await globalThis.fetch(`${this.config.baseUrl}/sdk/agent/fetch-paid-mpp`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': this.config.apiKey,
-        },
-        body: JSON.stringify({
-          url,
-          ...forwardedRequest,
-          amount: tokenAmount,
-          mint: asset,
-        }),
-      })
-
-      if (!proxyRes.ok) {
-        const err = await proxyRes.json().catch(() => ({}))
-        throw new PaymentError((err as any).error ?? 'MPP payment failed')
-      }
-
-      const result = await proxyRes.json()
-      if (result.status === 402) {
-        throw new PaymentError('MPP payment was rejected by server')
-      }
-
-      if (result.status >= 200 && result.status < 300) {
-        this._recordSpend(amountUsd, url, parsed)
-      }
-
-      return responseFromProxy(result)
-    }
-
-    // x402: proxy through backend which uses Privy x402 client to pay
-    const proxyRes = await globalThis.fetch(`${this.config.baseUrl}/sdk/agent/fetch-paid`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': this.config.apiKey,
-      },
-      body: JSON.stringify({
-        url,
-        ...forwardedRequest,
-        amount: tokenAmount,
-        mint: asset,
-      }),
-    })
-
-    if (!proxyRes.ok) {
-      const err = await proxyRes.json().catch(() => ({}))
-      throw new PaymentError((err as any).error ?? 'Payment failed')
-    }
-
-    const result = await proxyRes.json()
-    if (result.status === 402) {
-      throw new PaymentError('Payment was rejected by server')
-    }
-
-    if (result.status >= 200 && result.status < 300) {
-      this._recordSpend(amountUsd, url, parsed)
-    }
-
-    // Return a synthetic Response from the proxied result
-    return responseFromProxy(result)
+  agents = {
+    list: () => this.request<AgentisAgent[]>('/agents'),
+    create: (input: AgentSettings & { id: string }) => this.request<AgentisAgent>('/agents', 'POST', input),
+    update: (id: string, input: AgentSettings) => this.request<AgentisAgent>(`/agents/${encodeURIComponent(id)}`, 'PATCH', input),
   }
-
-  private _recordSpend(amountUsd: number, url: string, parsed: any): void {
-    const record: SpendRecord = {
-      amount: amountUsd,
-      timestamp: new Date().toISOString(),
-      url,
-    }
-    this.spendHistory.push(record)
-
-    const details: PaymentDetails = {
-      url,
-      amount: amountUsd.toFixed(4),
-      currency: 'USD',
-      recipient: parsed.protocol === 'mpp' ? parsed.recipient : parsed.requirements.payTo,
-      protocol: parsed.protocol,
-    }
-    this.config.onPayment(details)
+  wallets = {
+    list: () => this.request<AgentisWallet[]>('/wallets'),
+    link: (input: { providerWalletId: string; chainId: string; policy: WalletPolicy }) => this.request<AgentisWallet>('/wallets', 'POST', input),
+    setPolicy: (id: string, policy: WalletPolicy) => this.request<Pick<AgentisWallet, 'id' | 'policy' | 'policyVersion'>>(`/wallets/${encodeURIComponent(id)}/policy`, 'PATCH', policy),
   }
-
-  private async _rpc<T>(method: string, params: unknown[]): Promise<T> {
-    const res = await globalThis.fetch(SOLANA_DEVNET_RPC, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method,
-        params,
-      }),
-    })
-
-    if (!res.ok) {
-      throw new AgentisError(`Solana RPC request failed: ${method}`)
-    }
-
-    const body = await res.json() as { result?: T, error?: { message?: string } }
-    if (body.error) {
-      throw new AgentisError(body.error.message ?? `Solana RPC error: ${method}`)
-    }
-
-    return body.result as T
+  grants = {
+    create: (input: { walletId: string; agentName: string; expiresAt: string }) => this.request<{ id: string; token: string; expiresAt: string }>('/grants', 'POST', input),
+    revoke: (id: string) => this.request<void>(`/grants/${encodeURIComponent(id)}`, 'DELETE'),
   }
-
-  async balance(): Promise<AgentBalances>
-  async balance(mint: string): Promise<AgentTokenBalance>
-  async balance(mint?: string): Promise<AgentBalances | AgentTokenBalance> {
-    const native = await this._nativeBalance()
-    if (mint === SOL_MINT) return native
-
-    const tokens = await this._tokenBalances()
-    if (mint) {
-      return tokens.find(token => token.mint === mint) ?? {
-        mint,
-        rawAmount: '0',
-        decimals: 0,
-        amount: 0,
-      }
-    }
-
-    return {
-      walletAddress: this.agent.walletAddress,
-      native,
-      tokens,
-      balances: [native, ...tokens],
-    }
-  }
-
-  private async _nativeBalance(): Promise<AgentTokenBalance> {
-    const body = await this._rpc<{ value?: number }>(
-      'getBalance',
-      [this.agent.walletAddress, { commitment: 'confirmed' }]
-    )
-    const lamports = body.value
-    if (typeof lamports !== 'number') {
-      throw new AgentisError('Invalid balance response from Solana RPC')
-    }
-
-    return {
-      mint: SOL_MINT,
-      rawAmount: String(lamports),
-      decimals: 9,
-      amount: lamports / 1e9,
-      symbol: 'SOL',
-    }
-  }
-
-  private async _tokenBalances(): Promise<AgentTokenBalance[]> {
-    const body = await this._rpc<{
-      value?: Array<{
-        account?: {
-          data?: {
-            parsed?: {
-              info?: {
-                mint?: string
-                tokenAmount?: {
-                  amount?: string
-                  decimals?: number
-                  uiAmount?: number | null
-                }
-              }
-            }
-          }
-        }
-      }>
-    }>(
-      'getTokenAccountsByOwner',
-      [
-        this.agent.walletAddress,
-        { programId: TOKEN_PROGRAM_ID },
-        { encoding: 'jsonParsed', commitment: 'confirmed' },
-      ]
-    )
-
-    return (body.value ?? [])
-      .map(({ account }) => {
-        const info = account?.data?.parsed?.info
-        const tokenAmount = info?.tokenAmount
-        if (!info?.mint || !tokenAmount?.amount || tokenAmount.decimals === undefined) return null
-        return {
-          mint: info.mint,
-          rawAmount: tokenAmount.amount,
-          decimals: tokenAmount.decimals,
-          amount: tokenAmount.uiAmount ?? Number(tokenAmount.amount) / 10 ** tokenAmount.decimals,
-        } satisfies AgentTokenBalance
-      })
-      .filter((balance): balance is AgentTokenBalance => Boolean(balance && balance.rawAmount !== '0'))
-  }
-
-  private async _umbra<T extends UmbraResponse = UmbraResponse>(
-    path: string,
-    init: RequestInit = {}
-  ): Promise<T> {
-    const res = await globalThis.fetch(`${this.config.baseUrl}/umbra${path}`, {
-      ...init,
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': this.config.apiKey,
-        ...(init.headers as Record<string, string> ?? {}),
-      },
-    })
-    const body = await res.json().catch(() => ({}))
-
-    if (!res.ok) {
-      throw new AgentisError((body as any).error ?? `Umbra request failed: ${path}`)
-    }
-
-    return body as T
-  }
-
-  private _umbraPost<T extends UmbraResponse = UmbraResponse>(
-    path: string,
-    body: Record<string, unknown> = {}
-  ): Promise<T> {
-    return this._umbra<T>(path, {
-      method: 'POST',
-      body: JSON.stringify(jsonSafe(body)),
-    })
-  }
-
-  private async _jupiter<T extends JupiterResponse = JupiterResponse>(
-    path: string,
-    init: RequestInit = {}
-  ): Promise<T> {
-    const res = await globalThis.fetch(`${this.config.baseUrl}/sdk/agent/jupiter${path}`, {
-      ...init,
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': this.config.apiKey,
-        ...(init.headers as Record<string, string> ?? {}),
-      },
-    })
-    const body = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      throw new AgentisError((body as any).error ?? `Jupiter request failed: ${path}`)
-    }
-    return body as T
-  }
-
-  private _jupiterPost<T extends JupiterResponse = JupiterResponse>(
-    path: string,
-    body: Record<string, unknown> = {}
-  ): Promise<T> {
-    return this._jupiter<T>(path, {
-      method: 'POST',
-      body: JSON.stringify(jsonSafe(body)),
-    })
-  }
-
-  // Direct payment. Native SOL amount is in SOL, e.g. 0.001.
-  async pay(to: string, amountSol: number, mint?: string): Promise<string> {
-    // Native SOL can be checked locally; token pricing remains authoritative on the backend.
-    const amountUsd = mint ? null : await this._solToUsd(amountSol)
-    if (amountUsd !== null) checkPolicy(this.agent.policy, amountUsd, to, this.spendHistory)
-
-    const res = await globalThis.fetch(`${this.config.baseUrl}/sdk/agent/send`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': this.config.apiKey,
-      },
-      body: JSON.stringify({ to, amountSol, mint }),
-    })
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new PaymentError((err as any).error ?? 'Send failed')
-    }
-
-    const { signature } = await res.json()
-    if (amountUsd !== null) {
-      this.spendHistory.push({ amount: amountUsd, timestamp: new Date().toISOString(), url: to })
-    } else {
-      await this._bootstrap()
-    }
-    return signature
-  }
-
-  // Policy management
-  readonly policy = {
-    get: async (): Promise<Policy> => {
-      const res = await fetch(`${this.config.baseUrl}/sdk/agent`, {
-        headers: { 'x-api-key': this.config.apiKey },
-      })
-      if (!res.ok) throw new AgentisError('Failed to fetch policy')
-      const agent: AgentInfo = await res.json()
-      this.agent = agent
-      return agent.policy
-    },
-
-    update: async (patch: Partial<Policy>): Promise<Policy> => {
-      const res = await fetch(`${this.config.baseUrl}/sdk/agent/policy`, {
-        method: 'PATCH',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': this.config.apiKey,
-        },
-        body: JSON.stringify(patch),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new AgentisError((err as any).error ?? 'Failed to update policy')
-      }
-      const updated: Policy = await res.json()
-      this.agent.policy = updated
-      return updated
-    },
-
-    check: async (input: PolicyCheckInput): Promise<PolicyCheckResult> => {
-      try {
-        checkPolicy(this.agent.policy, input.amountUsd, input.url ?? this.agent.walletAddress, this.spendHistory)
-        return { allowed: true }
-      } catch (err: any) {
-        return { allowed: false, reason: err?.message ?? 'Policy check failed' }
+  operations = {
+    create: (input: OperationInput, options: { idempotencyKey: string }) => this.request<Operation>('/operations', 'POST', input, { 'Idempotency-Key': options.idempotencyKey }),
+    list: () => this.request<Operation[]>('/operations'),
+    get: (id: string, signal?: AbortSignal) => this.request<Operation>(`/operations/${encodeURIComponent(id)}`, 'GET', undefined, {}, signal),
+    authorization: (id: string) => this.request<AuthorizationRequest>(`/operations/${encodeURIComponent(id)}/authorization`),
+    approve: (id: string, operationHash: string, signature?: string) => this.request<Operation>(`/operations/${encodeURIComponent(id)}/approve`, 'POST', { operationHash, ...(signature ? { signature } : {}) }),
+    reject: (id: string, operationHash: string) => this.request<Operation>(`/operations/${encodeURIComponent(id)}/reject`, 'POST', { operationHash }),
+    wait: async (id: string, options: { timeoutMs?: number; intervalMs?: number; signal?: AbortSignal } = {}): Promise<Operation> => {
+      const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(options.timeoutMs ?? 60_000)]) : AbortSignal.timeout(options.timeoutMs ?? 60_000)
+      while (true) {
+        signal.throwIfAborted()
+        const operation = await this.operations.get(id, signal)
+        // Approval and unknown execution are actionable results, not endless polling.
+        if (!['queued', 'submitting', 'submitted'].includes(operation.status)) return operation
+        await new Promise<void>((resolve, reject) => {
+          const abort = () => { clearTimeout(timer); reject(signal.reason) }
+          const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve() }, Math.max(100, options.intervalMs ?? 1000))
+          signal.addEventListener('abort', abort, { once: true })
+          if (signal.aborted) abort()
+        })
       }
     },
-  }
-
-  readonly privacy = {
-    status: async (): Promise<UmbraResponse> => {
-      return this._umbra('/status')
-    },
-
-    register: async (options: UmbraRegisterOptions = {}): Promise<UmbraResponse> => {
-      return this._umbraPost('/register', options)
-    },
-
-    balance: async (options: Pick<UmbraAmountOptions, 'mint'> = {}): Promise<UmbraResponse> => {
-      const qs = options.mint ? `?mint=${encodeURIComponent(options.mint)}` : ''
-      return this._umbra(`/balance${qs}`)
-    },
-
-    solBalance: async (): Promise<UmbraResponse> => {
-      return this.privacy.balance({ mint: UMBRA_SOL_MINT })
-    },
-
-    deposit: async (options: UmbraAmountOptions = {}): Promise<UmbraResponse> => {
-      return this._umbraPost('/deposit', options)
-    },
-
-    depositSol: async (amount: string | number | bigint): Promise<UmbraResponse> => {
-      return this.privacy.deposit({ amount, mint: UMBRA_SOL_MINT })
-    },
-
-    withdraw: async (options: UmbraAmountOptions = {}): Promise<UmbraResponse> => {
-      return this._umbraPost('/withdraw', options)
-    },
-
-    withdrawSol: async (amount: string | number | bigint): Promise<UmbraResponse> => {
-      return this.privacy.withdraw({ amount, mint: UMBRA_SOL_MINT })
-    },
-
-    createUtxo: async (options: UmbraCreateUtxoOptions = {}): Promise<UmbraResponse> => {
-      return this._umbraPost('/create-utxo', options)
-    },
-
-    scan: async (): Promise<UmbraResponse> => {
-      return this._umbra('/scan')
-    },
-
-    claimLatest: async (): Promise<UmbraResponse> => {
-      return this._umbraPost('/claim-latest')
-    },
-  }
-
-  readonly tokens = {
-    search: async (query: string): Promise<JupiterToken[]> => {
-      const response = await this._jupiter<{ tokens: JupiterToken[] }>(
-        `/tokens?query=${encodeURIComponent(query)}`
-      )
-      return response.tokens
-    },
-  }
-
-  readonly swap = {
-    quote: async (options: JupiterSwapOptions): Promise<JupiterResponse> => {
-      return this._jupiterPost('/swap/quote', options as unknown as Record<string, unknown>)
-    },
-    execute: async (options: JupiterSwapOptions): Promise<JupiterResponse> => {
-      return this._jupiterPost('/swap', options as unknown as Record<string, unknown>)
-    },
-  }
-
-  readonly portfolio = async (platforms?: string[]): Promise<JupiterResponse> => {
-    const query = platforms?.length
-      ? `?platforms=${encodeURIComponent(platforms.join(','))}`
-      : ''
-    return this._jupiter(`/portfolio${query}`)
-  }
-
-  readonly recurring = {
-    list: async (options: { status?: 'active' | 'history'; page?: number } = {}): Promise<JupiterResponse> => {
-      const query = new URLSearchParams({
-        status: options.status ?? 'active',
-        page: String(options.page ?? 1),
-      })
-      return this._jupiter(`/recurring?${query}`)
-    },
-    create: async (options: JupiterRecurringCreateOptions): Promise<JupiterResponse> => {
-      return this._jupiterPost('/recurring', options as unknown as Record<string, unknown>)
-    },
-    cancel: async (order: string): Promise<JupiterResponse> => {
-      return this._jupiterPost(`/recurring/${encodeURIComponent(order)}/cancel`)
-    },
-  }
-
-  get walletAddress(): string {
-    return this.agent.walletAddress
-  }
-
-  get agentId(): string {
-    return this.agent.id
-  }
-
-  get agentName(): string {
-    return this.agent.name
   }
 }

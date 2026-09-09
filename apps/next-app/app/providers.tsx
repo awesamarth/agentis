@@ -2,10 +2,13 @@
 
 import { PrivyProvider } from '@privy-io/react-auth'
 import { toSolanaWalletConnectors } from '@privy-io/react-auth/solana'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useState } from 'react'
 
 export default function Providers({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient())
   return (
-    <PrivyProvider
+    <QueryClientProvider client={queryClient}><PrivyProvider
       appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID!}
       config={{
         loginMethods: ['google', 'github', 'wallet'],
@@ -13,7 +16,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           theme: 'light',
           accentColor: '#c8a96e',
           logo: undefined,
-          walletChainType: 'solana-only',
+          walletChainType: 'ethereum-and-solana',
           walletList: ['detected_solana_wallets', 'phantom', 'solflare', 'backpack', 'wallet_connect'],
         },
         externalWallets: {
@@ -22,6 +25,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           },
         },
         embeddedWallets: {
+          ethereum: { createOnLogin: 'users-without-wallets' },
           solana: {
             createOnLogin: 'users-without-wallets',
           },
@@ -29,6 +33,6 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
-    </PrivyProvider>
+    </PrivyProvider></QueryClientProvider>
   )
 }
