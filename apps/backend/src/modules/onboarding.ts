@@ -48,10 +48,10 @@ export function onboardingRoutes(service: OperationService, identity: Identity) 
       if (creating) await tx.insert(agents).values(values)
       else await tx.update(agents).set(values).where(eq(agents.id, input.id))
       const selected = supportedNetworks.filter(network => input.selection.networks.includes(network.key))
-      const provisioned = new Map<string, { providerWalletId: string; address: string; chainType: string }>()
+      const provisioned = new Map<string, { providerWalletId: string; address: string; chainType: string; serverAuthorized?: boolean }>()
       for (const wallet of existing) {
         const network = supportedNetworks.find(network => network.chainId === wallet.chainId)
-        if (network) provisioned.set(network.chainType, { providerWalletId: wallet.providerWalletId, address: wallet.address, chainType: network.chainType })
+        if (network) provisioned.set(network.chainType, { providerWalletId: wallet.providerWalletId, address: wallet.address, chainType: network.chainType, serverAuthorized: wallet.serverAuthorized })
       }
       const authorized = new Map<string, boolean>()
       for (const network of selected) {
@@ -65,7 +65,8 @@ export function onboardingRoutes(service: OperationService, identity: Identity) 
         provisioned.set(network.chainType, checked)
         if (checked.chainType !== network.chainType) throw new Error('Provider returned wrong wallet type')
         if (!authorized.has(checked.providerWalletId)) {
-          const result = await identity.enableServerExecution?.(checked.providerWalletId, ownerId, c.req.header('authorization')!.slice(7))
+          // Rules are local; ownership is checked again before payment execution.
+          const result = checked.serverAuthorized ? checked : await identity.enableServerExecution?.(checked.providerWalletId, ownerId, c.req.header('authorization')!.slice(7))
           authorized.set(checked.providerWalletId, result?.serverAuthorized ?? false)
         }
         const serverAuthorized = authorized.get(checked.providerWalletId)!

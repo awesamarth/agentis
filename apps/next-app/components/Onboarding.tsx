@@ -32,6 +32,8 @@ function Setup({ ownerId, getAccessToken }: { ownerId: string; getAccessToken: (
   const [editing, setEditing] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [step, setStep] = useState(0)
+  const [reviewReached, setReviewReached] = useState(false)
+  const canSave = editing !== null || reviewReached
   const [selected, setSelected] = useState<string[]>(['base', 'arc', 'tempo', 'solana'])
   const [defaultNetwork, setDefaultNetwork] = useState('base')
   const [limits, setLimits] = useState(defaults)
@@ -54,13 +56,18 @@ function Setup({ ownerId, getAccessToken }: { ownerId: string; getAccessToken: (
     setSelected(agent?.networks ?? ['base', 'arc', 'tempo', 'solana']); setDefaultNetwork(agent?.defaultNetwork ?? 'base')
     setLimits(agent ? Object.fromEntries(Object.entries(agent.limits).map(([key, value]) => [key, value ?? ''])) as typeof defaults : defaults)
     setMode(agent?.mode ?? 'ask'); setRecipients(agent?.allowedRecipients.join('\n') ?? '')
-    setStep(0); setFinished(false); setFormError(''); save.reset(); dialog.current?.showModal()
+    setStep(0); setReviewReached(false); setFinished(false); setFormError(''); save.reset(); dialog.current?.showModal()
+  }
+  function validate(checkLimits = true) {
+    if (!name.trim()) { setFormError('Give your agent a name.'); return false }
+    if (!selected.length) { setFormError('Choose at least one network.'); return false }
+    try { if (checkLimits) for (const value of Object.values(limits)) if (value.trim()) parseAmount(value.trim(), 6) } catch { setFormError('Enter valid USD amounts.'); return false }
+    setFormError(''); return true
   }
   function next() {
-    if (!name.trim()) { setFormError('Give your agent a name.'); return }
-    if (!selected.length) { setFormError('Choose at least one network.'); return }
-    try { if (step === 1) for (const value of Object.values(limits)) if (value.trim()) parseAmount(value.trim(), 6) } catch { setFormError('Enter valid USD amounts.'); return }
-    setFormError(''); setStep(value => Math.min(value + 1, 2))
+    if (!validate(step === 1)) return
+    if (step === 1) setReviewReached(true)
+    setStep(value => Math.min(value + 1, 2))
   }
   return <section className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-serif text-3xl font-bold">Your agents</h2><p className="mt-2 text-sm text-ink-muted">Separate wallets, budgets and rules for each agent.</p></div><button className="bg-black px-5 py-2.5 font-mono text-xs tracking-widest text-beige hover:bg-ink disabled:opacity-40" disabled={!query.data || !agents.data} onClick={() => open()}><span aria-hidden="true">+ </span>create agent</button></div>
@@ -72,7 +79,7 @@ function Setup({ ownerId, getAccessToken }: { ownerId: string; getAccessToken: (
       if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) event.currentTarget.close()
     }} className="fixed inset-0 m-auto h-[min(800px,90dvh)] max-h-[90dvh] w-[calc(100%_-_2rem)] max-w-2xl overflow-hidden border border-beige-darker bg-beige p-0 text-ink shadow-xl backdrop:bg-black/50">
       <div className="flex h-full flex-col p-6 sm:p-9"><header className="flex shrink-0 items-start justify-between gap-4"><div><p className="font-mono text-xs uppercase tracking-widest text-ink-muted">{editing ? 'Agent settings' : 'New agent'}</p><h2 id="setup-title" className="mt-3 font-serif text-3xl font-bold">{finished ? `${name} is ready.` : editing ? `Configure ${name}` : 'Create your agent.'}</h2></div><button aria-label="Close setup" className="p-2 text-2xl" disabled={save.isPending} onClick={() => dialog.current?.close()}>×</button></header>
-      {!finished && <ol aria-label="Setup progress" className="my-7 grid shrink-0 grid-cols-3 gap-3">{['Agent', 'Rules', 'Review'].map((label, index) => <li key={label} aria-current={step === index ? 'step' : undefined} className={`border-t-2 pt-3 font-mono text-xs uppercase ${index <= step ? 'border-black' : 'border-beige-darker text-ink-muted'}`}>{editing ? <button type="button" disabled={save.isPending} onClick={() => { setFormError(''); setStep(index) }} className="w-full text-left uppercase hover:underline disabled:opacity-40">0{index + 1} · {label}</button> : <>0{index + 1} · {label}</>}</li>)}</ol>}
+      {!finished && <ol aria-label="Setup progress" className="my-7 grid shrink-0 grid-cols-3 gap-3">{['Agent', 'Rules', 'Review'].map((label, index) => <li key={label} aria-current={step === index ? 'step' : undefined} className={`border-t-2 pt-3 font-mono text-xs uppercase ${index <= step ? 'border-black' : 'border-beige-darker text-ink-muted'}`}>{canSave ? <button type="button" disabled={save.isPending} onClick={() => { setFormError(''); setStep(index) }} className="w-full text-left uppercase hover:underline disabled:opacity-40">0{index + 1} · {label}</button> : <>0{index + 1} · {label}</>}</li>)}</ol>}
       <div className="min-h-0 flex-1 overflow-y-auto">
       {!finished && step === 0 && <div className="space-y-4"><label className="block text-sm">Agent name<input className={field} value={name} maxLength={80} placeholder="Research agent" onChange={event => setName(event.target.value)} /></label><p className="text-sm text-ink-muted">Choose this agent’s networks. Other agents keep their own wallets.</p>{query.data?.networks.map(network => <label key={network.key} className="flex cursor-pointer items-center gap-3 border border-beige-darker p-3"><input type="checkbox" className="accent-black" checked={selected.includes(network.key)} onChange={event => { const next = event.target.checked ? [...selected, network.key] : selected.filter(key => key !== network.key); setSelected(next); if (!next.includes(defaultNetwork)) setDefaultNetwork(next[0] ?? 'base') }} /><span className="flex-1 font-serif text-lg font-bold">{network.name}</span><span className="text-xs text-ink-muted">{network.testnet ? 'Testnet' : 'Mainnet'}</span></label>)}<label className="block text-sm">Default network<span className="relative mt-2 block"><select className={selectField} value={defaultNetwork} onChange={event => setDefaultNetwork(event.target.value)}>{query.data?.networks.filter(network => selected.includes(network.key)).map(network => <option key={network.key} value={network.key}>{network.name}</option>)}</select><ChevronDown size={16} aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" /></span></label></div>}
       {!finished && step === 1 && <div className="space-y-5"><p className="text-sm text-ink-muted">USD limits apply only to this agent, across its networks, including fees.</p><div className="grid gap-4 sm:grid-cols-2">{Object.entries(labels).map(([key, label]) => <label className="text-sm" key={key}>{label} · USD<input className={field} inputMode="decimal" placeholder="No cap" value={limits[key as keyof typeof limits]} onChange={event => setLimits({ ...limits, [key]: event.target.value })} /></label>)}</div><p className="text-xs text-ink-muted">Hourly and daily limits use rolling windows. Total doesn’t reset. Leave a field blank for no cap; zero blocks spending.</p><label className="block text-sm">Payment approvals<span className="relative mt-2 block"><select className={selectField} value={mode} onChange={event => setMode(event.target.value as typeof mode)}><option value="ask">Approve every payment</option><option value="automatic">Auto-approve within my limits</option><option value="paused">Paused — no payments</option></select><ChevronDown size={16} aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" /></span></label><label className="block text-sm">Allowed recipients<textarea className={field} rows={3} placeholder="Any recipient, or enter allowed addresses (one per line)" value={recipients} onChange={event => setRecipients(event.target.value)} /></label></div>}
@@ -80,7 +87,7 @@ function Setup({ ownerId, getAccessToken }: { ownerId: string; getAccessToken: (
       {finished && <div className="my-7 space-y-4"><p className="text-sm text-ink-muted">{editing ? 'Rules saved.' : 'Fund these wallets to start making payments.'}</p>{wallets.data?.filter(wallet => wallet.agentId === save.data?.id && wallet.enabled).map(wallet => <div key={wallet.id} className="border border-beige-darker p-4"><p className="font-serif text-lg font-bold">{query.data?.networks.find(network => network.chainId === wallet.chainId)?.name}</p><WalletAddress address={wallet.address} /></div>)}</div>}
       {(formError || save.error) && <p role="alert" className="mt-5 text-sm">{formError || save.error?.message}</p>}
       </div>
-      <footer className="mt-7 flex shrink-0 justify-between gap-4 border-t border-beige-darker pt-5">{finished ? <button className={`${button} ml-auto bg-black text-beige`} onClick={() => dialog.current?.close()}>Done</button> : <><button className={button} disabled={step === 0 || save.isPending} onClick={() => { setFormError(''); setStep(value => value - 1) }}>Back</button><button className={`${button} bg-black text-beige`} disabled={save.isPending} onClick={() => step === 2 ? save.mutate() : next()}>{save.isPending ? 'Saving…' : step === 2 ? editing ? 'Save rules' : 'Create agent' : 'Next'}</button></>}</footer>
+      <footer className="mt-7 flex shrink-0 justify-between gap-4 border-t border-beige-darker pt-5">{finished ? <button className={`${button} ml-auto bg-black text-beige`} onClick={() => dialog.current?.close()}>Done</button> : <><button className={button} disabled={step === 0 || save.isPending} onClick={() => { setFormError(''); setStep(value => value - 1) }}>Back</button><div className="flex flex-wrap justify-end gap-2">{step < 2 && <button className={`${button} ${canSave ? '' : 'bg-black text-beige'}`} disabled={save.isPending} onClick={next}>Next</button>}{canSave && <button className={`${button} bg-black text-beige`} disabled={save.isPending} onClick={() => { if (validate()) save.mutate() }}>{save.isPending ? 'Saving…' : 'Save'}</button>}</div></>}</footer>
       </div>
     </dialog>
   </section>

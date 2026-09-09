@@ -89,7 +89,7 @@ suite('transactional execution foundation (isolated PostgreSQL)', () => {
     const service = new OperationService(connection.db, executor, pluginConfig.parse({}), 'http://localhost:3000', async () => ({ assetPrice: '1000000000000000000', feePrice: '1000000000000000000', assetDecimals: 0, feeDecimals: 0, expiresAt: Date.now() + 30_000 }))
     const principal: Principal = { kind: 'owner', ownerId: 'onboarding-user' }
     let authorizationCalls = 0
-    const app = createApp(service, { authenticate: async token => token === 'other' ? 'other-user' : principal.ownerId, enableServerExecution: async () => { authorizationCalls++; return { serverAuthorized: true } },  createWallet: async (_owner, chainType, agentId) => ({ providerWalletId: `${agentId}-${chainType}`, address: `0x${agentId!.replaceAll('-', '').padEnd(40, '0')}`, chainType }) }, [])
+    const app = createApp(service, { authenticate: async token => token === 'other' ? 'other-user' : principal.ownerId, enableServerExecution: async () => { authorizationCalls++; return { serverAuthorized: true } },  createWallet: async (_owner, chainType, agentId) => ({ providerWalletId: `${agentId}-${chainType}`, address: `0x${agentId!.replaceAll('-', '').padEnd(40, '0')}`, chainType, serverAuthorized: chainType === 'solana' }) }, [])
     const headers = { authorization: 'Bearer owner', 'content-type': 'application/json' }
     const a = randomUUID(), b = randomUUID()
     const settings = { name: 'Research', selection: { networks: ['base', 'arc'], defaultNetwork: 'base' }, limits: { perTransaction: '10', hourly: '100', daily: '100', total: '100' }, mode: 'ask', allowedRecipients: [] }
@@ -111,6 +111,7 @@ suite('transactional execution foundation (isolated PostgreSQL)', () => {
     const pendingB = await service.create(principal, { ...s.input, walletId: wb.id, chainId: wb.chainId }, 'agent-b-payment')
     expect(pendingB.status).toBe('pending_approval')
     const callsBeforeRename = authorizationCalls
+    expect(callsBeforeRename).toBe(2) // One setup per distinct EVM wallet, not per network.
     expect((await submit(b, { ...settings, name: 'Trading renamed' })).status).toBe(200)
     expect((await submit(b, { ...settings, name: 'Trading renamed' })).status).toBe(200)
     expect(authorizationCalls).toBe(callsBeforeRename)
@@ -132,6 +133,12 @@ suite('transactional execution foundation (isolated PostgreSQL)', () => {
     expect(after.find(wallet => wallet.agentId === a && wallet.chainId === 'eip155:5042002')?.enabled).toBe(false)
     expect(new Set(after.map(wallet => wallet.id))).toEqual(new Set(before.map(wallet => wallet.id)))
     expect((await app.request(`/v1/agents/${a}`, { method: 'PATCH', headers: { ...headers, authorization: 'Bearer other' }, body: JSON.stringify(settings) })).status).toBe(404)
+    expect(authorizationCalls).toBe(callsBeforeRename) // Rules changes must not repeat setup.
+    await connection.db.update(wallets).set({ serverAuthorized: false }).where(eq(wallets.id, wa.id))
+    expect((await submit(a, { ...settings, enableExecution: true })).status).toBe(200)
+    expect(authorizationCalls).toBe(callsBeforeRename + 1) // Unconfigured wallets still require authorization.
+    expect((await submit(randomUUID(), { ...settings, selection: { networks: ['solana'], defaultNetwork: 'solana' } }, 'POST')).status).toBe(200)
+    expect(authorizationCalls).toBe(callsBeforeRename + 1) // Creation already verified this wallet's ownership.
   })
 
   test('shared USD budget serializes different wallets, blocks price increases and charges fixed execution rates', async () => {
