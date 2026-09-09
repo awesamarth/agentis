@@ -11,7 +11,7 @@ export default function Dashboard() {
   const { ready, authenticated, login } = usePrivy()
   return <><Navbar showCrumb="dashboard" /><main className="mx-auto max-w-6xl px-6 py-12 sm:px-10 sm:py-20">
     <header className="mb-10 flex flex-wrap items-end justify-between gap-6 border-b border-beige-darker pb-8">
-      <div><p className="mb-4 font-mono text-xs uppercase tracking-[0.2em] text-ink-muted">Your financial workspace</p><h1 className="font-serif text-4xl font-black tracking-tight sm:text-6xl">Money moves.<br /><span className="italic">You make the rules.</span></h1></div>
+      <div><p className="mb-4 font-mono text-xs uppercase tracking-[0.2em] text-ink-muted">Your financial workspace</p><h1 className="font-serif text-4xl font-black tracking-tight sm:text-6xl">Money moves.<br /><span className="italic text-ink-muted">You make the rules.</span></h1></div>
       <span className="border border-beige-darker px-3 py-2 font-mono text-[10px] uppercase tracking-widest">Testnet environment</span>
     </header>
     {!ready ? <p role="status" className="py-10 text-ink-muted">Loading your workspace…</p> : authenticated ? <div className="space-y-8"><Onboarding /><TransferRequest /><Operations /></div> : <section className="grid border border-beige-darker bg-[#faf7f1] md:grid-cols-[1.35fr_1fr]">
