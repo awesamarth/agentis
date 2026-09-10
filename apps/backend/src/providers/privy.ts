@@ -1,5 +1,5 @@
 import { PrivyClient } from '@privy-io/node'
-import { createPrivateKey, createPublicKey } from 'node:crypto'
+import { createPrivateKey, createPublicKey, generateKeyPairSync } from 'node:crypto'
 import { fail } from '../errors'
 import { hash } from '../operations'
 
@@ -39,6 +39,22 @@ export function privyIdentity(appId: string, appSecret: string, authorizationKey
   }
   const externalWalletId = (ownerId: string, chainType: string, agentId?: string) => `agentis_${hash(`${ownerId}:${chainType}${agentId ? `:${agentId}` : ''}`).slice(0, 48)}`
   return {
+    async testJwtRest(userJwt: string) {
+      const { publicKey: recipient } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+      let response: Response
+      try {
+        response = await fetch('https://api.privy.io/v1/wallets/authenticate', {
+          method: 'POST', redirect: 'error', signal: AbortSignal.timeout(20_000),
+          headers: { authorization: `Basic ${Buffer.from(`${appId}:${appSecret}`).toString('base64')}`, 'privy-app-id': appId, 'content-type': 'application/json' },
+          body: JSON.stringify({ user_jwt: userJwt, encryption_type: 'HPKE', recipient_public_key: recipient.export({ type: 'spki', format: 'der' }).toString('base64') }),
+        })
+      } catch { fail(503, 'rest_transport_failed', 'Direct REST request failed before an HTTP response was received') }
+      // Discard any encrypted user key. Return only bounded, non-secret diagnostic fields.
+      const body = await response.json().catch(() => null) as { error?: unknown; encrypted_authorization_key?: { encryption_type?: unknown } } | null
+      const ok = response.ok && body?.encrypted_authorization_key?.encryption_type === 'HPKE'
+      const requestId = response.headers.get('x-request-id') ?? response.headers.get('privy-request-id')
+      return { ok, status: response.status, error: ok ? null : body?.error === 'Invalid JWT token provided' ? 'Invalid JWT token provided' : response.ok ? 'Expected an HPKE-encrypted user authorization key' : 'Privy rejected the direct REST request', requestId: requestId && /^[a-zA-Z0-9_-]{1,100}$/.test(requestId) ? requestId : null }
+    },
     async createTestWallet(ownerId: string, requestId: string) {
       return this.createWallet(ownerId, 'ethereum', `export-test:${requestId}`)
     },

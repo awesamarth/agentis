@@ -13,6 +13,7 @@ import { profileSummary } from './modules/profile'
 
 export type Identity = {
   authenticate(token: string): Promise<string>
+  testJwtRest?(userJwt: string): Promise<{ ok: boolean; status: number; error: string | null; requestId: string | null }>
   createTestWallet?(ownerId: string, requestId: string): Promise<{ providerWalletId: string; address: string; serverAuthorized?: boolean }>
   exportTestWallet?(ownerId: string, requestId: string, userJwt: string): Promise<{ privateKey: string }>
   exportWallet?(id: string, ownerId: string, address: string, chainType: 'ethereum' | 'solana', userJwt: string): Promise<{ privateKey: string }>
@@ -52,6 +53,10 @@ export function createApp(service: OperationService, identity: Identity, origins
     if (process.env.NODE_ENV === 'production' || !origins.some(origin => ['localhost', '127.0.0.1'].includes(new URL(origin).hostname))) fail(404, 'not_found', 'Not found')
     if (c.get('principal').kind !== 'owner') fail(403, 'owner_required', 'Only the owner can run this test')
     await next()
+  })
+  app.post('/v1/test/privy-jwt-rest', async c => {
+    if (!identity.testJwtRest) fail(503, 'provider_unavailable', 'Privy REST test unavailable')
+    return c.json(await identity.testJwtRest(c.req.header('authorization')!.slice(7)))
   })
   app.post('/v1/test/quorum-wallets', async c => {
     const input = z.object({ requestId: id }).strict().parse(await c.req.json())

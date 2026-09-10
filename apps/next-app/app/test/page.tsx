@@ -54,7 +54,21 @@ function QuorumWalletTest() {
   const [wallet, setWallet] = useState<{ owner: string; address: string; key?: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [restResult, setRestResult] = useState('')
   const selected = authenticated && wallet?.owner === user?.id ? wallet : null
+  async function testRest() {
+    if (!authenticated || busy) return
+    setBusy(true); setError(''); setRestResult('')
+    try {
+      const token = await getAccessToken()
+      if (!token) throw new Error('Sign in first')
+      const response = await fetch(`${(process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001').replace(/\/$/, '')}/v1/test/privy-jwt-rest`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(30_000) })
+      const data = await response.json()
+      if (!response.ok) throw new Error(`Agentis HTTP ${response.status}: ${data.error?.message ?? 'REST test failed'}`)
+      setRestResult(JSON.stringify(data, null, 2))
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'REST test failed') }
+    finally { setBusy(false) }
+  }
   useEffect(() => {
     const hide = () => { if (document.hidden) setWallet(current => current ? { ...current, key: undefined } : null) }
     document.addEventListener('visibilitychange', hide)
@@ -87,5 +101,6 @@ function QuorumWalletTest() {
     {selected && <p className="break-all border border-beige-darker bg-[#faf7f1] p-4 font-mono text-xs">{selected.address}</p>}
     {selected?.key && <div><p className="mb-2 text-xs text-red-700">Keep this key secure. Hidden when you switch tabs.</p><textarea aria-label="Throwaway quorum wallet private key" readOnly spellCheck={false} autoComplete="off" value={selected.key} className="w-full border border-beige-darker p-3 font-mono text-xs" /><button className="font-mono text-xs underline" onClick={() => setWallet(current => current ? { ...current, key: undefined } : null)}>Hide key</button></div>}
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+    <div className="space-y-3 border-t border-beige-darker pt-5"><h3 className="font-serif text-xl font-bold">JWT exchange without the SDK</h3><p className="text-sm text-ink-muted">Backend sends your current access token directly to POST /v1/wallets/authenticate using plain fetch. No SDK exchange, new wallet, signing, or export. Any encrypted authorization key is discarded.</p><button disabled={!authenticated || busy} onClick={testRest} className="bg-black px-5 py-3 font-mono text-xs text-white disabled:opacity-40">Test JWT via direct REST</button>{restResult && <pre aria-live="polite" className="overflow-x-auto border border-beige-darker bg-[#faf7f1] p-4 font-mono text-xs">{restResult}</pre>}</div>
   </section>
 }

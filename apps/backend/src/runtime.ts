@@ -60,6 +60,7 @@ export async function createRuntime(env = process.env) {
     exportWallet: privy ? privy.exportWallet.bind(privy) : undefined,
     createTestWallet: privy ? privy.createTestWallet.bind(privy) : undefined,
     exportTestWallet: privy ? privy.exportTestWallet.bind(privy) : undefined,
+    testJwtRest: privy ? privy.testJwtRest.bind(privy) : undefined,
   }
   const service = new OperationService(connection.db, executor, plugins, config.DASHBOARD_URL.replace(/\/$/, ''))
   return { ...connection, service, app: createApp(service, identity, [new URL(config.DASHBOARD_URL).origin]), local: config.AGENTIS_EXECUTOR === 'anvil' }
