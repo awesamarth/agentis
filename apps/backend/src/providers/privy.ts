@@ -47,6 +47,19 @@ export function privyIdentity(appId: string, appSecret: string, authorizationKey
       if (!userOwner || (quorum.authorization_keys.length !== 0 && !serverAuthorized)) fail(403, 'wallet_owner_mismatch', 'Unexpected wallet ownership; no signing authority will be assumed')
       return { providerWalletId: wallet.id, address: wallet.address, chainType: wallet.chain_type, serverAuthorized }
     },
+    async exportWallet(id: string, ownerId: string, address: string, chainType: 'ethereum' | 'solana', userJwt: string) {
+      if (await this.authenticate(userJwt) !== ownerId) fail(403, 'wallet_owner_mismatch', 'Only the owner can export this wallet')
+      const wallet = await this.inspectWallet(id, ownerId)
+      if (wallet.address !== address || wallet.chainType !== chainType) fail(403, 'wallet_owner_mismatch', 'Wallet identity does not match')
+      try {
+        // User authorization only. Never fall back to the server quorum signer for export.
+        const result = await client.wallets().export(id, { authorization_context: { user_jwts: [userJwt] }, request_expiry: Date.now() + 60_000 })
+        return { privateKey: result.private_key }
+      } catch {
+        // Provider errors may contain sensitive material; never log or return their payloads.
+        fail(503, 'wallet_export_failed', 'Privy could not authorize the export. No server-signer fallback was attempted.')
+      }
+    },
     async enableServerExecution(id: string, ownerId: string, userJwt: string) {
       const wallet = await this.inspectWallet(id, ownerId)
       if (wallet.serverAuthorized) return wallet

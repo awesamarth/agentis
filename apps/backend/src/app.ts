@@ -13,6 +13,7 @@ import { profileSummary } from './modules/profile'
 
 export type Identity = {
   authenticate(token: string): Promise<string>
+  exportWallet?(id: string, ownerId: string, address: string, chainType: 'ethereum' | 'solana', userJwt: string): Promise<{ privateKey: string }>
   createWallet?(ownerId: string, chainType: 'ethereum' | 'solana', agentId?: string): Promise<{ providerWalletId: string; address: string; chainType: string; serverAuthorized?: boolean }>
   enableServerExecution?(id: string, ownerId: string, userJwt: string): Promise<{ serverAuthorized: boolean }>
   inspectWallet?(id: string, ownerId: string): Promise<{ providerWalletId: string; address: string; chainType: string }>
@@ -66,6 +67,16 @@ export function createApp(service: OperationService, identity: Identity, origins
     const [wallet] = await service.db.insert(wallets).values({ ...checked, ownerId: principal.ownerId, chainId: body.chainId, policy: body.policy, provider: 'privy' }).onConflictDoNothing().returning()
     if (!wallet) fail(409, 'wallet_exists', 'Wallet already linked')
     return c.json({ id: wallet.id, address: wallet.address, chainId: wallet.chainId, policy: wallet.policy, policyVersion: wallet.policyVersion, enabled: wallet.enabled }, 201)
+  })
+  app.post('/v1/wallets/:id/export', async c => {
+    const principal = c.get('principal')
+    if (principal.kind !== 'owner') fail(403, 'owner_required', 'Only the owner can export a wallet')
+    z.object({ confirm: z.literal(true) }).strict().parse(await c.req.json())
+    const [wallet] = await service.db.select().from(wallets).where(and(eq(wallets.id, id.parse(c.req.param('id'))), eq(wallets.ownerId, principal.ownerId)))
+    if (!wallet) fail(404, 'not_found', 'Wallet not found')
+    const network = supportedNetworks.find(network => network.chainId === wallet.chainId)
+    if (wallet.provider !== 'privy' || !network || !identity.exportWallet) fail(503, 'export_unavailable', 'Owner-authorized export is unavailable for this wallet')
+    return c.json(await identity.exportWallet(wallet.providerWalletId, principal.ownerId, wallet.address, network.chainType, c.req.header('authorization')!.slice(7)))
   })
   app.patch('/v1/wallets/:id/policy', async c => {
     const result = await service.setPolicy(c.get('principal'), id.parse(c.req.param('id')), await c.req.json())

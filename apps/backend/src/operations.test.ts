@@ -75,6 +75,57 @@ suite('transactional execution foundation (isolated PostgreSQL)', () => {
     await s.service.tick(); await s.service.tick()
     expect((await s.service.get(s.agent, row.id)).status).toBe('confirmed')
   })
+  test('owner pause stops only this agent without provider setup and preserves submitted payments', async () => {
+    const s = await setup()
+    s.service = new OperationService(connection.db, s.executor, pluginConfig.parse({}), 'http://localhost:3000', async () => ({ assetPrice: '1000000000000000000', feePrice: '1000000000000000000', assetDecimals: 0, feeDecimals: 0, expiresAt: Date.now() + 30_000 }))
+    const [a] = await connection.db.insert(agents).values({ id: randomUUID(), ownerId: owner.ownerId, name: 'Pause target', mode: 'ask', allowedRecipients: [], limits: { perTransaction: null, hourly: null, daily: null, total: null }, networks: ['base'], defaultNetwork: 'base' }).returning()
+    await connection.db.update(wallets).set({ agentId: a!.id }).where(eq(wallets.id, s.wallet.id))
+    const [second] = await connection.db.insert(wallets).values({ ...s.wallet, id: randomUUID(), providerWalletId: randomUUID(), agentId: a!.id, chainId: 'eip155:31338', enabled: false }).returning()
+    const submitted = await s.service.create(owner, s.input, 'before-pause-submitted')
+    await s.service.decide(owner, submitted.id, submitted.operationHash, true)
+    await s.service.tick()
+    const pending = await s.service.create(owner, s.input, 'before-pause-pending')
+    const queued = await s.service.create(owner, s.input, 'before-pause-queued')
+    await s.service.decide(owner, queued.id, queued.operationHash, true)
+    const other = await setup()
+    const untouched = await other.service.create(owner, other.input, 'not-paused')
+    const path = `/v1/agents/${a!.id}/pause`
+    for (const [token, status] of [[s.grant.token, 403], ['owner-b', 404]] as const) expect((await s.app.request(path, { method: 'POST', headers: { authorization: `Bearer ${token}` } })).status).toBe(status)
+    expect((await s.app.request(path, { method: 'POST', headers: { authorization: 'Bearer owner-a' } })).status).toBe(200)
+    for (const row of [pending, queued]) expect((await s.service.get(owner, row.id)).status).toBe('denied')
+    expect((await s.service.get(owner, submitted.id)).status).toBe('submitted')
+    expect((await other.service.get(owner, untouched.id)).status).toBe('pending_approval')
+    expect((await s.service.create(owner, s.input, 'after-pause')).status).toBe('denied')
+    const [wallet] = await connection.db.select().from(wallets).where(eq(wallets.id, s.wallet.id))
+    expect(wallet!.policy.mode).toBe('paused')
+    expect(wallet!.policy.maxDailyAtomic).toBe(s.wallet.policy.maxDailyAtomic)
+    const [pausedSecond] = await connection.db.select().from(wallets).where(eq(wallets.id, second!.id))
+    expect(pausedSecond!.policy.mode).toBe('paused')
+    expect(pausedSecond!.enabled).toBe(false)
+    await s.service.tick()
+    expect((await s.service.get(owner, submitted.id)).status).toBe('confirmed')
+    expect(s.counts().preparations).toBe(1)
+  })
+  test('export requires owner scope and explicit confirmation, with no cached response', async () => {
+    const s = await setup()
+    await connection.db.update(wallets).set({ provider: 'privy', chainId: 'eip155:84532' }).where(eq(wallets.id, s.wallet.id))
+    let exports = 0
+    const app = createApp(s.service, {
+      async authenticate(token) { if (['owner-a', 'owner-b'].includes(token)) return token; throw new Error('Invalid') },
+      async exportWallet(id, ownerId, address, chainType, jwt) {
+        expect([id, ownerId, address, chainType, jwt]).toEqual([s.wallet.providerWalletId, owner.ownerId, s.wallet.address, 'ethereum', 'owner-a'])
+        exports++; return { privateKey: 'fixture-key-not-a-real-secret' }
+      },
+    }, [])
+    const path = `/v1/wallets/${s.wallet.id}/export`
+    for (const [token, body, status] of [[s.grant.token, { confirm: true }, 403], ['owner-b', { confirm: true }, 404], ['owner-a', { confirm: false }, 400]] as const) expect((await app.request(path, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) })).status).toBe(status)
+    expect(exports).toBe(0)
+    const response = await app.request(path, { method: 'POST', headers: { authorization: 'Bearer owner-a', 'content-type': 'application/json' }, body: JSON.stringify({ confirm: true }) })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(await response.json()).toEqual({ privateKey: 'fixture-key-not-a-real-secret' })
+    expect(exports).toBe(1)
+  })
   test('profile totals cover all settled payments and access metadata stays owner-only', async () => {
     const s = await setup()
     const operation = await s.service.create(owner, s.input, 'profile-seed')

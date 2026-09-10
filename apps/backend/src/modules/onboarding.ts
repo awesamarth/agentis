@@ -81,6 +81,22 @@ export function onboardingRoutes(service: OperationService, identity: Identity) 
       return view(values)
     }))
   }
+  app.post('/agents/:id/pause', async c => {
+    const id = z.string().uuid().parse(c.req.param('id'))
+    const ownerId = c.get('principal').ownerId
+    return c.json(await service.db.transaction(async tx => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`owner:${ownerId}`}, 0))`)
+      const [agent] = await tx.select().from(agents).where(and(eq(agents.id, id), eq(agents.ownerId, ownerId))).for('update')
+      if (!agent) fail(404, 'not_found', 'Agent not found')
+      const owned = await tx.select().from(wallets).where(and(eq(wallets.agentId, id), eq(wallets.ownerId, ownerId))).orderBy(wallets.id).for('update')
+      await tx.update(agents).set({ mode: 'paused' }).where(eq(agents.id, id))
+      for (const wallet of owned) {
+        if (wallet.policy.mode !== 'paused') await tx.update(wallets).set({ policy: { ...wallet.policy, mode: 'paused' }, policyVersion: wallet.policyVersion + 1 }).where(eq(wallets.id, wallet.id))
+        await tx.update(operations).set({ status: 'denied', authorizationSignature: null, error: 'Agent paused; request a new payment after resuming' }).where(and(eq(operations.walletId, wallet.id), inArray(operations.status, ['pending_approval', 'queued'])))
+      }
+      return view({ ...agent, mode: 'paused' })
+    }))
+  })
   app.post('/agents', save)
   app.patch('/agents/:id', save)
   return app

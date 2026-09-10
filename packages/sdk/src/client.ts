@@ -46,11 +46,13 @@ export class AgentisClient {
   }
   agents = {
     list: () => this.request<AgentisAgent[]>('/agents'),
+    pause: (id: string) => this.request<AgentisAgent>(`/agents/${encodeURIComponent(id)}/pause`, 'POST'),
     create: (input: AgentSettings & { id: string }) => this.request<AgentisAgent>('/agents', 'POST', input),
     update: (id: string, input: AgentSettings) => this.request<AgentisAgent>(`/agents/${encodeURIComponent(id)}`, 'PATCH', input),
   }
   wallets = {
     list: () => this.request<AgentisWallet[]>('/wallets'),
+    exportKey: (id: string, input: { confirm: true }) => this.request<{ privateKey: string }>(`/wallets/${encodeURIComponent(id)}/export`, 'POST', input, {}, AbortSignal.timeout(60_000)),
     link: (input: { providerWalletId: string; chainId: string; policy: WalletPolicy }) => this.request<AgentisWallet>('/wallets', 'POST', input),
     setPolicy: (id: string, policy: WalletPolicy) => this.request<Pick<AgentisWallet, 'id' | 'policy' | 'policyVersion'>>(`/wallets/${encodeURIComponent(id)}/policy`, 'PATCH', policy),
   }
