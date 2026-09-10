@@ -36,7 +36,7 @@ export const grants = pgTable('grants', {
   chainIds: text().array(),
   agentName: text().notNull(),
   tokenHash: text().notNull().unique(),
-  expiresAt: timestamp({ withTimezone: true, mode: 'date' }).notNull(),
+  expiresAt: timestamp({ withTimezone: true, mode: 'date' }),
   revokedAt: timestamp({ withTimezone: true, mode: 'date' }),
 }, table => [
   check('grant_exactly_one_scope', sql`(${table.walletId} is null) <> (${table.agentId} is null)`),

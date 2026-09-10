@@ -1,0 +1,1 @@
+ALTER TABLE "grants" ALTER COLUMN "expiresAt" DROP NOT NULL;

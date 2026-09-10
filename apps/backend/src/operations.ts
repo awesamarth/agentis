@@ -19,7 +19,7 @@ const assetKey = (asset: string) => asset.startsWith('erc20:') ? asset.toLowerCa
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0]
 const grantAllowsWallet = (grant: typeof grants.$inferSelect, wallet: WalletRow) =>
-  grant.ownerId === wallet.ownerId && !grant.revokedAt && grant.expiresAt.getTime() > Date.now() &&
+  grant.ownerId === wallet.ownerId && !grant.revokedAt && (grant.expiresAt === null || grant.expiresAt.getTime() > Date.now()) &&
   (grant.walletId !== null ? grant.walletId === wallet.id : grant.agentId !== null && grant.agentId === wallet.agentId) &&
   (grant.chainIds === null || grant.chainIds.includes(wallet.chainId))
 
@@ -226,8 +226,8 @@ export class OperationService {
   async createGrant(principal: Principal, raw: GrantInput) {
     if (principal.kind !== 'owner') fail(403, 'owner_required', 'Only the owner can delegate access')
     const input = grantInput.parse(raw)
-    const expiresAt = new Date(input.expiresAt)
-    if (expiresAt.getTime() <= Date.now() || expiresAt.getTime() > Date.now() + 30 * 86_400_000) fail(400, 'invalid_expiry', 'Grant lifetime must be within 30 days')
+    const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null
+    if (expiresAt && expiresAt.getTime() <= Date.now()) fail(400, 'invalid_expiry', 'Expiry must be in the future')
     const token = `agt_exec_${randomBytes(32).toString('hex')}`
     return this.db.transaction(async tx => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`owner:${principal.ownerId}`}, 0))`)
@@ -241,7 +241,7 @@ export class OperationService {
         }
       }
       const [grant] = await tx.insert(grants).values({ ...input, ownerId: principal.ownerId, tokenHash: hash(token), expiresAt }).returning()
-      return { id: grant!.id, walletId: grant!.walletId, agentId: grant!.agentId, chainIds: grant!.chainIds, agentName: input.agentName, expiresAt: expiresAt.toISOString(), token }
+      return { id: grant!.id, walletId: grant!.walletId, agentId: grant!.agentId, chainIds: grant!.chainIds, agentName: input.agentName, expiresAt: expiresAt?.toISOString() ?? null, token }
     })
   }
 

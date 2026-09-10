@@ -163,6 +163,26 @@ suite('transactional execution foundation (isolated PostgreSQL)', () => {
     await connection.db.update(grants).set({ expiresAt: new Date(0) }).where(eq(grants.id, fresh.id))
     await expect(service.create(freshPrincipal, s.input, 'expired-key')).rejects.toThrow('not valid for this wallet')
   })
+  test('keys default to no expiry, accept explicit long lifetimes, and remain revocable', async () => {
+    const s = await setup()
+    const input = { walletId: s.wallet.id, agentName: 'Persistent key' }
+    const key = await s.service.createGrant(owner, input)
+    expect(key.expiresAt).toBeNull()
+    const headers = { authorization: `Bearer ${key.token}` }
+    expect((await s.app.request('/v1/wallets', { headers })).status).toBe(200)
+    const principal: Principal = { kind: 'agent', ownerId: owner.ownerId, grantId: key.id }
+    const payment = await s.service.create(principal, s.input, 'persistent-key')
+    await s.service.decide(owner, payment.id, payment.operationHash, true)
+    await s.service.tick(); await s.service.tick()
+    expect((await s.service.get(owner, payment.id)).status).toBe('confirmed')
+    const longExpiry = new Date(Date.now() + 365 * 86_400_000).toISOString()
+    expect((await s.service.createGrant(owner, { ...input, expiresAt: longExpiry })).expiresAt).toBe(longExpiry)
+    expect((await s.service.createGrant(owner, { ...input, expiresAt: null })).expiresAt).toBeNull()
+    await expect(s.service.createGrant(owner, { ...input, expiresAt: new Date(0).toISOString() })).rejects.toThrow('Expiry must be in the future')
+    await s.service.revoke(owner, key.id)
+    expect((await s.app.request('/v1/wallets', { headers })).status).toBe(401)
+    await expect(s.service.create(principal, s.input, 'revoked-persistent-key')).rejects.toThrow('not valid for this wallet')
+  })
   test('token reservations never mix token atomic units with native fee units', async () => {
     const asset = 'erc20:0x0000000000000000000000000000000000004321' as const
     const s = await setup({ maxDailyAtomic: '5', maxLifetimeAtomic: '5', tokenLimits: { [asset]: { perOperation: '10000000', daily: '10000000', lifetime: '10000000' } } })

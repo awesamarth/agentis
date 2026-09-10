@@ -9,7 +9,7 @@ export type ProfileSummary = {
   daily: { date: string; spendMicros: string }[]
   byAgent: { id: string | null; name: string; spendMicros: string }[]
 }
-export type AccessKey = { id: string; walletId: string | null; agentId: string | null; chainIds: string[] | null; name: string; expiresAt: string; revokedAt: string | null }
+export type AccessKey = { id: string; walletId: string | null; agentId: string | null; chainIds: string[] | null; name: string; expiresAt: string | null; revokedAt: string | null }
 
 export type AgentisConfig = {
   baseUrl: string
@@ -57,7 +57,7 @@ export class AgentisClient {
   profile = { get: () => this.request<ProfileSummary>('/profile') }
   grants = {
     list: () => this.request<AccessKey[]>('/grants'),
-    create: (input: GrantInput) => this.request<{ id: string; walletId: string | null; agentId: string | null; chainIds: string[] | null; token: string; expiresAt: string }>('/grants', 'POST', input),
+    create: (input: GrantInput) => this.request<{ id: string; walletId: string | null; agentId: string | null; chainIds: string[] | null; token: string; expiresAt: string | null }>('/grants', 'POST', input),
     revoke: (id: string) => this.request<void>(`/grants/${encodeURIComponent(id)}`, 'DELETE'),
   }
   operations = {

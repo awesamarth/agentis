@@ -48,7 +48,7 @@ export const grantInput = z.object({
   agentId: z.string().uuid().optional(),
   chainIds: z.array(z.string().min(1).max(128)).min(1).max(32).refine(values => new Set(values).size === values.length, 'Duplicate networks').optional(),
   agentName: z.string().trim().min(1).max(80),
-  expiresAt: z.iso.datetime(),
+  expiresAt: z.iso.datetime().nullable().optional(),
 }).strict().refine(input => Number(!!input.walletId) + Number(!!input.agentId) === 1, 'Choose either an agent or a wallet scope').refine(input => !input.chainIds || !!input.agentId, 'Network restrictions require an agent scope')
 export type GrantInput = z.infer<typeof grantInput>
 export const approvalInput = z.object({ operationHash: z.string().regex(/^[a-f0-9]{64}$/), signature: z.string().min(40).max(512).regex(/^[A-Za-z0-9+/]+={0,2}$/).optional() }).strict()

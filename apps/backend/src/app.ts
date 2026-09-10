@@ -35,7 +35,7 @@ export function createApp(service: OperationService, identity: Identity, origins
     if (!token) fail(401, 'unauthorized', 'Bearer token required')
     if (token.startsWith('agt_exec_')) {
       const [grant] = await service.db.select().from(grants).where(eq(grants.tokenHash, hash(token)))
-      if (!grant || grant.revokedAt || grant.expiresAt.getTime() <= Date.now()) fail(401, 'unauthorized', 'Inactive executor grant')
+      if (!grant || grant.revokedAt || (grant.expiresAt !== null && grant.expiresAt.getTime() <= Date.now())) fail(401, 'unauthorized', 'Inactive executor grant')
       c.set('principal', { kind: 'agent', ownerId: grant.ownerId, grantId: grant.id })
     } else {
       let ownerId: string
@@ -51,7 +51,7 @@ export function createApp(service: OperationService, identity: Identity, origins
     let scope = eq(wallets.ownerId, principal.ownerId)
     if (principal.kind === 'agent') {
       const [grant] = await service.db.select().from(grants).where(eq(grants.id, principal.grantId))
-      if (!grant || grant.ownerId !== principal.ownerId || grant.revokedAt || grant.expiresAt.getTime() <= Date.now()) fail(403, 'grant_inactive', 'Access key is inactive')
+      if (!grant || grant.ownerId !== principal.ownerId || grant.revokedAt || (grant.expiresAt !== null && grant.expiresAt.getTime() <= Date.now())) fail(403, 'grant_inactive', 'Access key is inactive')
       scope = and(scope, eq(wallets.enabled, true), grant.walletId ? eq(wallets.id, grant.walletId) : eq(wallets.agentId, grant.agentId!), grant.chainIds === null ? undefined : inArray(wallets.chainId, grant.chainIds))!
     }
     return c.json(await service.db.select({ id: wallets.id, agentId: wallets.agentId, address: wallets.address, chainId: wallets.chainId, policy: wallets.policy, policyVersion: wallets.policyVersion, enabled: wallets.enabled, serverAuthorized: wallets.serverAuthorized }).from(wallets).where(scope))

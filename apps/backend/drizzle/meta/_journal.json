@@ -57,6 +57,13 @@
       "when": 1789049060000,
       "tag": "0007_grant_network_selection",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789049625000,
+      "tag": "0008_optional_key_expiry",
+      "breakpoints": true
     }
   ]
 }
