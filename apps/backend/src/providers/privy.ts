@@ -37,9 +37,21 @@ export function privyIdentity(appId: string, appSecret: string, authorizationKey
     if (!publicKey) fail(503, 'server_authorization_missing', 'Hosted execution is not configured')
     return setupRequest('quorum creation', () => client.keyQuorums().create({ authorization_threshold: 1, user_ids: [ownerId], public_keys: [publicKey] }))
   }
+  const externalWalletId = (ownerId: string, chainType: string, agentId?: string) => `agentis_${hash(`${ownerId}:${chainType}${agentId ? `:${agentId}` : ''}`).slice(0, 48)}`
   return {
+    async createTestWallet(ownerId: string, requestId: string) {
+      return this.createWallet(ownerId, 'ethereum', `export-test:${requestId}`)
+    },
+    async exportTestWallet(ownerId: string, requestId: string, userJwt: string) {
+      const existing = await client.wallets().list({ external_id: externalWalletId(ownerId, 'ethereum', `export-test:${requestId}`) })
+      const wallet = existing.data[0]
+      if (!wallet) fail(404, 'not_found', 'Throwaway wallet not found')
+      const checked = await this.inspectWallet(wallet.id, ownerId)
+      if (!checked.serverAuthorized) fail(403, 'wallet_owner_mismatch', 'Test wallet must retain the user + server quorum')
+      return this.exportWallet(wallet.id, ownerId, wallet.address, 'ethereum', userJwt)
+    },
     async createWallet(ownerId: string, chainType: 'ethereum' | 'solana', agentId?: string) {
-      const externalId = `agentis_${hash(`${ownerId}:${chainType}${agentId ? `:${agentId}` : ''}`).slice(0, 48)}`
+      const externalId = externalWalletId(ownerId, chainType, agentId)
       const existing = await client.wallets().list({ external_id: externalId })
       const wallet = existing.data[0] ?? await client.wallets().create({ chain_type: chainType, owner_id: (await ownerQuorum(ownerId)).id, external_id: externalId, idempotency_key: externalId })
       return this.inspectWallet(wallet.id, ownerId)
