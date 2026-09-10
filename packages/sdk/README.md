@@ -11,7 +11,7 @@ const result = await client.operations.create({
 
 `operations.get/list/wait` return state/receipt; `wait` stops at pending approval or unknown outcome. Owner clients can `operations.approve(id, operationHash)` / `reject`, `wallets.link/setPolicy`, and `grants.create/list/revoke`.
 
-For `grants.create`, supply exactly one of `agentId` (all enabled networks, including networks added later) or `walletId` (one network wallet), plus `agentName` and `expiresAt` (within 30 days). Existing wallet keys keep their scope. Agent keys can call `wallets.list()` to discover only their enabled wallets; neither scope permits settings changes, creating keys or self-approval.
+For `grants.create`, supply `agentId`, `agentName` and `expiresAt` (within 30 days). Omit `chainIds` for all enabled networks, including future additions; supply a non-empty, unique `chainIds` array to restrict the key to selected enabled networks. Restricted keys do not automatically include newly added networks. Legacy `walletId` scope remains supported instead of `agentId`, without `chainIds`; existing keys keep their scope. Agent keys can call `wallets.list()` to discover only their enabled wallets; neither scope permits settings changes, creating keys or self-approval.
 
 No local policy bypass, signing, USD guessing or automatic payment retries. Mainnet/Privy execution and paid-fetch plugins are unavailable pending verification. SDK main entry has no mandatory chain library; retained `/server` paywall helpers are separate seller-side fixtures, not the removed Agentis facilitator product. Only `/server` consumers need its optional peers: `@solana/mpp`, `@x402/core`, `@x402/svm` and `mppx` (use the compatible ranges in package.json).
 

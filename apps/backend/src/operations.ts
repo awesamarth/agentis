@@ -20,7 +20,8 @@ const assetKey = (asset: string) => asset.startsWith('erc20:') ? asset.toLowerCa
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0]
 const grantAllowsWallet = (grant: typeof grants.$inferSelect, wallet: WalletRow) =>
   grant.ownerId === wallet.ownerId && !grant.revokedAt && grant.expiresAt.getTime() > Date.now() &&
-  (grant.walletId !== null ? grant.walletId === wallet.id : grant.agentId !== null && grant.agentId === wallet.agentId)
+  (grant.walletId !== null ? grant.walletId === wallet.id : grant.agentId !== null && grant.agentId === wallet.agentId) &&
+  (grant.chainIds === null || grant.chainIds.includes(wallet.chainId))
 
 export class OperationService {
   constructor(readonly db: Database, readonly executor: Executor | null, readonly config: PluginConfig, readonly dashboardUrl: string, readonly priceQuote: typeof quoteUsd = quoteUsd) {}
@@ -234,9 +235,13 @@ export class OperationService {
       else {
         const [agent] = await tx.select().from(agents).where(and(eq(agents.id, input.agentId!), eq(agents.ownerId, principal.ownerId)))
         if (!agent) fail(404, 'not_found', 'Agent not found')
+        if (input.chainIds) {
+          const enabled = await tx.select({ chainId: wallets.chainId }).from(wallets).where(and(eq(wallets.ownerId, principal.ownerId), eq(wallets.agentId, agent.id), eq(wallets.enabled, true)))
+          if (input.chainIds.some(chainId => !enabled.some(wallet => wallet.chainId === chainId))) fail(400, 'invalid_network_scope', 'Choose enabled networks belonging to this agent')
+        }
       }
       const [grant] = await tx.insert(grants).values({ ...input, ownerId: principal.ownerId, tokenHash: hash(token), expiresAt }).returning()
-      return { id: grant!.id, walletId: grant!.walletId, agentId: grant!.agentId, agentName: input.agentName, expiresAt: expiresAt.toISOString(), token }
+      return { id: grant!.id, walletId: grant!.walletId, agentId: grant!.agentId, chainIds: grant!.chainIds, agentName: input.agentName, expiresAt: expiresAt.toISOString(), token }
     })
   }
 

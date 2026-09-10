@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { approvalInput, grantInput, walletPolicy } from '@agentis-hq/core/operations'
 import { grants, wallets } from './db/schema'
 import { ApiError, fail } from './errors'
@@ -52,7 +52,7 @@ export function createApp(service: OperationService, identity: Identity, origins
     if (principal.kind === 'agent') {
       const [grant] = await service.db.select().from(grants).where(eq(grants.id, principal.grantId))
       if (!grant || grant.ownerId !== principal.ownerId || grant.revokedAt || grant.expiresAt.getTime() <= Date.now()) fail(403, 'grant_inactive', 'Access key is inactive')
-      scope = and(scope, eq(wallets.enabled, true), grant.walletId ? eq(wallets.id, grant.walletId) : eq(wallets.agentId, grant.agentId!))!
+      scope = and(scope, eq(wallets.enabled, true), grant.walletId ? eq(wallets.id, grant.walletId) : eq(wallets.agentId, grant.agentId!), grant.chainIds === null ? undefined : inArray(wallets.chainId, grant.chainIds))!
     }
     return c.json(await service.db.select({ id: wallets.id, agentId: wallets.agentId, address: wallets.address, chainId: wallets.chainId, policy: wallets.policy, policyVersion: wallets.policyVersion, enabled: wallets.enabled, serverAuthorized: wallets.serverAuthorized }).from(wallets).where(scope))
   })
@@ -79,7 +79,7 @@ export function createApp(service: OperationService, identity: Identity, origins
   app.get('/v1/grants', async c => {
     const principal = c.get('principal')
     if (principal.kind !== 'owner') fail(403, 'owner_required', 'Access management requires owner access')
-    return c.json(await service.db.select({ id: grants.id, walletId: grants.walletId, agentId: grants.agentId, name: grants.agentName, expiresAt: grants.expiresAt, revokedAt: grants.revokedAt }).from(grants).where(eq(grants.ownerId, principal.ownerId)))
+    return c.json(await service.db.select({ id: grants.id, walletId: grants.walletId, agentId: grants.agentId, chainIds: grants.chainIds, name: grants.agentName, expiresAt: grants.expiresAt, revokedAt: grants.revokedAt }).from(grants).where(eq(grants.ownerId, principal.ownerId)))
   })
   app.post('/v1/grants', async c => c.json(await service.createGrant(c.get('principal'), grantInput.parse(await c.req.json())), 201))
   app.delete('/v1/grants/:id', async c => { await service.revoke(c.get('principal'), id.parse(c.req.param('id'))); return c.body(null, 204) })

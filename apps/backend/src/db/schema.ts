@@ -33,11 +33,15 @@ export const grants = pgTable('grants', {
   ownerId: text().notNull(),
   walletId: uuid().references(() => wallets.id),
   agentId: uuid().references(() => agents.id),
+  chainIds: text().array(),
   agentName: text().notNull(),
   tokenHash: text().notNull().unique(),
   expiresAt: timestamp({ withTimezone: true, mode: 'date' }).notNull(),
   revokedAt: timestamp({ withTimezone: true, mode: 'date' }),
-}, table => [check('grant_exactly_one_scope', sql`(${table.walletId} is null) <> (${table.agentId} is null)`)])
+}, table => [
+  check('grant_exactly_one_scope', sql`(${table.walletId} is null) <> (${table.agentId} is null)`),
+  check('grant_network_scope', sql`${table.chainIds} is null or (${table.agentId} is not null and cardinality(${table.chainIds}) > 0 and array_position(${table.chainIds}, null) is null)`),
+])
 
 export const operations = pgTable('operations', {
   id: uuid().primaryKey().defaultRandom(),

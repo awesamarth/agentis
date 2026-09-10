@@ -96,7 +96,7 @@ suite('transactional execution foundation (isolated PostgreSQL)', () => {
     const listed = await (await s.app.request('/v1/grants', { headers })).json() as AccessKey[]
     const listedKey = listed.find(key => key.id === s.grant.id)!
     expect(listedKey.id).toBe(s.grant.id)
-    expect(Object.keys(listedKey).sort()).toEqual(['agentId', 'expiresAt', 'id', 'name', 'revokedAt', 'walletId'])
+    expect(Object.keys(listedKey).sort()).toEqual(['agentId', 'chainIds', 'expiresAt', 'id', 'name', 'revokedAt', 'walletId'])
     expect(await (await s.app.request('/v1/grants', { headers: { authorization: 'Bearer owner-b' } })).json()).toEqual([])
     for (const path of ['/v1/profile', '/v1/grants']) expect((await s.app.request(path, { headers: { authorization: `Bearer ${s.grant.token}` } })).status).toBe(403)
   })
@@ -130,11 +130,29 @@ suite('transactional execution foundation (isolated PostgreSQL)', () => {
     expect((await service.get(owner, firstPayment.id)).status).toBe('denied')
     expect((await service.get(owner, secondPayment.id)).status).toBe('denied')
     expect((await s.app.request('/v1/wallets', { headers })).status).toBe(401)
+    const restricted = await service.createGrant(owner, { ...input, chainIds: [s.wallet.chainId, second!.chainId] })
+    const restrictedPrincipal: Principal = { ...principal, grantId: restricted.id }
+    expect((await service.create(restrictedPrincipal, s.input, 'selected-first')).status).toBe('pending_approval')
+    const selectedSecond = await service.create(restrictedPrincipal, secondInput, 'selected-second')
+    expect(selectedSecond.status).toBe('pending_approval')
+    await expect(service.createGrant(owner, { ...input, chainIds: [] })).rejects.toThrow()
+    await expect(service.createGrant(owner, { ...input, chainIds: [s.wallet.chainId, s.wallet.chainId] })).rejects.toThrow()
+    await expect(service.createGrant(owner, { ...input, chainIds: [other!.chainId] })).rejects.toThrow('Choose enabled networks')
+    await expect(service.createGrant(owner, { walletId: s.wallet.id, chainIds: [s.wallet.chainId], agentName: input.agentName, expiresAt: input.expiresAt })).rejects.toThrow()
     const fresh = await service.createGrant(owner, input)
     const freshPrincipal: Principal = { ...principal, grantId: fresh.id }
     const [later] = await connection.db.insert(wallets).values({ ...s.wallet, id: randomUUID(), providerWalletId: randomUUID(), agentId: a, chainId: 'eip155:31340' }).returning()
     expect((await service.create(freshPrincipal, { ...s.input, walletId: later!.id, chainId: later!.chainId }, 'later-network')).status).toBe('pending_approval')
+    await expect(service.create(restrictedPrincipal, { ...s.input, walletId: later!.id, chainId: later!.chainId }, 'unselected-network')).rejects.toThrow('not valid for this wallet')
+    const restrictedWallets = await (await s.app.request('/v1/wallets', { headers: { authorization: `Bearer ${restricted.token}` } })).json() as { id: string }[]
+    expect(new Set(restrictedWallets.map(w => w.id))).toEqual(new Set([s.wallet.id, second!.id]))
+    await service.decide(owner, selectedSecond.id, selectedSecond.operationHash, true)
+    await connection.db.update(grants).set({ chainIds: [s.wallet.chainId] }).where(eq(grants.id, restricted.id))
+    await service.tick()
+    expect((await service.get(owner, selectedSecond.id)).status).toBe('denied')
+    await service.revoke(owner, restricted.id)
     await connection.db.update(wallets).set({ enabled: false }).where(eq(wallets.id, later!.id))
+    await expect(service.createGrant(owner, { ...input, chainIds: [later!.chainId] })).rejects.toThrow('Choose enabled networks')
     expect((await service.create(freshPrincipal, { ...s.input, walletId: later!.id, chainId: later!.chainId }, 'disabled-network')).status).toBe('denied')
     const queued = await service.create(freshPrincipal, secondInput, 'execution-scope')
     await service.decide(owner, queued.id, queued.operationHash, true)
