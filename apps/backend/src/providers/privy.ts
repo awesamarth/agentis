@@ -1,5 +1,5 @@
 import { PrivyClient } from '@privy-io/node'
-import { createPrivateKey, createPublicKey } from 'node:crypto'
+import { createPrivateKey, createPublicKey, generateKeyPairSync } from 'node:crypto'
 import { fail } from '../errors'
 import { hash } from '../operations'
 
@@ -56,6 +56,27 @@ export function privyIdentity(appId: string, appSecret: string, authorizationKey
       const serverAuthorized = !!publicKey && quorum.authorization_keys.length === 1 && quorum.authorization_keys[0]!.public_key === publicKey
       if (!userOwner || (quorum.authorization_keys.length !== 0 && !serverAuthorized)) fail(403, 'wallet_owner_mismatch', 'Unexpected wallet ownership; no signing authority will be assumed')
       return { providerWalletId: wallet.id, address: wallet.address, chainType: wallet.chain_type, serverAuthorized }
+    },
+    async testAuthorization(ownerId: string, userJwt: string) {
+      const claims = await client.utils().auth().verifyAccessToken(userJwt)
+      if (claims.user_id !== ownerId) fail(403, 'owner_required', 'Owner session mismatch')
+      const token = { audienceMatches: claims.app_id === appId, issuerMatches: claims.issuer === 'privy.io', sessionPresent: !!claims.session_id, secondsToExpiry: Math.floor(claims.expiration - Date.now() / 1000), secondsSinceIssued: Math.floor(Date.now() / 1000 - claims.issued_at) }
+      const requestId = (headers?: Headers) => {
+        const value = headers?.get('x-request-id') ?? headers?.get('privy-request-id')
+        return value && /^[a-zA-Z0-9_-]{1,100}$/.test(value) ? value : null
+      }
+      try {
+        const { publicKey: recipient } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+        // Test only the JWT exchange. Discard the encrypted authorization key: no decryption, signing, or export.
+        const { data, response } = await client.wallets().authenticateWithJwt({ user_jwt: userJwt, encryption_type: 'HPKE', recipient_public_key: recipient.export({ type: 'spki', format: 'der' }).toString('base64') }).withResponse()
+        const ok = 'encrypted_authorization_key' in data && data.encrypted_authorization_key.encryption_type === 'HPKE'
+        return { token, exchange: { ok, status: response.status, requestId: requestId(response.headers), error: ok ? null : 'Expected an HPKE-encrypted user authorization key' } }
+      } catch (error) {
+        const status = typeof (error as { status?: unknown })?.status === 'number' ? (error as { status: number }).status : null
+        const headers = (error as { headers?: unknown })?.headers
+        const jwtRejected = error instanceof Error && error.message.includes('Invalid JWT token provided')
+        return { token, exchange: { ok: false, status, requestId: requestId(headers instanceof Headers ? headers : undefined), error: jwtRejected ? 'Invalid JWT token provided' : status === null ? 'SDK or network error; no HTTP response available' : 'Privy rejected the authorization request' } }
+      }
     },
     async exportWallet(id: string, ownerId: string, address: string, chainType: 'ethereum' | 'solana', userJwt: string) {
       if (await this.authenticate(userJwt) !== ownerId) fail(403, 'wallet_owner_mismatch', 'Only the owner can export this wallet')

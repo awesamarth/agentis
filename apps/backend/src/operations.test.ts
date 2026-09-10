@@ -134,6 +134,10 @@ suite('transactional execution foundation (isolated PostgreSQL)', () => {
     let exports = 0
     const walletSpy = spyOn(PrivyClient.prototype, 'wallets').mockReturnValue({
       get: async () => ({ id: s.wallet.providerWalletId, address: s.wallet.address, owner_id: 'quorum', chain_type: 'ethereum' }),
+      authenticateWithJwt: (input: { user_jwt: string }) => ({ withResponse: async () => {
+        expect(input.user_jwt).toBe('owner-a')
+        return { data: { encrypted_authorization_key: { encryption_type: 'HPKE', ciphertext: 'fixture-encrypted-secret' } }, response: new Response(null, { status: 200 }) }
+      } }),
       export: async (id: string, input: { authorization_context: { user_jwts: string[] } }) => {
         expect(id).toBe(s.wallet.providerWalletId)
         expect(input.authorization_context).toEqual({ user_jwts: ['owner-a'] })
@@ -141,7 +145,7 @@ suite('transactional execution foundation (isolated PostgreSQL)', () => {
       },
     } as never)
     const quorumSpy = spyOn(PrivyClient.prototype, 'keyQuorums').mockReturnValue({ get: async () => ({ authorization_threshold: 1, user_ids: [owner.ownerId], key_quorum_ids: [], authorization_keys: [] }) } as never)
-    const authSpy = spyOn(PrivyClient.prototype, 'utils').mockReturnValue({ auth: () => ({ verifyAccessToken: async () => ({ user_id: owner.ownerId }) }) } as never)
+    const authSpy = spyOn(PrivyClient.prototype, 'utils').mockReturnValue({ auth: () => ({ verifyAccessToken: async () => ({ user_id: owner.ownerId, app_id: 'fixture-app', issuer: 'privy.io', session_id: 'fixture-session', issued_at: Math.floor(Date.now() / 1000), expiration: Math.floor(Date.now() / 1000) + 3600 }) }) } as never)
     const databaseUrl = new URL(url!); databaseUrl.pathname = `/${name}`
     let runtime: Awaited<ReturnType<typeof createRuntime>> | undefined
     try {
@@ -149,6 +153,14 @@ suite('transactional execution foundation (isolated PostgreSQL)', () => {
       const response = await runtime.app.request(`/v1/wallets/${s.wallet.id}/export`, { method: 'POST', headers: { authorization: 'Bearer owner-a', 'content-type': 'application/json' }, body: JSON.stringify({ confirm: true }) })
       expect(response.status).toBe(200)
       expect(await response.json()).toEqual({ privateKey: 'fixture-not-a-real-key' })
+      expect(exports).toBe(1)
+      const diagnostic = await runtime.app.request('/v1/diagnostics/privy-authorization', { method: 'POST', headers: { authorization: 'Bearer owner-a' } })
+      expect(diagnostic.status).toBe(200)
+      const report = await diagnostic.json() as { exchange: { ok: boolean } }
+      expect(report.exchange.ok).toBe(true)
+      expect(JSON.stringify(report)).not.toContain('fixture-encrypted-secret')
+      const denied = await runtime.app.request('/v1/diagnostics/privy-authorization', { method: 'POST', headers: { authorization: `Bearer ${s.grant.token}` } })
+      expect(denied.status).toBe(403)
       expect(exports).toBe(1)
     } finally {
       await runtime?.close()

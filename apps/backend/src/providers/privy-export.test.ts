@@ -36,16 +36,17 @@ test('quorum export uses only owner JWT authorization and fails closed without l
 test('real SDK JWT rejection is diagnosed before export without logging secrets', async () => {
   const calls: string[] = []
   const logs: unknown[][] = []
+  let rejectJwt = true
   const logSpy = spyOn(console, 'error').mockImplementation((...args) => { logs.push(args) })
   const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((async (input: string | Request | URL) => {
     const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).pathname
     calls.push(path)
     if (path === '/v1/wallets/wallet') return Response.json({ id: 'wallet', address: 'address', owner_id: 'quorum', chain_type: 'ethereum' })
     if (path === '/v1/key_quorums/quorum') return Response.json({ authorization_threshold: 1, user_ids: ['owner'], key_quorum_ids: [], authorization_keys: [] })
-    if (path === '/v1/wallets/authenticate') return Response.json({ error: 'Invalid JWT token provided', code: 'invalid_data' }, { status: 400 })
+    if (path === '/v1/wallets/authenticate') return rejectJwt ? Response.json({ error: 'Invalid JWT token provided', code: 'invalid_data' }, { status: 400, headers: { 'x-request-id': 'fixture-request' } }) : Response.json({ encrypted_authorization_key: { encryption_type: 'HPKE', ciphertext: 'fixture-encrypted-secret', encapsulated_key: 'fixture-encapsulation' }, expires_at: Date.now() + 60_000, wallets: [] })
     throw new Error('Unexpected outbound request')
   }) as typeof fetch)
-  const authSpy = spyOn(PrivyClient.prototype, 'utils').mockReturnValue({ auth: () => ({ verifyAccessToken: async () => ({ user_id: 'owner' }) }) } as never)
+  const authSpy = spyOn(PrivyClient.prototype, 'utils').mockReturnValue({ auth: () => ({ verifyAccessToken: async () => ({ user_id: 'owner', app_id: 'fixture-app', issuer: 'privy.io', session_id: 'fixture-session', issued_at: Math.floor(Date.now() / 1000), expiration: Math.floor(Date.now() / 1000) + 3600 }) }) } as never)
   try {
     const identity = privyIdentity('fixture-app', 'fixture-secret')
     await expect(identity.exportWallet('wallet', 'owner', 'address', 'ethereum', 'fixture-user-jwt')).rejects.toThrow('Privy rejected the owner token during wallet authorization')
@@ -54,5 +55,15 @@ test('real SDK JWT rejection is diagnosed before export without logging secrets'
     expect(logs).toContainEqual(['Privy owner authorization failed', { stage: 'user JWT exchange', status: 400, jwtRejected: true }])
     expect(JSON.stringify(logs)).not.toContain('fixture-user-jwt')
     expect(JSON.stringify(logs)).not.toContain('fixture-secret')
+    const failed = await identity.testAuthorization('owner', 'fixture-user-jwt')
+    expect(failed.exchange).toEqual({ ok: false, status: 400, requestId: 'fixture-request', error: 'Invalid JWT token provided' })
+    expect(failed.token.audienceMatches).toBe(true)
+    rejectJwt = false
+    const passed = await identity.testAuthorization('owner', 'fixture-user-jwt')
+    expect(passed.exchange.ok).toBe(true)
+    expect(JSON.stringify(passed)).not.toContain('fixture-encrypted-secret')
+    expect(JSON.stringify(passed)).not.toContain('fixture-user-jwt')
+    expect(calls.filter(path => path.endsWith('/authenticate'))).toHaveLength(3)
+    expect(calls.some(path => path.endsWith('/export') || path.endsWith('/rpc'))).toBe(false)
   } finally { fetchSpy.mockRestore(); authSpy.mockRestore(); logSpy.mockRestore() }
 })
