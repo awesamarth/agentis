@@ -10,6 +10,7 @@ export default function TransferRequest() {
   const { ready, authenticated, user, getAccessToken } = usePrivy()
   const router = useRouter()
   const cache = useQueryClient()
+  const [chainId, setChainId] = useState('')
   const [walletId, setWalletId] = useState('')
   const [assetId, setAssetId] = useState('')
   const attempt = useRef<{ body: string; key: string } | null>(null)
@@ -18,8 +19,10 @@ export default function TransferRequest() {
   const networks = useQuery({ queryKey: ['onboarding', user?.id], enabled: ready && authenticated, queryFn: () => client.onboarding.get() })
   const agents = useQuery({ queryKey: ['agents', user?.id], enabled: ready && authenticated, queryFn: () => client.agents.list() })
   const available = wallets.data?.filter(wallet => wallet.enabled && networks.data?.networks.some(network => network.chainId === wallet.chainId && network.executionReady)) ?? []
-  const selected = available.find(wallet => wallet.id === walletId) ?? available[0]
-  const network = networks.data?.networks.find(network => network.chainId === selected?.chainId)
+  const availableNetworks = networks.data?.networks.filter(network => available.some(wallet => wallet.chainId === network.chainId)) ?? []
+  const network = availableNetworks.find(network => network.chainId === chainId) ?? availableNetworks[0]
+  const networkWallets = available.filter(wallet => wallet.chainId === network?.chainId)
+  const selected = networkWallets.find(wallet => wallet.id === walletId) ?? networkWallets[0]
   const asset = network?.assets.find(asset => asset.id === assetId) ?? network?.assets[0]
   const submit = useMutation({ mutationFn: async (form: FormData) => {
     if (!selected || !network || !asset) throw new Error('Set up an enabled wallet first')
@@ -33,10 +36,11 @@ export default function TransferRequest() {
   const inputClass = 'mt-2 w-full border border-beige-darker bg-[#f8f4ed] p-3 font-mono text-sm'
   return <section className="border border-beige-darker p-6"><h2 className="font-serif text-2xl font-bold">Make a payment</h2><p className="mt-2 text-ink-muted">Request a testnet payment, then review and authorize it. Your wallet needs funds for the amount and network fee.</p>
     <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={event => { event.preventDefault(); submit.mutate(new FormData(event.currentTarget)) }}>
-      <label>Agent wallet<select className={inputClass} value={selected?.id ?? ''} onChange={event => setWalletId(event.target.value)}>{available.map(wallet => <option key={wallet.id} value={wallet.id}>{agents.data?.find(agent => agent.id === wallet.agentId)?.name ?? `Wallet ${wallet.id.slice(0, 8)}`} · {networks.data?.networks.find(network => network.chainId === wallet.chainId)?.name}</option>)}</select></label>
+      <label>Network<select className={inputClass} value={network?.chainId ?? ''} disabled={submit.isPending} onChange={event => { setChainId(event.target.value); setWalletId(''); setAssetId(''); submit.reset() }}>{availableNetworks.map(network => <option key={network.chainId} value={network.chainId}>{network.name}</option>)}</select></label>
+      <label>Agent wallet<select className={inputClass} value={selected?.id ?? ''} disabled={submit.isPending} onChange={event => setWalletId(event.target.value)}>{networkWallets.map(wallet => <option key={wallet.id} value={wallet.id}>{agents.data?.find(agent => agent.id === wallet.agentId)?.name ?? `Wallet ${wallet.id.slice(0, 8)}`}</option>)}</select></label>
       <label>Asset<select className={inputClass} value={asset?.id ?? ''} onChange={event => setAssetId(event.target.value)}>{network?.assets.map(asset => <option key={asset.id} value={asset.id}>{asset.symbol}</option>)}</select></label>
-      <label>Recipient<input name="to" className={inputClass} required placeholder={network?.key === 'solana' ? 'Solana address' : '0x…'} /></label>
-      <label>Amount ({asset?.symbol})<input name="amount" className={inputClass} required inputMode="decimal" placeholder="0.00001" /></label>
+      <label>Recipient<input key={network?.chainId} name="to" className={inputClass} required placeholder={network?.key === 'solana' ? 'Solana address' : '0x…'} /></label>
+      <label>Amount ({asset?.symbol})<input key={`${network?.chainId}:${asset?.id}`} name="amount" className={inputClass} required inputMode="decimal" placeholder="0.00001" /></label>
       <label>Fee budget ({network?.currency})<input key={network?.key} name="fee" className={inputClass} required inputMode="decimal" defaultValue={network?.key === 'solana' ? '0.003' : network?.key === 'base' ? '0.0001' : '0.01'} /></label>
       <label className="sm:col-span-2">What is this payment for? (optional)<input name="reason" className={inputClass} maxLength={500} /></label>
       {submit.error && <p role="alert" className="sm:col-span-2">{submit.error.message}</p>}
