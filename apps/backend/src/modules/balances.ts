@@ -1,5 +1,5 @@
 import { createPublicClient, erc20Abi, http, type Address } from 'viem'
-import { PublicKey } from '@solana/web3.js'
+import { clusterApiUrl, PublicKey } from '@solana/web3.js'
 import type { WalletRow } from '../db/schema'
 import { supportedNetworks, evmChains } from './networks'
 import { solanaConnection } from './solana'
@@ -16,8 +16,7 @@ export async function agentBalance(wallets: WalletRow[]) {
       try {
         let amount: bigint
         if (network.chainType === 'solana') {
-          const connection = solanaConnection()
-          if (!(await connection.getGenesisHash()).startsWith(network.chainId.slice(7))) throw new Error('RPC network mismatch')
+          const connection = solanaConnection(clusterApiUrl('devnet'))
           const owner = new PublicKey(wallet.address)
           if (asset.id === 'native') {
             const balance = await connection.getBalance(owner)

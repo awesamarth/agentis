@@ -5,8 +5,8 @@ import { assertSolanaTransfer, buildSolanaTransfer, encodeTransaction, decodeTra
 import type { OperationInput, Operation } from '@agentis-hq/core/operations'
 
 export { solanaDevnet, solanaUsdc }
-export function solanaConnection() {
-  return new Connection(process.env.SOLANA_DEVNET_RPC_URL ?? 'https://api.devnet.solana.com', { commitment: 'confirmed', fetch: ((url: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) => fetch(url, { ...options, signal: AbortSignal.timeout(15_000) })) as typeof fetch })
+export function solanaConnection(rpcUrl = process.env.SOLANA_DEVNET_RPC_URL ?? 'https://api.devnet.solana.com') {
+  return new Connection(rpcUrl, { commitment: 'confirmed', fetch: ((url: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) => fetch(url, { ...options, signal: AbortSignal.timeout(15_000) })) as typeof fetch })
 }
 async function checkedConnection() {
   const connection = solanaConnection()
