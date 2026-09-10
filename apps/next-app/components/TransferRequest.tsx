@@ -5,6 +5,7 @@ import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AgentisClient } from '@agentis-hq/sdk'
 import { parseAmount } from './amount-input'
+import Dropdown from './Dropdown'
 
 export default function TransferRequest() {
   const { ready, authenticated, user, getAccessToken } = usePrivy()
@@ -36,9 +37,9 @@ export default function TransferRequest() {
   const inputClass = 'mt-2 w-full border border-beige-darker bg-[#f8f4ed] p-3 font-mono text-sm'
   return <section className="border border-beige-darker p-6"><h2 className="font-serif text-2xl font-bold">Make a payment</h2><p className="mt-2 text-ink-muted">Request a testnet payment, then review and authorize it. Your wallet needs funds for the amount and network fee.</p>
     <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={event => { event.preventDefault(); submit.mutate(new FormData(event.currentTarget)) }}>
-      <label>Network<select className={inputClass} value={network?.chainId ?? ''} disabled={submit.isPending} onChange={event => { setChainId(event.target.value); setWalletId(''); setAssetId(''); submit.reset() }}>{availableNetworks.map(network => <option key={network.chainId} value={network.chainId}>{network.name}</option>)}</select></label>
-      <label>Agent wallet<select className={inputClass} value={selected?.id ?? ''} disabled={submit.isPending} onChange={event => setWalletId(event.target.value)}>{networkWallets.map(wallet => <option key={wallet.id} value={wallet.id}>{agents.data?.find(agent => agent.id === wallet.agentId)?.name ?? `Wallet ${wallet.id.slice(0, 8)}`}</option>)}</select></label>
-      <label>Asset<select className={inputClass} value={asset?.id ?? ''} onChange={event => setAssetId(event.target.value)}>{network?.assets.map(asset => <option key={asset.id} value={asset.id}>{asset.symbol}</option>)}</select></label>
+      <Dropdown label="Network" value={network?.chainId ?? ''} disabled={submit.isPending} onChange={value => { setChainId(value); setWalletId(''); setAssetId(''); submit.reset() }} options={availableNetworks.map(network => ({ value: network.chainId, label: network.name }))} />
+      <Dropdown label="Agent wallet" value={selected?.id ?? ''} disabled={submit.isPending} onChange={setWalletId} options={networkWallets.map(wallet => ({ value: wallet.id, label: agents.data?.find(agent => agent.id === wallet.agentId)?.name ?? `Wallet ${wallet.id.slice(0, 8)}` }))} />
+      <Dropdown label="Asset" value={asset?.id ?? ''} disabled={submit.isPending} onChange={setAssetId} options={network?.assets.map(asset => ({ value: asset.id, label: asset.symbol })) ?? []} />
       <label>Recipient<input key={network?.chainId} name="to" className={inputClass} required placeholder={network?.key === 'solana' ? 'Solana address' : '0x…'} /></label>
       <label>Amount ({asset?.symbol})<input key={`${network?.chainId}:${asset?.id}`} name="amount" className={inputClass} required inputMode="decimal" placeholder="0.00001" /></label>
       <label>Fee budget ({network?.currency})<input key={network?.key} name="fee" className={inputClass} required inputMode="decimal" defaultValue={network?.key === 'solana' ? '0.003' : network?.key === 'base' ? '0.0001' : '0.01'} /></label>
