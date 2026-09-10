@@ -56,7 +56,7 @@ bun run check                   # builds packages, then typechecks interfaces/ba
 cd apps/next-app && bun run lint
 ```
 
-Automated suites were removed at the owner's request. The manual wallet creation/export page remains at `/dashboard/agents/[id]/test`.
+Automated suites were removed at the owner's request. The standalone Privy wallet creation/export page is `/test` (no Agentis records).
 
 ## Boundaries
 

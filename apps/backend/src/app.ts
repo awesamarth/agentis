@@ -13,7 +13,6 @@ import { profileSummary } from './modules/profile'
 
 export type Identity = {
   authenticate(token: string): Promise<string>
-  testAuthorization?(ownerId: string, userJwt: string): Promise<{ token: Record<string, boolean | number>; exchange: { ok: boolean; status: number | null; requestId: string | null; error: string | null } }>
   exportWallet?(id: string, ownerId: string, address: string, chainType: 'ethereum' | 'solana', userJwt: string): Promise<{ privateKey: string }>
   createWallet?(ownerId: string, chainType: 'ethereum' | 'solana', agentId?: string): Promise<{ providerWalletId: string; address: string; chainType: string; serverAuthorized?: boolean }>
   enableServerExecution?(id: string, ownerId: string, userJwt: string): Promise<{ serverAuthorized: boolean }>
@@ -45,12 +44,6 @@ export function createApp(service: OperationService, identity: Identity, origins
       c.set('principal', { kind: 'owner', ownerId })
     }
     await next()
-  })
-  app.post('/v1/diagnostics/privy-authorization', async c => {
-    const principal = c.get('principal')
-    if (principal.kind !== 'owner') fail(403, 'owner_required', 'Only the owner can test their Privy session')
-    if (!identity.testAuthorization) fail(503, 'provider_unavailable', 'Privy authorization diagnostics unavailable')
-    return c.json(await identity.testAuthorization(principal.ownerId, c.req.header('authorization')!.slice(7)))
   })
   app.route('/v1', onboardingRoutes(service, identity))
   app.get('/v1/capabilities', c => c.json({ defaultChain: defaultProductChain, networks: Object.fromEntries(supportedNetworks.map(network => [network.chainId, { name: network.name, testnet: network.testnet, execution: service.executor?.id === 'privy' && ['base', 'arc'].includes(network.key) }])), core: { transfers: !!service.executor, x402: false, mpp: false }, plugins: service.config, executor: service.executor?.id ?? null, approvalSecurity: service.executor?.id === 'anvil' ? 'local-demo-app-authorization' : service.executor?.id === 'privy' ? 'backend-policy-and-owner-approval' : 'live-execution-unavailable' }))

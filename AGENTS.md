@@ -25,7 +25,7 @@ SDK-first financial execution for agents: wallets, permissions, budgets, approva
 
 ## Current state and next work
 
-- Automated suites and root test commands were removed at the owner's request. Manual wallet creation/export and JWT diagnostics remain at `/dashboard/agents/[id]/test`; do not claim authenticated functionality from old automated results.
+- Automated suites and root test commands were removed at the owner's request. Standalone `/test` uses Privy React create/export directly, without Agentis records or quorum setup; the incorrect agent-scoped test route and diagnostic endpoint were removed. Existing test-agent records were not deleted; do not claim authenticated functionality from old automated results.
 
 - Hosted operation pipeline, per-agent CRUD/budgets, network setup, transfer form and approval button are implemented. Name-only saves are metadata-only and must not invoke Privy setup or invalidate approvals. Rules saves reuse verified `serverAuthorized` state without Privy setup calls; unconfigured wallets still require setup, and payment execution rechecks ownership.
 - Setup modal: stable viewport-capped height, scrollable content, backdrop dismissal except while saving, direct step navigation and Save on every step when editing or after reaching Review during creation. Saving revalidates the current inputs. Labels use “Per transaction” and “Testnet”; payment reason is optional. Dashboard dropdowns share `Dropdown.tsx` (Radix Select): light beige options matching the fields, black highlight, padded chevrons and dialog-safe portals.
