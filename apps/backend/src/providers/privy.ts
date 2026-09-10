@@ -4,7 +4,17 @@ import { fail } from '../errors'
 import { hash } from '../operations'
 
 export function privyIdentity(appId: string, appSecret: string, authorizationKey?: string) {
-  const client = new PrivyClient({ appId, appSecret, timeout: 20_000, maxRetries: 0 })
+  const client = new PrivyClient({ appId, appSecret, timeout: 20_000, maxRetries: 0, fetch: async (input, init) => {
+    const response = await fetch(input, init)
+    const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).pathname
+    const stage = path.endsWith('/authenticate') ? 'user JWT exchange' : path.endsWith('/export') ? 'wallet export' : null
+    if (stage && !response.ok) {
+      // Only fixed categories and numeric status: no headers, URLs, JWTs, keys, or raw provider payloads.
+      const body = await response.clone().json().catch(() => null) as { error?: unknown } | null
+      console.error('Privy owner authorization failed', { stage, status: response.status, jwtRejected: body?.error === 'Invalid JWT token provided' })
+    }
+    return response
+  } })
   const publicKey = authorizationKey ? createPublicKey(createPrivateKey({ key: Buffer.from(authorizationKey, 'base64'), format: 'der', type: 'pkcs8' })).export({ type: 'spki', format: 'der' }).toString('base64') : null
   async function setupRequest<T>(stage: string, run: () => Promise<T>, userJwt?: string): Promise<T> {
     try { return await run() } catch (error) {
@@ -55,9 +65,14 @@ export function privyIdentity(appId: string, appSecret: string, authorizationKey
         // User authorization only. Never fall back to the server quorum signer for export.
         const result = await client.wallets().export(id, { authorization_context: { user_jwts: [userJwt] }, request_expiry: Date.now() + 60_000 })
         return { privateKey: result.private_key }
-      } catch {
-        // Provider errors may contain sensitive material; never log or return their payloads.
-        fail(503, 'wallet_export_failed', 'Privy could not authorize the export. No server-signer fallback was attempted.')
+      } catch (error) {
+        // Never expose raw SDK errors: some include sensitive request/response material.
+        const status = typeof (error as { status?: unknown })?.status === 'number' ? (error as { status: number }).status : null
+        const jwtRejected = error instanceof Error && error.message.includes('Invalid JWT token provided')
+        console.error('Privy export failed', { status, jwtRejected, category: status === null ? 'sdk_or_transport' : 'provider_response' })
+        if (jwtRejected) fail(401, 'wallet_export_jwt_rejected', 'Privy rejected the owner token during wallet authorization. Export was not completed; signing in again has not resolved this known issue.')
+        if (status === 401 || status === 403) fail(403, 'wallet_export_denied', 'Privy denied this owner’s export authorization. Export was not completed.')
+        fail(503, 'wallet_export_failed', status === null ? 'Wallet export failed in the SDK or network connection. Export was not completed.' : `Privy rejected the export flow (HTTP ${status}). Export was not completed.`)
       }
     },
     async enableServerExecution(id: string, ownerId: string, userJwt: string) {
