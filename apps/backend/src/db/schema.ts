@@ -1,4 +1,5 @@
-import { pgTable, uuid, text, timestamp, integer, jsonb, uniqueIndex, boolean } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, timestamp, integer, jsonb, uniqueIndex, boolean, check } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 import type { Operation, OperationInput, OperationStatus, WalletPolicy, AuthorizationRequest, UsdQuote, UsdLimits } from '@agentis-hq/core/operations'
 
 export const agents = pgTable('agents', {
@@ -30,12 +31,13 @@ export const wallets = pgTable('wallets', {
 export const grants = pgTable('grants', {
   id: uuid().primaryKey().defaultRandom(),
   ownerId: text().notNull(),
-  walletId: uuid().notNull().references(() => wallets.id),
+  walletId: uuid().references(() => wallets.id),
+  agentId: uuid().references(() => agents.id),
   agentName: text().notNull(),
   tokenHash: text().notNull().unique(),
   expiresAt: timestamp({ withTimezone: true, mode: 'date' }).notNull(),
   revokedAt: timestamp({ withTimezone: true, mode: 'date' }),
-})
+}, table => [check('grant_exactly_one_scope', sql`(${table.walletId} is null) <> (${table.agentId} is null)`)])
 
 export const operations = pgTable('operations', {
   id: uuid().primaryKey().defaultRandom(),

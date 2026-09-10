@@ -1,4 +1,4 @@
-import type { Operation, OperationInput, WalletPolicy, AuthorizationRequest, UsdLimits } from '@agentis-hq/core/operations'
+import type { Operation, OperationInput, WalletPolicy, AuthorizationRequest, UsdLimits, GrantInput } from '@agentis-hq/core/operations'
 
 export type AgentisAgent = { id: string; name: string; limits: UsdLimits; mode: 'ask' | 'automatic' | 'paused'; allowedRecipients: string[]; networks: string[]; defaultNetwork: string }
 export type AgentSettings = Pick<AgentisAgent, 'name' | 'limits' | 'mode' | 'allowedRecipients'> & { selection: { networks: string[]; defaultNetwork: string }; enableExecution?: boolean }
@@ -9,7 +9,7 @@ export type ProfileSummary = {
   daily: { date: string; spendMicros: string }[]
   byAgent: { id: string | null; name: string; spendMicros: string }[]
 }
-export type AccessKey = { id: string; walletId: string; name: string; expiresAt: string; revokedAt: string | null }
+export type AccessKey = { id: string; walletId: string | null; agentId: string | null; name: string; expiresAt: string; revokedAt: string | null }
 
 export type AgentisConfig = {
   baseUrl: string
@@ -57,7 +57,7 @@ export class AgentisClient {
   profile = { get: () => this.request<ProfileSummary>('/profile') }
   grants = {
     list: () => this.request<AccessKey[]>('/grants'),
-    create: (input: { walletId: string; agentName: string; expiresAt: string }) => this.request<{ id: string; token: string; expiresAt: string }>('/grants', 'POST', input),
+    create: (input: GrantInput) => this.request<{ id: string; walletId: string | null; agentId: string | null; token: string; expiresAt: string }>('/grants', 'POST', input),
     revoke: (id: string) => this.request<void>(`/grants/${encodeURIComponent(id)}`, 'DELETE'),
   }
   operations = {

@@ -9,7 +9,7 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { createPublicClient, createTestClient, http, parseEther } from 'viem'
 import { foundry } from 'viem/chains'
 import { connectDatabase } from './db'
-import { wallets, operations, grants, onboarding } from './db/schema'
+import { wallets, operations, grants, onboarding, agents } from './db/schema'
 import { OperationService, type Principal } from './operations'
 import { pluginConfig } from './plugins'
 import { createApp } from './app'
@@ -96,9 +96,54 @@ suite('transactional execution foundation (isolated PostgreSQL)', () => {
     const listed = await (await s.app.request('/v1/grants', { headers })).json() as AccessKey[]
     const listedKey = listed.find(key => key.id === s.grant.id)!
     expect(listedKey.id).toBe(s.grant.id)
-    expect(Object.keys(listedKey).sort()).toEqual(['expiresAt', 'id', 'name', 'revokedAt', 'walletId'])
+    expect(Object.keys(listedKey).sort()).toEqual(['agentId', 'expiresAt', 'id', 'name', 'revokedAt', 'walletId'])
     expect(await (await s.app.request('/v1/grants', { headers: { authorization: 'Bearer owner-b' } })).json()).toEqual([])
     for (const path of ['/v1/profile', '/v1/grants']) expect((await s.app.request(path, { headers: { authorization: `Bearer ${s.grant.token}` } })).status).toBe(403)
+  })
+  test('agent keys span networks without escaping agent scope; wallet keys stay restricted', async () => {
+    const s = await setup()
+    const a = randomUUID(), b = randomUUID(), foreign = randomUUID()
+    const limits = { perTransaction: null, hourly: null, daily: null, total: null }
+    await connection.db.insert(agents).values([a, b, foreign].map(id => ({ id, ownerId: id === foreign ? 'owner-b' : owner.ownerId, name: id, limits, mode: 'ask' as const, networks: ['base'], defaultNetwork: 'base', allowedRecipients: [] })))
+    await connection.db.update(wallets).set({ agentId: a }).where(eq(wallets.id, s.wallet.id))
+    const [second, other] = await connection.db.insert(wallets).values([a, b].map((agentId, i) => ({ ...s.wallet, id: randomUUID(), providerWalletId: randomUUID(), agentId, chainId: `eip155:${31338 + i}` }))).returning()
+    const service = new OperationService(connection.db, s.executor, pluginConfig.parse({}), 'http://localhost:3000', async () => ({ assetPrice: '1000000000000000000', feePrice: '1000000000000000000', assetDecimals: 0, feeDecimals: 0, expiresAt: Date.now() + 30_000 }))
+    const input = { agentId: a, agentName: 'Agent-wide', expiresAt: new Date(Date.now() + 60_000).toISOString() }
+    const wide = await service.createGrant(owner, input)
+    const principal: Principal = { kind: 'agent', ownerId: owner.ownerId, grantId: wide.id }
+    const secondInput = { ...s.input, walletId: second!.id, chainId: second!.chainId }
+    const firstPayment = await service.create(principal, s.input, 'wide-first')
+    const secondPayment = await service.create(principal, secondInput, 'wide-second')
+    expect(firstPayment.status).toBe('pending_approval')
+    expect(secondPayment.status).toBe('pending_approval')
+    await expect(service.create(principal, { ...s.input, walletId: other!.id, chainId: other!.chainId }, 'other-agent')).rejects.toThrow('not valid for this wallet')
+    await expect(service.create(s.agent, secondInput, 'wallet-only')).rejects.toThrow('not valid for this wallet')
+    await expect(service.createGrant(owner, { ...input, agentId: foreign })).rejects.toThrow('Agent not found')
+    await expect(service.createGrant(owner, { ...input, walletId: s.wallet.id })).rejects.toThrow()
+    await expect(service.createGrant(owner, { agentName: 'No scope', expiresAt: input.expiresAt })).rejects.toThrow()
+    await expect(service.decide(principal, firstPayment.id, firstPayment.operationHash, true)).rejects.toThrow('Only the wallet owner')
+    await expect(service.setPolicy(principal, s.wallet.id, policy)).rejects.toThrow()
+    const headers = { authorization: `Bearer ${wide.token}` }
+    const visible = await (await s.app.request('/v1/wallets', { headers })).json() as { id: string }[]
+    expect(new Set(visible.map(w => w.id))).toEqual(new Set([s.wallet.id, second!.id]))
+    await service.revoke(owner, wide.id)
+    expect((await service.get(owner, firstPayment.id)).status).toBe('denied')
+    expect((await service.get(owner, secondPayment.id)).status).toBe('denied')
+    expect((await s.app.request('/v1/wallets', { headers })).status).toBe(401)
+    const fresh = await service.createGrant(owner, input)
+    const freshPrincipal: Principal = { ...principal, grantId: fresh.id }
+    const [later] = await connection.db.insert(wallets).values({ ...s.wallet, id: randomUUID(), providerWalletId: randomUUID(), agentId: a, chainId: 'eip155:31340' }).returning()
+    expect((await service.create(freshPrincipal, { ...s.input, walletId: later!.id, chainId: later!.chainId }, 'later-network')).status).toBe('pending_approval')
+    await connection.db.update(wallets).set({ enabled: false }).where(eq(wallets.id, later!.id))
+    expect((await service.create(freshPrincipal, { ...s.input, walletId: later!.id, chainId: later!.chainId }, 'disabled-network')).status).toBe('denied')
+    const queued = await service.create(freshPrincipal, secondInput, 'execution-scope')
+    await service.decide(owner, queued.id, queued.operationHash, true)
+    await connection.db.update(wallets).set({ agentId: b }).where(eq(wallets.id, second!.id))
+    await service.tick()
+    expect((await service.get(owner, queued.id)).status).toBe('denied')
+    expect(s.counts().preparations).toBe(0)
+    await connection.db.update(grants).set({ expiresAt: new Date(0) }).where(eq(grants.id, fresh.id))
+    await expect(service.create(freshPrincipal, s.input, 'expired-key')).rejects.toThrow('not valid for this wallet')
   })
   test('token reservations never mix token atomic units with native fee units', async () => {
     const asset = 'erc20:0x0000000000000000000000000000000000004321' as const

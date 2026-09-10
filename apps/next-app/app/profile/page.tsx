@@ -7,7 +7,6 @@ import { useRouter } from 'next/navigation'
 import { AgentisClient } from '@agentis-hq/sdk'
 import { Copy, Check } from 'lucide-react'
 import Navbar from '@/components/Navbar'
-import WalletAccess from '@/components/WalletAccess'
 
 function money(micros: string) {
   const cents = (BigInt(micros) + 5000n) / 10000n
@@ -61,7 +60,6 @@ export default function ProfilePage() {
           <ul className="space-y-2">{breakdown.map((a, i) => <li key={a.id ?? 'unassigned'} className="flex items-center gap-3 border border-beige-darker/70 bg-beige/40 px-3 py-2"><span className="h-3 w-3 shrink-0" style={{ backgroundColor: colors[i % colors.length] }} /><div className="min-w-0 font-mono text-xs"><p className="break-words">{a.name}</p><p className="mt-1 text-ink-muted">{money(a.spendMicros)}</p></div></li>)}</ul>
         </div></div>}
       </section>}
-      <WalletAccess />
     </main>
   </div>
 }

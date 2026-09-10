@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { and, eq, inArray, lt, sql } from 'drizzle-orm'
-import { operationInput, walletPolicy, type Operation, type OperationInput } from '@agentis-hq/core/operations'
+import { operationInput, walletPolicy, grantInput, type GrantInput, type Operation, type OperationInput } from '@agentis-hq/core/operations'
 import type { Database } from './db'
 import { grants, operations, wallets, onboarding, agents, type OperationRow, type WalletRow } from './db/schema'
 import { fail } from './errors'
@@ -18,6 +18,9 @@ const lifetimeMs = 10 * 60_000
 const assetKey = (asset: string) => asset.startsWith('erc20:') ? asset.toLowerCase() : asset
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0]
+const grantAllowsWallet = (grant: typeof grants.$inferSelect, wallet: WalletRow) =>
+  grant.ownerId === wallet.ownerId && !grant.revokedAt && grant.expiresAt.getTime() > Date.now() &&
+  (grant.walletId !== null ? grant.walletId === wallet.id : grant.agentId !== null && grant.agentId === wallet.agentId)
 
 export class OperationService {
   constructor(readonly db: Database, readonly executor: Executor | null, readonly config: PluginConfig, readonly dashboardUrl: string, readonly priceQuote: typeof quoteUsd = quoteUsd) {}
@@ -42,7 +45,7 @@ export class OperationService {
 
   private async checkGrant(tx: Transaction, grantId: string, wallet: WalletRow) {
     const [grant] = await tx.select().from(grants).where(eq(grants.id, grantId))
-    if (!grant || grant.walletId !== wallet.id || grant.ownerId !== wallet.ownerId || grant.revokedAt || grant.expiresAt.getTime() <= Date.now()) {
+    if (!grant || !grantAllowsWallet(grant, wallet)) {
       fail(403, 'grant_inactive', 'Grant is revoked, expired or not valid for this wallet')
     }
     return grant
@@ -219,15 +222,21 @@ export class OperationService {
     })
   }
 
-  async createGrant(principal: Principal, input: { walletId: string; agentName: string; expiresAt: string }) {
+  async createGrant(principal: Principal, raw: GrantInput) {
     if (principal.kind !== 'owner') fail(403, 'owner_required', 'Only the owner can delegate access')
+    const input = grantInput.parse(raw)
     const expiresAt = new Date(input.expiresAt)
     if (expiresAt.getTime() <= Date.now() || expiresAt.getTime() > Date.now() + 30 * 86_400_000) fail(400, 'invalid_expiry', 'Grant lifetime must be within 30 days')
     const token = `agt_exec_${randomBytes(32).toString('hex')}`
     return this.db.transaction(async tx => {
-      await this.lockWallet(tx, principal, input.walletId)
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`owner:${principal.ownerId}`}, 0))`)
+      if (input.walletId) await this.lockWallet(tx, principal, input.walletId)
+      else {
+        const [agent] = await tx.select().from(agents).where(and(eq(agents.id, input.agentId!), eq(agents.ownerId, principal.ownerId)))
+        if (!agent) fail(404, 'not_found', 'Agent not found')
+      }
       const [grant] = await tx.insert(grants).values({ ...input, ownerId: principal.ownerId, tokenHash: hash(token), expiresAt }).returning()
-      return { id: grant!.id, walletId: input.walletId, agentName: input.agentName, expiresAt: expiresAt.toISOString(), token }
+      return { id: grant!.id, walletId: grant!.walletId, agentId: grant!.agentId, agentName: input.agentName, expiresAt: expiresAt.toISOString(), token }
     })
   }
 
@@ -236,7 +245,7 @@ export class OperationService {
     const [grant] = await this.db.select().from(grants).where(and(eq(grants.id, id), eq(grants.ownerId, principal.ownerId)))
     if (!grant) fail(404, 'not_found', 'Grant not found')
     await this.db.transaction(async tx => {
-      await this.lockWallet(tx, principal, grant.walletId)
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`owner:${principal.ownerId}`}, 0))`)
       await tx.update(grants).set({ revokedAt: new Date() }).where(eq(grants.id, id))
       await tx.update(operations).set({ status: 'denied', error: 'Grant revoked' }).where(and(eq(operations.grantId, id), inArray(operations.status, ['pending_approval', 'queued'])))
     })
@@ -272,7 +281,7 @@ export class OperationService {
         if (wallet.provider === 'privy' && !wallet.serverAuthorized) reason = 'Wallet setup required; save this agent’s rules first'
         if (row.grantId) {
           const [grant] = await tx.select().from(grants).where(eq(grants.id, row.grantId))
-          if (!grant || grant.revokedAt || grant.expiresAt.getTime() <= Date.now()) reason = 'Grant inactive'
+          if (!grant || !grantAllowsWallet(grant, wallet)) reason = 'Grant inactive or outside wallet scope'
         }
         const [agent] = wallet.agentId ? await tx.select().from(agents).where(eq(agents.id, wallet.agentId)) : []
         if (agent) reason ??= this.policyReason({ ...wallet, policy: { ...wallet.policy, mode: agent.mode, allowedRecipients: agent.allowedRecipients } }, row.input)

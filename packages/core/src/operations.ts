@@ -44,10 +44,12 @@ export const agentSettings = z.object({
 }).strict()
 
 export const grantInput = z.object({
-  walletId: z.string().uuid(),
+  walletId: z.string().uuid().optional(),
+  agentId: z.string().uuid().optional(),
   agentName: z.string().trim().min(1).max(80),
   expiresAt: z.iso.datetime(),
-}).strict()
+}).strict().refine(input => Number(!!input.walletId) + Number(!!input.agentId) === 1, 'Choose either an agent or a wallet scope')
+export type GrantInput = z.infer<typeof grantInput>
 export const approvalInput = z.object({ operationHash: z.string().regex(/^[a-f0-9]{64}$/), signature: z.string().min(40).max(512).regex(/^[A-Za-z0-9+/]+={0,2}$/).optional() }).strict()
 export type AuthorizationRequest = { version: 1; method: 'POST'; url: string; headers: { 'privy-app-id': string; 'privy-idempotency-key': string; 'privy-request-expiry': string }; body: Record<string, unknown> }
 export const operationStatuses = ['pending_approval', 'queued', 'submitting', 'submitted', 'unknown', 'confirmed', 'failed', 'denied', 'expired', 'rejected'] as const

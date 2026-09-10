@@ -48,8 +48,13 @@ export function createApp(service: OperationService, identity: Identity, origins
   app.get('/v1/capabilities', c => c.json({ defaultChain: defaultProductChain, networks: Object.fromEntries(supportedNetworks.map(network => [network.chainId, { name: network.name, testnet: network.testnet, execution: service.executor?.id === 'privy' && ['base', 'arc'].includes(network.key) }])), core: { transfers: !!service.executor, x402: false, mpp: false }, plugins: service.config, executor: service.executor?.id ?? null, approvalSecurity: service.executor?.id === 'anvil' ? 'local-demo-app-authorization' : service.executor?.id === 'privy' ? 'backend-policy-and-owner-approval' : 'live-execution-unavailable' }))
   app.get('/v1/wallets', async c => {
     const principal = c.get('principal')
-    if (principal.kind !== 'owner') fail(403, 'owner_required', 'Wallet administration requires owner access')
-    return c.json(await service.db.select({ id: wallets.id, agentId: wallets.agentId, address: wallets.address, chainId: wallets.chainId, policy: wallets.policy, policyVersion: wallets.policyVersion, enabled: wallets.enabled, serverAuthorized: wallets.serverAuthorized }).from(wallets).where(eq(wallets.ownerId, principal.ownerId)))
+    let scope = eq(wallets.ownerId, principal.ownerId)
+    if (principal.kind === 'agent') {
+      const [grant] = await service.db.select().from(grants).where(eq(grants.id, principal.grantId))
+      if (!grant || grant.ownerId !== principal.ownerId || grant.revokedAt || grant.expiresAt.getTime() <= Date.now()) fail(403, 'grant_inactive', 'Access key is inactive')
+      scope = and(scope, eq(wallets.enabled, true), grant.walletId ? eq(wallets.id, grant.walletId) : eq(wallets.agentId, grant.agentId!))!
+    }
+    return c.json(await service.db.select({ id: wallets.id, agentId: wallets.agentId, address: wallets.address, chainId: wallets.chainId, policy: wallets.policy, policyVersion: wallets.policyVersion, enabled: wallets.enabled, serverAuthorized: wallets.serverAuthorized }).from(wallets).where(scope))
   })
   app.post('/v1/wallets', async c => {
     const principal = c.get('principal')
@@ -74,7 +79,7 @@ export function createApp(service: OperationService, identity: Identity, origins
   app.get('/v1/grants', async c => {
     const principal = c.get('principal')
     if (principal.kind !== 'owner') fail(403, 'owner_required', 'Access management requires owner access')
-    return c.json(await service.db.select({ id: grants.id, walletId: grants.walletId, name: grants.agentName, expiresAt: grants.expiresAt, revokedAt: grants.revokedAt }).from(grants).where(eq(grants.ownerId, principal.ownerId)))
+    return c.json(await service.db.select({ id: grants.id, walletId: grants.walletId, agentId: grants.agentId, name: grants.agentName, expiresAt: grants.expiresAt, revokedAt: grants.revokedAt }).from(grants).where(eq(grants.ownerId, principal.ownerId)))
   })
   app.post('/v1/grants', async c => c.json(await service.createGrant(c.get('principal'), grantInput.parse(await c.req.json())), 201))
   app.delete('/v1/grants/:id', async c => { await service.revoke(c.get('principal'), id.parse(c.req.param('id'))); return c.body(null, 204) })

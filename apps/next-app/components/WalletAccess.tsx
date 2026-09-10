@@ -6,11 +6,11 @@ import { AgentisClient } from '@agentis-hq/sdk'
 import { useState } from 'react'
 import Dropdown from './Dropdown'
 
-export default function WalletAccess() {
+export default function WalletAccess({ agentId }: { agentId: string }) {
   const { ready, authenticated, getAccessToken, user } = usePrivy()
   const cache = useQueryClient()
   const [chainId, setChainId] = useState('')
-  const [walletId, setWalletId] = useState('')
+  const [scope, setScope] = useState('all')
   const [newKey, setNewKey] = useState<{ owner: string; token: string } | null>(null)
   const [message, setMessage] = useState('')
   const client = new AgentisClient({ baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001', token: async () => { const token = await getAccessToken(); if (!token) throw new Error('Sign in first'); return token } })
@@ -19,16 +19,15 @@ export default function WalletAccess() {
   const agents = useQuery({ queryKey: ['agents', user?.id], enabled, queryFn: () => client.agents.list() })
   const networks = useQuery({ queryKey: ['onboarding', user?.id], enabled, queryFn: () => client.onboarding.get() })
   const keys = useQuery({ queryKey: ['access-keys', user?.id], enabled, queryFn: () => client.grants.list() })
-  const available = wallets.data?.filter(w => w.enabled && w.agentId) ?? []
+  const available = wallets.data?.filter(w => w.enabled && w.agentId === agentId) ?? []
   const choices = networks.data?.networks.filter(n => available.some(w => w.chainId === n.chainId)) ?? []
   const network = choices.find(n => n.chainId === chainId) ?? choices[0]
-  const candidates = available.filter(w => w.chainId === network?.chainId)
-  const selected = candidates.find(w => w.id === walletId) ?? candidates[0]
-  const agentName = (id: string | null) => agents.data?.find(a => a.id === id)?.name ?? 'Agent'
+  const selected = available.find(w => w.chainId === network?.chainId)
+  const agent = agents.data?.find(a => a.id === agentId)
   const action = useMutation({ mutationFn: async (input: { revokeId: string } | { expiresAt: string }) => {
     if ('revokeId' in input) { await client.grants.revoke(input.revokeId); return }
-    if (!selected || !user) throw new Error('Choose an agent first')
-    const key = await client.grants.create({ walletId: selected.id, agentName: agentName(selected.agentId), expiresAt: input.expiresAt })
+    if (!agent || !user || (scope !== 'all' && !selected)) throw new Error('Choose an enabled network first')
+    const key = await client.grants.create({ ...(scope === 'all' ? { agentId } : { walletId: selected!.id }), agentName: agent.name, expiresAt: input.expiresAt })
     setNewKey({ owner: user.id, token: key.token }); setMessage('')
   }, onSuccess: () => cache.invalidateQueries({ queryKey: ['access-keys', user?.id] }) })
   if (!enabled) return null
@@ -36,20 +35,20 @@ export default function WalletAccess() {
   return <section id="api-access" className="scroll-mt-8">
     <h2 className="mb-4 font-mono text-[0.6rem] uppercase tracking-widest text-ink-muted">API access</h2>
     <div className="space-y-5 border border-beige-darker bg-white p-6">
-      <p className="font-mono text-xs leading-relaxed text-ink-muted">Connect an agent through the SDK or CLI. Each key accesses one agent wallet on one network, expires after 24 hours, and follows your rules. It cannot change settings or approve payments.</p>
+      <p className="font-mono text-xs leading-relaxed text-ink-muted">Connect this agent through the SDK or CLI. Keys expire after 24 hours and follow this agent’s rules. They cannot access other agents, change settings or approve payments. All networks includes networks you enable later.</p>
       {available.length > 0 ? <><div className="grid gap-4 text-xs sm:grid-cols-2">
-        <Dropdown label="Network" value={network?.chainId ?? ''} onChange={value => { setChainId(value); setWalletId('') }} disabled={action.isPending} options={choices.map(n => ({ value: n.chainId, label: n.name }))} />
-        <Dropdown label="Agent" value={selected?.id ?? ''} onChange={setWalletId} disabled={action.isPending} options={candidates.map(w => ({ value: w.id, label: agentName(w.agentId) }))} />
-      </div><button disabled={action.isPending || !selected} onClick={() => action.mutate({ expiresAt: new Date(Date.now() + 86_400_000).toISOString() })} className="border border-beige-darker px-4 py-2 font-mono text-xs tracking-widest text-ink-muted hover:border-ink hover:text-ink disabled:opacity-40">{action.isPending ? 'working…' : 'create access key'}</button></> : <p className="text-sm text-ink-muted">{wallets.isPending ? 'Loading wallets…' : 'Create an agent on the dashboard to enable API access.'}</p>}
+        <Dropdown label="Access" value={scope} onChange={setScope} disabled={action.isPending} options={[{ value: 'all', label: 'All networks' }, { value: 'network', label: 'Specific network' }]} />
+        {scope === 'network' && <Dropdown label="Network" value={network?.chainId ?? ''} onChange={setChainId} disabled={action.isPending} options={choices.map(n => ({ value: n.chainId, label: n.name }))} />}
+      </div><button disabled={action.isPending || !agent || (scope !== 'all' && !selected)} onClick={() => action.mutate({ expiresAt: new Date(Date.now() + 86_400_000).toISOString() })} className="border border-beige-darker px-4 py-2 font-mono text-xs tracking-widest text-ink-muted hover:border-ink hover:text-ink disabled:opacity-40">{action.isPending ? 'working…' : 'create access key'}</button></> : <p className="text-sm text-ink-muted">{wallets.isPending ? 'Loading wallets…' : 'Enable a network for this agent to create an access key.'}</p>}
       {newKey && newKey.owner === user?.id && <div className="space-y-3 border border-beige-darker bg-beige p-4">
         <p className="font-mono text-[0.6rem] uppercase tracking-widest text-ink-muted">Copy now — this key won’t be shown again</p>
         <code className="block break-all text-xs">{newKey.token}</code>
         <div className="flex gap-4 font-mono text-xs"><button onClick={async () => { try { await navigator.clipboard.writeText(newKey.token); setMessage('Copied') } catch { setMessage('Could not copy. Select the key to copy manually.') } }}>copy key</button><button onClick={() => { setNewKey(null); setMessage('') }}>hide</button></div>
         <p role="status" className="text-xs text-ink-muted">{message}</p>
       </div>}
-      <div className="divide-y divide-beige-darker">{keys.data?.filter(key => !key.revokedAt && Date.parse(key.expiresAt) > keys.dataUpdatedAt).map(key => {
+      <div className="divide-y divide-beige-darker">{keys.data?.filter(key => (key.agentId === agentId || wallets.data?.some(w => w.id === key.walletId && w.agentId === agentId)) && !key.revokedAt && Date.parse(key.expiresAt) > keys.dataUpdatedAt).map(key => {
         const wallet = wallets.data?.find(w => w.id === key.walletId)
-        return <div key={key.id} className="flex items-center justify-between gap-4 py-3 text-xs"><div className="min-w-0"><p className="break-words font-mono">{wallet ? agentName(wallet.agentId) : key.name} · {networks.data?.networks.find(n => n.chainId === wallet?.chainId)?.name ?? 'Wallet'}</p><p className="mt-1 text-ink-muted">Expires {new Date(key.expiresAt).toLocaleString()}</p></div><button className="font-mono text-ink-muted underline underline-offset-4 disabled:opacity-40" disabled={action.isPending} onClick={() => { setNewKey(null); action.mutate({ revokeId: key.id }) }}>revoke</button></div>
+        return <div key={key.id} className="flex items-center justify-between gap-4 py-3 text-xs"><div className="min-w-0"><p className="break-words font-mono">{key.agentId ? 'All networks' : networks.data?.networks.find(n => n.chainId === wallet?.chainId)?.name ?? 'Specific network'}</p><p className="mt-1 text-ink-muted">Expires {new Date(key.expiresAt).toLocaleString()}</p></div><button className="font-mono text-ink-muted underline underline-offset-4 disabled:opacity-40" disabled={action.isPending} onClick={() => { setNewKey(null); action.mutate({ revokeId: key.id }) }}>revoke</button></div>
       })}</div>
       {error && <p role="alert" className="text-sm text-ink-muted">{error.message}</p>}
     </div>
