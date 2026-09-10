@@ -74,15 +74,16 @@ function QuorumWalletTest() {
     document.addEventListener('visibilitychange', hide)
     return () => document.removeEventListener('visibilitychange', hide)
   }, [])
-  async function run(exporting: boolean) {
+  async function run(exporting: boolean, signer: 'user' | 'server' = 'user') {
     if (!user || !authenticated || busy || (exporting && !selected)) return
-    if (exporting && !window.confirm('Export this throwaway wallet’s private key? Keep it secure and unfunded.')) return
+    if (exporting && !window.confirm(`Export this throwaway wallet’s private key using the ${signer} quorum member? Keep it secure and unfunded.`)) return
     const owner = user.id
     setBusy(true); setError('')
+    setWallet(current => current ? { ...current, key: undefined } : null)
     try {
       const token = await getAccessToken()
       if (!token) throw new Error('Sign in first')
-      const response = await fetch(`${(process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001').replace(/\/$/, '')}/v1/test/quorum-wallets${exporting ? '/export' : ''}`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ requestId: requestId.current, ...(exporting ? { confirm: true } : {}) }), cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(60_000) })
+      const response = await fetch(`${(process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001').replace(/\/$/, '')}/v1/test/quorum-wallets${exporting ? signer === 'server' ? '/export-server' : '/export' : ''}`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ requestId: requestId.current, ...(exporting ? { confirm: true } : {}) }), cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(60_000) })
       const data = await response.json()
       if (!response.ok) throw new Error(`HTTP ${response.status}: ${data.error?.message ?? 'Request failed'}`)
       if (exporting) { if (!document.hidden) setWallet(current => current?.owner === owner ? { ...current, key: data.privateKey } : current) }
@@ -90,13 +91,13 @@ function QuorumWalletTest() {
         if (!data.serverAuthorized) throw new Error('User + server quorum was not verified')
         setWallet({ owner, address: data.address })
       }
-    } catch (cause) { setError(`${exporting ? 'Export' : 'Create'} failed: ${cause instanceof Error ? cause.message : 'Unknown error'}`) }
+    } catch (cause) { setError(`${exporting ? `${signer} export` : 'Create'} failed: ${cause instanceof Error ? cause.message : 'Unknown error'}`) }
     finally { setBusy(false) }
   }
   return <section className="space-y-4 border-t border-beige-darker pt-8">
     <h2 className="font-serif text-2xl font-bold">Backend quorum wallet test</h2>
-    <p className="text-sm text-ink-muted">New throwaway wallet with the same user + server 1-of-2 quorum. Stored only in Privy—not in Agentis. Export uses the backend’s user-JWT authorization path, without server-signer fallback.</p>
-    <div className="flex flex-wrap gap-3"><button disabled={!authenticated || busy || !!selected} onClick={() => run(false)} className="bg-black px-5 py-3 font-mono text-xs text-white disabled:opacity-40">1. Create quorum wallet</button><button disabled={!authenticated || busy || !selected} onClick={() => run(true)} className="bg-black px-5 py-3 font-mono text-xs text-white disabled:opacity-40">2. Export key</button></div>
+    <p className="text-sm text-ink-muted">New throwaway wallet with the same user + server 1-of-2 quorum. Stored only in Privy—not in Agentis. Test user-JWT authorization and server-member authorization separately. Neither automatically falls back to the other.</p>
+    <div className="flex flex-wrap gap-3"><button disabled={!authenticated || busy || !!selected} onClick={() => run(false)} className="bg-black px-5 py-3 font-mono text-xs text-white disabled:opacity-40">1. Create quorum wallet</button><button disabled={!authenticated || busy || !selected} onClick={() => run(true)} className="bg-black px-5 py-3 font-mono text-xs text-white disabled:opacity-40">2. Export using user JWT</button><button disabled={!authenticated || busy || !selected} onClick={() => run(true, 'server')} className="bg-black px-5 py-3 font-mono text-xs text-white disabled:opacity-40">3. Export using server member</button></div>
     {busy && <p role="status" className="text-sm">Working…</p>}
     {selected && <p className="break-all border border-beige-darker bg-[#faf7f1] p-4 font-mono text-xs">{selected.address}</p>}
     {selected?.key && <div><p className="mb-2 text-xs text-red-700">Keep this key secure. Hidden when you switch tabs.</p><textarea aria-label="Throwaway quorum wallet private key" readOnly spellCheck={false} autoComplete="off" value={selected.key} className="w-full border border-beige-darker p-3 font-mono text-xs" /><button className="font-mono text-xs underline" onClick={() => setWallet(current => current ? { ...current, key: undefined } : null)}>Hide key</button></div>}

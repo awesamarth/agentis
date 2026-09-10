@@ -58,12 +58,23 @@ export function privyIdentity(appId: string, appSecret: string, authorizationKey
     async createTestWallet(ownerId: string, requestId: string) {
       return this.createWallet(ownerId, 'ethereum', `export-test:${requestId}`)
     },
-    async exportTestWallet(ownerId: string, requestId: string, userJwt: string) {
+    async exportTestWallet(ownerId: string, requestId: string, userJwt: string, signer: 'user' | 'server' = 'user') {
+      if (await this.authenticate(userJwt) !== ownerId) fail(403, 'owner_required', 'Owner session mismatch')
       const existing = await client.wallets().list({ external_id: externalWalletId(ownerId, 'ethereum', `export-test:${requestId}`) })
       const wallet = existing.data[0]
       if (!wallet) fail(404, 'not_found', 'Throwaway wallet not found')
       const checked = await this.inspectWallet(wallet.id, ownerId)
-      if (!checked.serverAuthorized) fail(403, 'wallet_owner_mismatch', 'Test wallet must retain the user + server quorum')
+      if (!checked.serverAuthorized || checked.chainType !== 'ethereum') fail(403, 'wallet_owner_mismatch', 'Test wallet must retain the user + server quorum')
+      if (signer === 'server') {
+        if (!authorizationKey) fail(503, 'server_authorization_missing', 'Server authorization key unavailable')
+        try {
+          const result = await client.wallets().export(wallet.id, { authorization_context: { authorization_private_keys: [authorizationKey] }, request_expiry: Date.now() + 60_000 })
+          return { privateKey: result.private_key }
+        } catch (error) {
+          const status = typeof (error as { status?: unknown })?.status === 'number' ? (error as { status: number }).status : null
+          fail(503, 'server_export_failed', status === null ? 'Server-member export failed in SDK or transport' : `Privy rejected server-member export (HTTP ${status})`)
+        }
+      }
       return this.exportWallet(wallet.id, ownerId, wallet.address, 'ethereum', userJwt)
     },
     async createWallet(ownerId: string, chainType: 'ethereum' | 'solana', agentId?: string) {

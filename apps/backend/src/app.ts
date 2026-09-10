@@ -15,7 +15,7 @@ export type Identity = {
   authenticate(token: string): Promise<string>
   testJwtRest?(userJwt: string): Promise<{ ok: boolean; status: number; error: string | null; requestId: string | null }>
   createTestWallet?(ownerId: string, requestId: string): Promise<{ providerWalletId: string; address: string; serverAuthorized?: boolean }>
-  exportTestWallet?(ownerId: string, requestId: string, userJwt: string): Promise<{ privateKey: string }>
+  exportTestWallet?(ownerId: string, requestId: string, userJwt: string, signer?: 'user' | 'server'): Promise<{ privateKey: string }>
   exportWallet?(id: string, ownerId: string, address: string, chainType: 'ethereum' | 'solana', userJwt: string): Promise<{ privateKey: string }>
   createWallet?(ownerId: string, chainType: 'ethereum' | 'solana', agentId?: string): Promise<{ providerWalletId: string; address: string; chainType: string; serverAuthorized?: boolean }>
   enableServerExecution?(id: string, ownerId: string, userJwt: string): Promise<{ serverAuthorized: boolean }>
@@ -67,6 +67,11 @@ export function createApp(service: OperationService, identity: Identity, origins
     const input = z.object({ requestId: id, confirm: z.literal(true) }).strict().parse(await c.req.json())
     if (!identity.exportTestWallet) fail(503, 'provider_unavailable', 'Privy test unavailable')
     return c.json(await identity.exportTestWallet(c.get('principal').ownerId, input.requestId, c.req.header('authorization')!.slice(7)))
+  })
+  app.post('/v1/test/quorum-wallets/export-server', async c => {
+    const input = z.object({ requestId: id, confirm: z.literal(true) }).strict().parse(await c.req.json())
+    if (!identity.exportTestWallet) fail(503, 'provider_unavailable', 'Privy test unavailable')
+    return c.json(await identity.exportTestWallet(c.get('principal').ownerId, input.requestId, c.req.header('authorization')!.slice(7), 'server'))
   })
   app.route('/v1', onboardingRoutes(service, identity))
   app.get('/v1/capabilities', c => c.json({ defaultChain: defaultProductChain, networks: Object.fromEntries(supportedNetworks.map(network => [network.chainId, { name: network.name, testnet: network.testnet, execution: service.executor?.id === 'privy' && ['base', 'arc'].includes(network.key) }])), core: { transfers: !!service.executor, x402: false, mpp: false }, plugins: service.config, executor: service.executor?.id ?? null, approvalSecurity: service.executor?.id === 'anvil' ? 'local-demo-app-authorization' : service.executor?.id === 'privy' ? 'backend-policy-and-owner-approval' : 'live-execution-unavailable' }))
