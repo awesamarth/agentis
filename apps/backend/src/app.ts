@@ -9,6 +9,7 @@ import { ApiError, fail } from './errors'
 import { hash, OperationService, type Principal } from './operations'
 import { defaultProductChain, supportedNetworks } from './modules/networks'
 import { onboardingRoutes } from './modules/onboarding'
+import { profileSummary } from './modules/profile'
 
 export type Identity = {
   authenticate(token: string): Promise<string>
@@ -64,6 +65,16 @@ export function createApp(service: OperationService, identity: Identity, origins
   app.patch('/v1/wallets/:id/policy', async c => {
     const result = await service.setPolicy(c.get('principal'), id.parse(c.req.param('id')), await c.req.json())
     return c.json({ id: result.id, policy: result.policy, policyVersion: result.policyVersion })
+  })
+  app.get('/v1/profile', async c => {
+    const principal = c.get('principal')
+    if (principal.kind !== 'owner') fail(403, 'owner_required', 'Profile requires owner access')
+    return c.json(await profileSummary(service, principal.ownerId))
+  })
+  app.get('/v1/grants', async c => {
+    const principal = c.get('principal')
+    if (principal.kind !== 'owner') fail(403, 'owner_required', 'Access management requires owner access')
+    return c.json(await service.db.select({ id: grants.id, walletId: grants.walletId, name: grants.agentName, expiresAt: grants.expiresAt, revokedAt: grants.revokedAt }).from(grants).where(eq(grants.ownerId, principal.ownerId)))
   })
   app.post('/v1/grants', async c => c.json(await service.createGrant(c.get('principal'), grantInput.parse(await c.req.json())), 201))
   app.delete('/v1/grants/:id', async c => { await service.revoke(c.get('principal'), id.parse(c.req.param('id'))); return c.body(null, 204) })

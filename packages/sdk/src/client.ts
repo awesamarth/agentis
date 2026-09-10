@@ -4,6 +4,13 @@ export type AgentisAgent = { id: string; name: string; limits: UsdLimits; mode: 
 export type AgentSettings = Pick<AgentisAgent, 'name' | 'limits' | 'mode' | 'allowedRecipients'> & { selection: { networks: string[]; defaultNetwork: string }; enableExecution?: boolean }
 export type AgentisWallet = { id: string; agentId: string | null; serverAuthorized: boolean; address: string; chainId: string; policy: WalletPolicy; policyVersion: number; enabled: boolean }
 
+export type ProfileSummary = {
+  totalAgents: number; activeAgents: number; totalSpendMicros: string; unpricedPayments: number
+  daily: { date: string; spendMicros: string }[]
+  byAgent: { id: string | null; name: string; spendMicros: string }[]
+}
+export type AccessKey = { id: string; walletId: string; name: string; expiresAt: string; revokedAt: string | null }
+
 export type AgentisConfig = {
   baseUrl: string
   /** Executor grant, or a fresh Privy owner access token. Never expose an owner token to an agent. */
@@ -47,7 +54,9 @@ export class AgentisClient {
     link: (input: { providerWalletId: string; chainId: string; policy: WalletPolicy }) => this.request<AgentisWallet>('/wallets', 'POST', input),
     setPolicy: (id: string, policy: WalletPolicy) => this.request<Pick<AgentisWallet, 'id' | 'policy' | 'policyVersion'>>(`/wallets/${encodeURIComponent(id)}/policy`, 'PATCH', policy),
   }
+  profile = { get: () => this.request<ProfileSummary>('/profile') }
   grants = {
+    list: () => this.request<AccessKey[]>('/grants'),
     create: (input: { walletId: string; agentName: string; expiresAt: string }) => this.request<{ id: string; token: string; expiresAt: string }>('/grants', 'POST', input),
     revoke: (id: string) => this.request<void>(`/grants/${encodeURIComponent(id)}`, 'DELETE'),
   }

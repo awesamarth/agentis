@@ -23,8 +23,8 @@ export default function Dropdown({ label, value, onChange, options, disabled = f
       </Select.Trigger>
       {/* Keep modal menus in the native dialog's top layer, outside its scroll area. */}
       <Select.Portal container={trigger?.closest('dialog') ?? undefined}>
-        <Select.Content position="popper" sideOffset={4} collisionPadding={16} className="z-50 max-h-[var(--radix-select-content-available-height)] w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] overflow-hidden border border-ink bg-accent font-mono text-sm text-ink shadow-lg">
-          <Select.Viewport className="p-1">
+        <Select.Content data-agentis-dropdown="" position="popper" sideOffset={4} collisionPadding={16} className="z-50 max-h-[var(--radix-select-content-available-height)] w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] overflow-hidden border border-beige-darker bg-[#f8f4ed] font-mono text-sm text-ink shadow-lg">
+          <Select.Viewport>
             {options.map(option => <Select.Item key={option.value} value={option.value} className="relative flex cursor-pointer select-none items-center py-3 pr-9 pl-3 outline-none data-[highlighted]:bg-black data-[highlighted]:text-beige">
               <Select.ItemText>{option.label}</Select.ItemText>
               <Select.ItemIndicator className="absolute right-3"><Check size={14} aria-hidden="true" /></Select.ItemIndicator>

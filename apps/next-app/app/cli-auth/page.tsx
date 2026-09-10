@@ -1,4 +1,4 @@
 import Link from 'next/link'
-export default function RetiredLogin() {
-  return <main className="max-w-2xl mx-auto p-12"><h1>CLI authentication changed</h1><p>Legacy account-key login is unavailable during the rewrite. Create a scoped executor grant in wallet access; never give an agent your owner token.</p><Link href="/dashboard/profile">Wallet access</Link></main>
+export default function CliAuth() {
+  return <main className="mx-auto max-w-2xl space-y-4 px-6 py-12"><h1 className="font-serif text-2xl font-bold">Connect your agent</h1><p className="text-sm text-ink-muted">Create a wallet-scoped access key from your profile for the CLI or SDK. Account-wide keys are no longer available.</p><Link className="text-sm underline underline-offset-4" href="/profile#api-access">Open API access</Link></main>
 }

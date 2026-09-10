@@ -36,7 +36,7 @@ export default function Navbar({ showCrumb }: { showCrumb?: string }) {
         </Link>
         {ready && authenticated ? (
           <>
-            <Link href="/dashboard/profile" className="font-mono text-xs text-ink-muted tracking-wide hover:text-ink transition-colors">
+            <Link href="/profile" className="font-mono text-xs text-ink-muted tracking-wide hover:text-ink transition-colors">
               {user?.google?.email ?? (user?.wallet?.address ? user.wallet.address.slice(0, 6) + '...' + user.wallet.address.slice(-4) : 'anon')}
             </Link>
             <button

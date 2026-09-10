@@ -1,3 +1,4 @@
+import type { ProfileSummary, AccessKey } from '@agentis-hq/sdk'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import postgres from 'postgres'
 import { randomUUID } from 'node:crypto'
@@ -73,6 +74,31 @@ suite('transactional execution foundation (isolated PostgreSQL)', () => {
     await s.service.decide(owner, row.id, row.operationHash, true)
     await s.service.tick(); await s.service.tick()
     expect((await s.service.get(s.agent, row.id)).status).toBe('confirmed')
+  })
+  test('profile totals cover all settled payments and access metadata stays owner-only', async () => {
+    const s = await setup()
+    const operation = await s.service.create(owner, s.input, 'profile-seed')
+    const [seed] = await connection.db.select().from(operations).where(eq(operations.id, operation.id))
+    const today = new Date()
+    await connection.db.insert(operations).values(Array.from({ length: 102 }, (_, index) => ({
+      ...seed!, id: randomUUID(), idempotencyKey: `profile-${index}`, status: index === 101 ? 'failed' as const : 'confirmed' as const,
+      usdSettledMicros: index === 101 ? '500000' : '1000000', settledAt: index === 0 ? new Date(Date.now() - 30 * 86_400_000) : today,
+    })))
+    const headers = { authorization: 'Bearer owner-a' }
+    const result = await s.app.request('/v1/profile', { headers })
+    expect(result.status).toBe(200)
+    const data = await result.json() as ProfileSummary
+    expect(data.totalSpendMicros).toBe('101500000')
+    expect(data.daily).toHaveLength(14)
+    expect(data.daily.reduce((sum: bigint, day: { spendMicros: string }) => sum + BigInt(day.spendMicros), 0n)).toBe(100500000n)
+    expect(data.byAgent[0]!.spendMicros).toBe('101500000')
+    expect((await (await s.app.request('/v1/profile', { headers: { authorization: 'Bearer owner-b' } })).json() as ProfileSummary).totalSpendMicros).toBe('0')
+    const listed = await (await s.app.request('/v1/grants', { headers })).json() as AccessKey[]
+    const listedKey = listed.find(key => key.id === s.grant.id)!
+    expect(listedKey.id).toBe(s.grant.id)
+    expect(Object.keys(listedKey).sort()).toEqual(['expiresAt', 'id', 'name', 'revokedAt', 'walletId'])
+    expect(await (await s.app.request('/v1/grants', { headers: { authorization: 'Bearer owner-b' } })).json()).toEqual([])
+    for (const path of ['/v1/profile', '/v1/grants']) expect((await s.app.request(path, { headers: { authorization: `Bearer ${s.grant.token}` } })).status).toBe(403)
   })
   test('token reservations never mix token atomic units with native fee units', async () => {
     const asset = 'erc20:0x0000000000000000000000000000000000004321' as const
