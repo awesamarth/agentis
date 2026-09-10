@@ -1,7 +1,7 @@
-import { erc20Abi, type Address } from 'viem'
+import { createPublicClient, erc20Abi, http, type Address } from 'viem'
 import { PublicKey } from '@solana/web3.js'
 import type { WalletRow } from '../db/schema'
-import { supportedNetworks, evmClient } from './networks'
+import { supportedNetworks, evmChains } from './networks'
 import { solanaConnection } from './solana'
 import { quoteUsd } from './usd-budget'
 
@@ -29,8 +29,9 @@ export async function agentBalance(wallets: WalletRow[]) {
             amount = accounts.value.reduce((sum, account) => sum + BigInt(account.account.data.parsed.info.tokenAmount.amount), 0n)
           }
         } else {
-          const client = evmClient(wallet.chainId)
-          if (await client.getChainId() !== client.chain.id) throw new Error('RPC network mismatch')
+          const chain = evmChains.find(chain => `eip155:${chain.id}` === wallet.chainId)
+          if (!chain) throw new Error('Unsupported balance network')
+          const client = createPublicClient({ chain, transport: http(undefined, { timeout: 15_000, retryCount: 0 }) })
           amount = asset.id === 'native'
             ? await client.getBalance({ address: wallet.address as Address })
             : await client.readContract({ address: asset.id.slice(6) as Address, abi: erc20Abi, functionName: 'balanceOf', args: [wallet.address as Address] })
