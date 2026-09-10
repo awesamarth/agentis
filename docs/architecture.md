@@ -86,7 +86,7 @@ Do not overwrite existing private `.env` files or bootstrap against a production
 ## Checks and known remaining work
 
 - `bun run check`: package builds plus CLI/MCP/backend/dashboard typechecks.
-- `bun run test`: unit/interface tests and isolated PostgreSQL + Anvil checks. Requires local Compose and Anvil; no remote endpoints or real funds used.
+- Automated suites were removed at the owner's request; use the manual authenticated wallet test page for creation/export checks.
 - `bun run --filter next-app lint`; dashboard/worker builds separately.
 - Live Privy authorization-key-owned testnet transfers are verified; logged-in browser-user E2E is not. `testing/privy-transfer-action-probe.ts --probe [base]` exercises unsigned action preparation and pending Intent cancellation, without supplying an owner signature. Webhook delivery is not implemented; SDK polling works.
 - Missing production pieces: higher-level transfer-Intent integration, provider-enforced automation, browser E2E, core x402/MPP consumption, remote OAuth, rate limits, pagination, operator reconciliation UI, administration audit events, asset-aware USD valuation, production finality, plugins and funding integrations. The DNS-pinned, bounded payment HTTP transport is a tested prerequisite, not a working paid-fetch feature.

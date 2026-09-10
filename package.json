@@ -11,10 +11,7 @@
     "backend:start": "bun run build:backend-deps && cd apps/backend && bun run index.ts",
     "build:packages": "bun run --filter @agentis-hq/core build && bun run --filter @agentis-hq/sdk build && bun run --filter @agentis-hq/cli build && bun run --filter @agentis-hq/mcp build",
     "check:packages": "bun run build:packages && bun run --filter @agentis-hq/cli check && bun run --filter @agentis-hq/mcp check",
-    "check": "bun run check:packages && bun run --filter backend check && bun run --filter next-app check",
-    "test:unit": "bun test packages/sdk/src packages/mcp/src packages/cli/src packages/core/src apps/backend/src/modules/payment-http.test.ts apps/backend/src/modules/usd-budget.test.ts apps/next-app/components/amount-input.test.ts apps/next-app/components/operation-authorization.test.ts",
-    "test:backend": "AGENTIS_TEST_DATABASE_URL=postgres://agentis:agentis-local-only@127.0.0.1:55432/agentis_dev bun test apps/backend/src/operations.test.ts",
-    "test": "bun run build:packages && bun run test:unit && bun run test:backend"
+    "check": "bun run check:packages && bun run --filter backend check && bun run --filter next-app check"
   },
   "dependencies": {
     "@solana-program/compute-budget": "^0.15.0",

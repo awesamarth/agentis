@@ -53,11 +53,10 @@ Approval is a normal asynchronous result. Agents cannot administer policy or app
 
 ```sh
 bun run check                   # builds packages, then typechecks interfaces/backend/dashboard
-bun run test                    # unit tests + isolated Postgres/Anvil integration tests
 cd apps/next-app && bun run lint
 ```
 
-`test:backend` requires Docker Postgres above and Anvil on PATH. It creates/drops only uniquely named test databases on loopback, and starts/stops its own Anvil process using a random disposable key. No live funds are touched.
+Automated suites were removed at the owner's request. The manual wallet creation/export page remains at `/dashboard/agents/[id]/test`.
 
 ## Boundaries
 

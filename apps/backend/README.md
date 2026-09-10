@@ -14,4 +14,4 @@ bun run worker
 
 `DATABASE_URL` is required; no JSON fallback or automatic startup migrations. Execution defaults disabled. Only explicit local Anvil mode executes; Privy is read-only auth/wallet verification for now.
 
-See `../../docs/architecture.md` for API, approval security, limitations and local setup. Backend tests create isolated loopback-only databases: `bun run test:backend` from root.
+See `../../docs/architecture.md` for API, approval security, limitations and local setup.
