@@ -4,7 +4,8 @@ import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import { and, eq, inArray } from 'drizzle-orm'
 import { approvalInput, grantInput, walletPolicy } from '@agentis-hq/core/operations'
-import { grants, wallets } from './db/schema'
+import { agents, grants, wallets } from './db/schema'
+import { agentBalance } from './modules/balances'
 import { ApiError, fail } from './errors'
 import { hash, OperationService, type Principal } from './operations'
 import { defaultProductChain, supportedNetworks } from './modules/networks'
@@ -97,6 +98,15 @@ export function createApp(service: OperationService, identity: Identity, origins
     return c.json(await identity.exportTestWallet(c.get('principal').ownerId, input.requestId, c.req.header('authorization')!.slice(7), 'server'))
   })
   app.route('/v1', onboardingRoutes(service, identity))
+  app.get('/v1/agents/:id/balance', async c => {
+    const principal = c.get('principal')
+    if (principal.kind !== 'owner') fail(403, 'owner_required', 'Balance overview requires owner access')
+    const agentId = id.parse(c.req.param('id'))
+    const [agent] = await service.db.select({ id: agents.id }).from(agents).where(and(eq(agents.id, agentId), eq(agents.ownerId, principal.ownerId)))
+    if (!agent) fail(404, 'not_found', 'Agent not found')
+    const enabled = await service.db.select().from(wallets).where(and(eq(wallets.agentId, agentId), eq(wallets.ownerId, principal.ownerId), eq(wallets.enabled, true)))
+    return c.json(await agentBalance(enabled))
+  })
   app.get('/v1/capabilities', c => c.json({ defaultChain: defaultProductChain, networks: Object.fromEntries(supportedNetworks.map(network => [network.chainId, { name: network.name, testnet: network.testnet, execution: service.executor?.id === 'privy' && ['base', 'arc'].includes(network.key) }])), core: { transfers: !!service.executor, x402: false, mpp: false }, plugins: service.config, executor: service.executor?.id ?? null, approvalSecurity: service.executor?.id === 'anvil' ? 'local-demo-app-authorization' : service.executor?.id === 'privy' ? 'backend-policy-and-owner-approval' : 'live-execution-unavailable' }))
   app.get('/v1/wallets', async c => {
     const principal = c.get('principal')

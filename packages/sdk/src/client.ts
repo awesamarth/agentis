@@ -4,6 +4,11 @@ export type AgentisAgent = { id: string; name: string; limits: UsdLimits; mode: 
 export type AgentSettings = Pick<AgentisAgent, 'name' | 'limits' | 'mode' | 'allowedRecipients'> & { selection: { networks: string[]; defaultNetwork: string }; enableExecution?: boolean }
 export type AgentisWallet = { id: string; agentId: string | null; serverAuthorized: boolean; address: string; chainId: string; policy: WalletPolicy; policyVersion: number; enabled: boolean }
 
+export type AgentBalance = {
+  usdMicros: string | null; complete: boolean; checkedAt: string
+  networks: { chainId: string; name: string; usdMicros: string | null; complete: boolean; tokens: { asset: string; symbol: string; decimals: number; amountAtomic: string | null; usdMicros: string | null }[] }[]
+}
+
 export type ProfileSummary = {
   totalAgents: number; activeAgents: number; totalSpendMicros: string; unpricedPayments: number
   daily: { date: string; spendMicros: string }[]
@@ -46,6 +51,7 @@ export class AgentisClient {
   }
   agents = {
     list: () => this.request<AgentisAgent[]>('/agents'),
+    balance: (id: string) => this.request<AgentBalance>(`/agents/${encodeURIComponent(id)}/balance`, 'GET', undefined, {}, AbortSignal.timeout(60_000)),
     pause: (id: string) => this.request<AgentisAgent>(`/agents/${encodeURIComponent(id)}/pause`, 'POST'),
     create: (input: AgentSettings & { id: string }) => this.request<AgentisAgent>('/agents', 'POST', input),
     update: (id: string, input: AgentSettings) => this.request<AgentisAgent>(`/agents/${encodeURIComponent(id)}`, 'PATCH', input),

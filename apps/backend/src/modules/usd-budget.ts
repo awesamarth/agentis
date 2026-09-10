@@ -19,7 +19,7 @@ export function parsePrice(raw: unknown, now = Date.now()) {
   if (!/^\d+(\.\d{1,18})?$/.test(text)) throw new Error('Unsupported price precision')
   return { value: parseUnits(text, 18).toString(), expiresAt: Math.min(now + 30_000, price.timestamp * 1000 + 300_000) }
 }
-export async function quoteUsd(input: OperationInput): Promise<UsdQuote> {
+export async function quoteUsd(input: Pick<OperationInput, 'chainId' | 'asset'>): Promise<UsdQuote> {
   const network = supportedNetworks.find(network => network.chainId === input.chainId)
   const asset = network?.assets.find(asset => input.asset.startsWith('erc20:') ? asset.id.toLowerCase() === input.asset.toLowerCase() : asset.id === input.asset)
   if (!network || !asset) throw new Error('Asset has no configured USD price source')
