@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { and, eq, inArray, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm'
 import { operationInput, walletPolicy, grantInput, type GrantInput, type Operation, type OperationInput } from '@agentis-hq/core/operations'
 import type { Database } from './db'
 import { grants, operations, wallets, onboarding, agents, type OperationRow, type WalletRow } from './db/schema'
@@ -168,7 +168,7 @@ export class OperationService {
 
   async list(principal: Principal) {
     const filter = principal.kind === 'owner' ? eq(operations.ownerId, principal.ownerId) : and(eq(operations.ownerId, principal.ownerId), eq(operations.grantId, principal.grantId))
-    return (await this.db.select().from(operations).where(filter).orderBy(operations.createdAt).limit(100)).map(row => this.view(row))
+    return (await this.db.select().from(operations).where(filter).orderBy(desc(eq(operations.status, 'pending_approval')), desc(operations.createdAt), desc(operations.id)).limit(100)).map(row => this.view(row))
   }
 
   async authorization(principal: Principal, id: string) {
