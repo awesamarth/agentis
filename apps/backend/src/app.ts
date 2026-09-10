@@ -58,6 +58,29 @@ export function createApp(service: OperationService, identity: Identity, origins
     if (!identity.testJwtRest) fail(503, 'provider_unavailable', 'Privy REST test unavailable')
     return c.json(await identity.testJwtRest(c.req.header('authorization')!.slice(7)))
   })
+  app.post('/v1/test/privy-token-comparison', async c => {
+    const input = z.object({ privyToken: z.string().max(16384).regex(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/).nullable() }).strict().parse(await c.req.json())
+    if (!identity.testJwtRest) fail(503, 'provider_unavailable', 'Privy REST test unavailable')
+    const customer = c.req.header('authorization')!.slice(7)
+    const claims = (token: string) => z.record(z.string(), z.unknown()).parse(JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString()))
+    const customerClaims = claims(customer)
+    const customerResult = await identity.testJwtRest(customer)
+    if (!input.privyToken) return c.json({ customer: { fingerprint: hash(customer).slice(0, 12), exchange: customerResult }, privy: null, note: 'No internal token found in browser storage; this does not prove the SDK is not using one.' })
+    const privyClaims = claims(input.privyToken)
+    const subjectMatches = privyClaims.sub === c.get('principal').ownerId
+    return c.json({
+      sameToken: customer === input.privyToken,
+      customer: { fingerprint: hash(customer).slice(0, 12), exchange: customerResult },
+      privy: {
+        fingerprint: hash(input.privyToken).slice(0, 12), subjectMatches,
+        issuerMatchesCustomer: privyClaims.iss === customerClaims.iss,
+        audienceMatchesCustomer: JSON.stringify(privyClaims.aud) === JSON.stringify(customerClaims.aud),
+        sessionMatchesCustomer: typeof privyClaims.sid === 'string' && privyClaims.sid === customerClaims.sid,
+        secondsToExpiry: typeof privyClaims.exp === 'number' ? Math.floor(privyClaims.exp - Date.now() / 1000) : null,
+        exchange: subjectMatches ? await identity.testJwtRest(input.privyToken) : { skipped: 'Internal token subject does not match the authenticated owner' },
+      },
+    })
+  })
   app.post('/v1/test/quorum-wallets', async c => {
     const input = z.object({ requestId: id }).strict().parse(await c.req.json())
     if (!identity.createTestWallet) fail(503, 'provider_unavailable', 'Privy test unavailable')

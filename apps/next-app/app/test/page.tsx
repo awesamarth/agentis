@@ -45,7 +45,45 @@ export default function TestPage() {
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
     <p className="text-xs text-ink-muted">Keep it unfunded. Private keys stay in Privy’s export dialog; this page does not read or store them. This tests the browser SDK independently of the failing server JWT exchange.</p>
     <QuorumWalletTest />
+    <TokenComparison />
   </main>
+}
+
+function TokenComparison() {
+  const { authenticated, getAccessToken } = usePrivy()
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState('')
+  const [error, setError] = useState('')
+  async function compare() {
+    if (!authenticated || busy) return
+    setBusy(true); setResult(''); setError('')
+    try {
+      const customer = await getAccessToken()
+      if (!customer) throw new Error('Sign in first')
+      // Diagnostic only: this is SDK-internal storage, not a supported production token API.
+      const stored = localStorage.getItem('privy:pat')
+      let privyToken: string | null = null
+      if (stored) {
+        let parsed: unknown
+        try { parsed = JSON.parse(stored) } catch { parsed = stored }
+        if (typeof parsed !== 'string') throw new Error('Internal token storage format is not a string')
+        privyToken = parsed
+      }
+      const response = await fetch(`${(process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001').replace(/\/$/, '')}/v1/test/privy-token-comparison`, { method: 'POST', headers: { authorization: `Bearer ${customer}`, 'content-type': 'application/json' }, body: JSON.stringify({ privyToken }), cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(60_000) })
+      const data = await response.json()
+      if (!response.ok) throw new Error(`HTTP ${response.status}: ${data.error?.message ?? 'Comparison failed'}`)
+      setResult(JSON.stringify(data, null, 2))
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Comparison failed') }
+    finally { setBusy(false) }
+  }
+  return <section className="space-y-4 border-t border-beige-darker pt-8">
+    <h2 className="font-serif text-2xl font-bold">Customer token vs Privy token</h2>
+    <p className="text-sm text-ink-muted">Compare the public hook’s token with the internal token in browser storage, if available. Each is sent to the local backend for the same direct REST exchange. Only fingerprints, claim comparisons and HTTP results are shown.</p>
+    <p className="text-xs text-ink-muted">Diagnostic only—not a production integration. No wallets are created, no export is performed, and any returned encrypted authorization key is discarded.</p>
+    <button disabled={!authenticated || busy} onClick={compare} className="bg-black px-5 py-3 font-mono text-xs text-white disabled:opacity-40">{busy ? 'Comparing…' : 'Compare customer vs Privy token'}</button>
+    {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+    {result && <pre aria-live="polite" className="overflow-x-auto border border-beige-darker bg-[#faf7f1] p-4 font-mono text-xs">{result}</pre>}
+  </section>
 }
 
 function QuorumWalletTest() {
