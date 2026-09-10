@@ -1,5 +1,7 @@
 import type { ProfileSummary, AccessKey } from '@agentis-hq/sdk'
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
+import { PrivyClient } from '@privy-io/node'
+import { createRuntime } from './runtime'
 import postgres from 'postgres'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
@@ -125,6 +127,33 @@ suite('transactional execution foundation (isolated PostgreSQL)', () => {
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect(await response.json()).toEqual({ privateKey: 'fixture-key-not-a-real-secret' })
     expect(exports).toBe(1)
+  })
+  test('real runtime forwards owner exports to the bound Privy identity', async () => {
+    const s = await setup()
+    await connection.db.update(wallets).set({ provider: 'privy', chainId: 'eip155:84532' }).where(eq(wallets.id, s.wallet.id))
+    let exports = 0
+    const walletSpy = spyOn(PrivyClient.prototype, 'wallets').mockReturnValue({
+      get: async () => ({ id: s.wallet.providerWalletId, address: s.wallet.address, owner_id: 'quorum', chain_type: 'ethereum' }),
+      export: async (id: string, input: { authorization_context: { user_jwts: string[] } }) => {
+        expect(id).toBe(s.wallet.providerWalletId)
+        expect(input.authorization_context).toEqual({ user_jwts: ['owner-a'] })
+        exports++; return { private_key: 'fixture-not-a-real-key' }
+      },
+    } as never)
+    const quorumSpy = spyOn(PrivyClient.prototype, 'keyQuorums').mockReturnValue({ get: async () => ({ authorization_threshold: 1, user_ids: [owner.ownerId], key_quorum_ids: [], authorization_keys: [] }) } as never)
+    const authSpy = spyOn(PrivyClient.prototype, 'utils').mockReturnValue({ auth: () => ({ verifyAccessToken: async () => ({ user_id: owner.ownerId }) }) } as never)
+    const databaseUrl = new URL(url!); databaseUrl.pathname = `/${name}`
+    let runtime: Awaited<ReturnType<typeof createRuntime>> | undefined
+    try {
+      runtime = await createRuntime({ DATABASE_URL: databaseUrl.toString(), PRIVY_APP_ID: 'fixture-app', PRIVY_APP_SECRET: 'fixture-secret', AGENTIS_EXECUTOR: 'disabled' })
+      const response = await runtime.app.request(`/v1/wallets/${s.wallet.id}/export`, { method: 'POST', headers: { authorization: 'Bearer owner-a', 'content-type': 'application/json' }, body: JSON.stringify({ confirm: true }) })
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ privateKey: 'fixture-not-a-real-key' })
+      expect(exports).toBe(1)
+    } finally {
+      await runtime?.close()
+      walletSpy.mockRestore(); quorumSpy.mockRestore(); authSpy.mockRestore()
+    }
   })
   test('profile totals cover all settled payments and access metadata stays owner-only', async () => {
     const s = await setup()
