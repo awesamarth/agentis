@@ -65,17 +65,7 @@ export function privyIdentity(appId: string, appSecret: string, authorizationKey
       if (!wallet) fail(404, 'not_found', 'Throwaway wallet not found')
       const checked = await this.inspectWallet(wallet.id, ownerId)
       if (!checked.serverAuthorized || checked.chainType !== 'ethereum') fail(403, 'wallet_owner_mismatch', 'Test wallet must retain the user + server quorum')
-      if (signer === 'server') {
-        if (!authorizationKey) fail(503, 'server_authorization_missing', 'Server authorization key unavailable')
-        try {
-          const result = await client.wallets().export(wallet.id, { authorization_context: { authorization_private_keys: [authorizationKey] }, request_expiry: Date.now() + 60_000 })
-          return { privateKey: result.private_key }
-        } catch (error) {
-          const status = typeof (error as { status?: unknown })?.status === 'number' ? (error as { status: number }).status : null
-          fail(503, 'server_export_failed', status === null ? 'Server-member export failed in SDK or transport' : `Privy rejected server-member export (HTTP ${status})`)
-        }
-      }
-      return this.exportWallet(wallet.id, ownerId, wallet.address, 'ethereum', userJwt)
+      return this.exportWallet(wallet.id, ownerId, wallet.address, 'ethereum', userJwt, signer)
     },
     async createWallet(ownerId: string, chainType: 'ethereum' | 'solana', agentId?: string) {
       const externalId = externalWalletId(ownerId, chainType, agentId)
@@ -96,20 +86,24 @@ export function privyIdentity(appId: string, appSecret: string, authorizationKey
       if (!userOwner || (quorum.authorization_keys.length !== 0 && !serverAuthorized)) fail(403, 'wallet_owner_mismatch', 'Unexpected wallet ownership; no signing authority will be assumed')
       return { providerWalletId: wallet.id, address: wallet.address, chainType: wallet.chain_type, serverAuthorized }
     },
-    async exportWallet(id: string, ownerId: string, address: string, chainType: 'ethereum' | 'solana', userJwt: string) {
+    async exportWallet(id: string, ownerId: string, address: string, chainType: 'ethereum' | 'solana', userJwt: string, signer: 'user' | 'server' = 'server') {
       if (await this.authenticate(userJwt) !== ownerId) fail(403, 'wallet_owner_mismatch', 'Only the owner can export this wallet')
       const wallet = await this.inspectWallet(id, ownerId)
       if (wallet.address !== address || wallet.chainType !== chainType) fail(403, 'wallet_owner_mismatch', 'Wallet identity does not match')
+      if (signer === 'server') {
+        if (!authorizationKey) fail(503, 'server_authorization_missing', 'Server authorization key unavailable')
+        if (!wallet.serverAuthorized) fail(403, 'wallet_owner_mismatch', 'The server is not a verified member of this wallet’s owner quorum')
+      }
       try {
-        // User authorization only. Never fall back to the server quorum signer for export.
-        const result = await client.wallets().export(id, { authorization_context: { user_jwts: [userJwt] }, request_expiry: Date.now() + 60_000 })
+        // Owner-approved server export by default; the local test can explicitly select the user member. No fallback.
+        const result = await client.wallets().export(id, { authorization_context: signer === 'server' ? { authorization_private_keys: [authorizationKey!] } : { user_jwts: [userJwt] }, request_expiry: Date.now() + 60_000 })
         return { privateKey: result.private_key }
       } catch (error) {
         // Never expose raw SDK errors: some include sensitive request/response material.
         const status = typeof (error as { status?: unknown })?.status === 'number' ? (error as { status: number }).status : null
         const jwtRejected = error instanceof Error && error.message.includes('Invalid JWT token provided')
-        console.error('Privy export failed', { status, jwtRejected, category: status === null ? 'sdk_or_transport' : 'provider_response' })
-        if (jwtRejected) fail(401, 'wallet_export_jwt_rejected', 'Privy rejected the owner token during wallet authorization. Export was not completed; signing in again has not resolved this known issue.')
+        console.error('Privy export failed', { signer, status, jwtRejected, category: status === null ? 'sdk_or_transport' : 'provider_response' })
+        if (signer === 'user' && jwtRejected) fail(401, 'wallet_export_jwt_rejected', 'Privy rejected the owner token during wallet authorization. Export was not completed; signing in again has not resolved this known issue.')
         if (status === 401 || status === 403) fail(403, 'wallet_export_denied', 'Privy denied this owner’s export authorization. Export was not completed.')
         fail(503, 'wallet_export_failed', status === null ? 'Wallet export failed in the SDK or network connection. Export was not completed.' : `Privy rejected the export flow (HTTP ${status}). Export was not completed.`)
       }
