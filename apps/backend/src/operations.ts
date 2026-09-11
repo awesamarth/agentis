@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, getTableColumns, inArray, lt, sql } from 'drizzle-orm'
 import { operationInput, walletPolicy, grantInput, type GrantInput, type Operation, type OperationInput } from '@agentis-hq/core/operations'
 import type { Database } from './db'
 import { grants, operations, wallets, onboarding, agents, type OperationRow, type WalletRow } from './db/schema'
@@ -8,12 +8,15 @@ import type { PluginConfig } from './plugins'
 import { buildTransfer } from './modules/transfers'
 import { quoteUsd, usdCost } from './modules/usd-budget'
 import type { Executor } from './providers/types'
+import { fetchRequest } from '@agentis-hq/core/operations'
+import { discoverX402 } from './modules/x402'
 
 export type Principal = { kind: 'owner'; ownerId: string } | { kind: 'agent'; ownerId: string; grantId: string }
 export const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const reserved = ['pending_approval', 'queued', 'submitting', 'submitted', 'unknown'] as const
 const uncertain = ['submitting', 'submitted', 'unknown'] as const
 export const cost = (input: OperationInput) => (input.asset === 'native' ? BigInt(input.amountAtomic) : 0n) + BigInt(input.maxFeeAtomic)
+const { httpResponse: _httpResponse, ...operationSummaryColumns } = getTableColumns(operations)
 const lifetimeMs = 10 * 60_000
 const assetKey = (asset: string) => asset.startsWith('erc20:') ? asset.toLowerCase() : asset
 
@@ -26,12 +29,12 @@ const grantAllowsWallet = (grant: typeof grants.$inferSelect, wallet: WalletRow)
 export class OperationService {
   constructor(readonly db: Database, readonly executor: Executor | null, readonly config: PluginConfig, readonly dashboardUrl: string, readonly priceQuote: typeof quoteUsd = quoteUsd) {}
 
-  view(row: OperationRow): Operation {
+  view(row: Omit<OperationRow, 'httpResponse'> & { httpResponse?: OperationRow['httpResponse'] }): Operation {
     return {
       ...row.input, id: row.id, status: row.status, operationHash: row.operationHash,
       policyVersion: row.policyVersion, createdAt: row.createdAt.toISOString(), expiresAt: row.expiresAt.toISOString(),
       approvalUrl: row.status === 'pending_approval' ? `${this.dashboardUrl}/operations/${row.id}` : null,
-      transactionHash: row.transactionHash, receipt: row.receipt, error: row.error,
+      transactionHash: row.transactionHash, receipt: row.receipt, error: row.error, httpResponse: row.httpResponse,
       usdReservedMicros: row.usdReservedMicros, usdSettledMicros: row.usdSettledMicros,
     }
   }
@@ -75,8 +78,8 @@ export class OperationService {
     const [agent] = wallet.agentId ? await tx.select().from(agents).where(and(eq(agents.id, wallet.agentId), eq(agents.ownerId, wallet.ownerId))) : []
     const [budget] = await tx.select().from(onboarding).where(eq(onboarding.ownerId, wallet.ownerId))
     const history = agent
-      ? (await tx.select({ operation: operations }).from(operations).innerJoin(wallets, eq(wallets.id, operations.walletId)).where(and(eq(operations.ownerId, wallet.ownerId), eq(wallets.agentId, agent.id)))).map(row => row.operation)
-      : await tx.select().from(operations).where(eq(operations.ownerId, wallet.ownerId))
+      ? (await tx.select({ operation: operationSummaryColumns }).from(operations).innerJoin(wallets, eq(wallets.id, operations.walletId)).where(and(eq(operations.ownerId, wallet.ownerId), eq(wallets.agentId, agent.id)))).map(row => row.operation)
+      : await tx.select(operationSummaryColumns).from(operations).where(eq(operations.ownerId, wallet.ownerId))
     let total = 0n, hourly = 0n, daily = 0n
     for (const row of history) {
       if (row.id === excludeId) continue
@@ -96,10 +99,30 @@ export class OperationService {
   }
 
   async create(principal: Principal, raw: unknown, idempotencyKey: string): Promise<Operation> {
-    if (!/^[A-Za-z0-9._:-]{1,128}$/.test(idempotencyKey)) fail(400, 'idempotency_required', 'Provide an Idempotency-Key (1–128 safe characters)')
     const input = buildTransfer(operationInput.parse(raw))
+    if (input.action !== 'transfer') fail(400, 'use_fetch', 'Use /v1/fetch for server-resolved payment terms')
+    return this.createInput(principal, input, idempotencyKey)
+  }
+
+  async fetch(principal: Principal, raw: unknown, idempotencyKey: string): Promise<Operation> {
+    const request = fetchRequest.parse(raw)
+    if (!/^[A-Za-z0-9._:-]{1,128}$/.test(idempotencyKey)) fail(400, 'idempotency_required', 'Provide an Idempotency-Key')
+    const requestHash = hash(JSON.stringify(request))
     const principalKey = principal.kind === 'owner' ? `owner:${principal.ownerId}` : `grant:${principal.grantId}`
-    const requestHash = hash(JSON.stringify(input))
+    const existing = await this.db.transaction(async tx => {
+      const wallet = await this.lockWallet(tx, principal, request.walletId)
+      if (!wallet.enabled || wallet.chainId !== 'eip155:84532' || wallet.provider !== 'privy') fail(400, 'unsupported_payment', 'Choose an enabled hosted Base Sepolia wallet')
+      const [row] = await tx.select().from(operations).where(and(eq(operations.principalKey, principalKey), eq(operations.idempotencyKey, idempotencyKey)))
+      if (row && row.requestHash !== requestHash) fail(409, 'idempotency_conflict', 'Idempotency key already used for a different request')
+      return row ? this.view(row) : null
+    })
+    if (existing) return existing
+    return this.createInput(principal, buildTransfer(operationInput.parse(await discoverX402(request))), idempotencyKey, requestHash)
+  }
+
+  private async createInput(principal: Principal, input: OperationInput, idempotencyKey: string, requestHash = hash(JSON.stringify(input))): Promise<Operation> {
+    if (!/^[A-Za-z0-9._:-]{1,128}$/.test(idempotencyKey)) fail(400, 'idempotency_required', 'Provide an Idempotency-Key (1–128 safe characters)')
+    const principalKey = principal.kind === 'owner' ? `owner:${principal.ownerId}` : `grant:${principal.grantId}`
     return this.db.transaction(async tx => {
       // Serializes idempotency keys even if two requests use different wallet IDs.
       // Lock order: principal, then wallet, everywhere this extra lock is needed.
@@ -117,7 +140,7 @@ export class OperationService {
       await this.expire(tx, wallet.id)
       let reason = this.policyReason(wallet, input)
       // ponytail: O(n) wallet history under lock; use SQL ledger aggregates when volume warrants it.
-      const rows = await tx.select().from(operations).where(eq(operations.walletId, wallet.id))
+      const rows = await tx.select(operationSummaryColumns).from(operations).where(eq(operations.walletId, wallet.id))
       let daily = 0n, lifetime = 0n, tokenDaily = 0n, tokenLifetime = 0n
       for (const row of rows) {
         const holding = (reserved as readonly string[]).includes(row.status)
@@ -168,7 +191,7 @@ export class OperationService {
 
   async list(principal: Principal) {
     const filter = principal.kind === 'owner' ? eq(operations.ownerId, principal.ownerId) : and(eq(operations.ownerId, principal.ownerId), eq(operations.grantId, principal.grantId))
-    return (await this.db.select().from(operations).where(filter).orderBy(desc(eq(operations.status, 'pending_approval')), desc(operations.createdAt), desc(operations.id)).limit(100)).map(row => this.view(row))
+    return (await this.db.select(operationSummaryColumns).from(operations).where(filter).orderBy(desc(eq(operations.status, 'pending_approval')), desc(operations.createdAt), desc(operations.id)).limit(100)).map(row => this.view(row))
   }
 
   async authorization(principal: Principal, id: string) {
@@ -178,7 +201,7 @@ export class OperationService {
     return this.db.transaction(async tx => {
       const wallet = await this.lockWallet(tx, principal, visible.walletId)
       await this.expire(tx, wallet.id)
-      const rows = await tx.select().from(operations).where(eq(operations.walletId, wallet.id))
+      const rows = await tx.select(operationSummaryColumns).from(operations).where(eq(operations.walletId, wallet.id))
       const row = rows.find(row => row.id === id)
       if (!row || row.status !== 'pending_approval' || row.policyVersion !== wallet.policyVersion || this.policyReason(wallet, row.input)) fail(409, 'not_pending', 'Operation cannot be authorized')
       if (rows.some(other => other.id !== id && (reserved as readonly string[]).includes(other.status) && (other.authorizationRequest || (uncertain as readonly string[]).includes(other.status)))) fail(409, 'wallet_busy', 'Resolve the earlier authorized operation first')
@@ -268,14 +291,23 @@ export class OperationService {
         const [wallet] = await tx.select().from(wallets).where(eq(wallets.id, candidate.id)).for('update', { skipLocked: true })
         if (!wallet) return null
         await this.expire(tx, wallet.id)
-        const rows = await tx.select().from(operations).where(eq(operations.walletId, wallet.id)).orderBy(operations.createdAt)
+        const rows = await tx.select(operationSummaryColumns).from(operations).where(eq(operations.walletId, wallet.id)).orderBy(operations.createdAt)
         const pending = rows.find(row => (uncertain as readonly string[]).includes(row.status))
         if (pending) {
-          if (!pending.transactionHash) return null
-          const receipt = await executor.receipt(pending.transactionHash, pending.input)
-          if (receipt && ((pending.input.chainId.startsWith('solana:') ? receipt.transactionHash !== pending.transactionHash : receipt.transactionHash.toLowerCase() !== pending.transactionHash.toLowerCase()) || receipt.chainId !== pending.input.chainId || BigInt(receipt.feeAtomic) < 0n)) throw new Error('Provider receipt mismatch')
+          if (!pending.transactionHash && pending.input.action !== 'paid_fetch') return null
+          let receipt
+          try { receipt = await executor.receipt(pending.transactionHash, pending.input, pending.signedTransaction) } catch {
+            await tx.update(operations).set({ status: 'unknown', error: 'Settlement lookup unavailable; reservation retained, no automatic resend' }).where(eq(operations.id, pending.id))
+            return null
+          }
+          if (receipt && 'expiredUnused' in receipt) {
+            if (pending.input.action !== 'paid_fetch') throw new Error('Unexpected expired authorization')
+            await tx.update(operations).set({ status: 'expired', signedTransaction: null, usdSettledMicros: '0', settledAt: new Date(), error: 'Payment authorization expired unused on the finalized chain; no charge' }).where(eq(operations.id, pending.id))
+            return null
+          }
+          if (receipt && ((pending.transactionHash !== null && (pending.input.chainId.startsWith('solana:') ? receipt.transactionHash !== pending.transactionHash : receipt.transactionHash.toLowerCase() !== pending.transactionHash.toLowerCase())) || receipt.chainId !== pending.input.chainId || BigInt(receipt.feeAtomic) < 0n)) throw new Error('Provider receipt mismatch')
           await tx.update(operations).set(receipt
-            ? { status: receipt.success ? 'confirmed' : 'failed', receipt, usdSettledMicros: pending.usdQuote ? usdCost(pending.input, pending.usdQuote, receipt.feeAtomic, receipt.success).toString() : null, settledAt: new Date(), signedTransaction: null, authorizationSignature: null, error: receipt.success ? null : 'Transaction reverted' }
+            ? { status: receipt.success ? 'confirmed' : 'failed', receipt, transactionHash: receipt.transactionHash, usdSettledMicros: pending.usdQuote ? usdCost(pending.input, pending.usdQuote, receipt.feeAtomic, receipt.success).toString() : null, settledAt: new Date(), signedTransaction: null, authorizationSignature: null, error: receipt.success ? null : 'Transaction reverted' }
             : { status: 'unknown', error: 'Submission unresolved; reservation retained, no automatic resend' }
           ).where(eq(operations.id, pending.id))
           return null
@@ -319,8 +351,8 @@ export class OperationService {
       })
       if (prepared) {
         try {
-          await executor.broadcast(prepared.signedTransaction!)
-          await this.db.update(operations).set({ status: 'submitted', error: null }).where(and(eq(operations.id, prepared.id), inArray(operations.status, ['submitting', 'unknown'])))
+          const httpResponse = await executor.broadcast(prepared.signedTransaction!)
+          await this.db.update(operations).set({ status: 'submitted', error: null, ...(httpResponse ? { httpResponse } : {}) }).where(and(eq(operations.id, prepared.id), inArray(operations.status, ['submitting', 'unknown'])))
         } catch {
           await this.db.update(operations).set({ status: 'unknown', error: 'Submission outcome unknown; reconcile before retrying' }).where(and(eq(operations.id, prepared.id), inArray(operations.status, ['submitting', 'unknown'])))
         }

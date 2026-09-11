@@ -1,4 +1,4 @@
-import type { Operation, OperationInput, WalletPolicy, AuthorizationRequest, UsdLimits, GrantInput } from '@agentis-hq/core/operations'
+import type { Operation, OperationInput, WalletPolicy, AuthorizationRequest, UsdLimits, GrantInput, FetchRequest } from '@agentis-hq/core/operations'
 
 export type AgentisAgent = { id: string; name: string; limits: UsdLimits; mode: 'ask' | 'automatic' | 'paused'; allowedRecipients: string[]; networks: string[]; defaultNetwork: string }
 export type AgentSettings = Pick<AgentisAgent, 'name' | 'limits' | 'mode' | 'allowedRecipients'> & { selection: { networks: string[]; defaultNetwork: string }; enableExecution?: boolean }
@@ -44,6 +44,7 @@ export class AgentisClient {
     if (!response.ok) throw new AgentisApiError(response.status, data.error?.code ?? 'api_error', data.error?.message ?? 'Agentis request failed')
     return data as T
   }
+  fetch = (input: FetchRequest, options: { idempotencyKey: string }) => this.request<Operation>('/fetch', 'POST', input, { 'Idempotency-Key': options.idempotencyKey }, AbortSignal.timeout(60_000))
   capabilities = () => this.request<Record<string, unknown>>('/capabilities')
   onboarding = {
     get: () => this.request<{ settings: { networks: string[]; defaultNetwork: string; totalBudgetUsd: string | null; completedAt: string } | null; networks: Array<{ key: string; name: string; chainId: string; chainType: string; currency: string; decimals: number; assets: Array<{ id: OperationInput['asset']; symbol: string; decimals: number }>; explorer: string; executionReady: boolean; testnet: boolean }> }>('/onboarding'),

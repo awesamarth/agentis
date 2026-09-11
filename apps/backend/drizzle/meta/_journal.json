@@ -64,6 +64,13 @@
       "when": 1789049625000,
       "tag": "0008_optional_key_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789125851152,
+      "tag": "0009_paid_fetch_response",
+      "breakpoints": true
     }
   ]
 }

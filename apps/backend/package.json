@@ -23,6 +23,8 @@
     "@solana-program/token": "0.11.0",
     "@solana/kit": "6.8.0",
     "@solana/web3.js": "3.0.0-rc.3",
+    "@x402/core": "2.25.0",
+    "@x402/evm": "2.25.0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.14",
     "ox": "0.14.15",

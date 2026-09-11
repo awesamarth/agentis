@@ -5,16 +5,31 @@ import { z } from 'zod'
 export const atomic = z.string().regex(/^(0|[1-9]\d{0,77})$/)
 export const positiveAtomic = atomic.refine(value => BigInt(value) > 0n, 'Must be positive')
 export const chainId = z.string().regex(/^(eip155:[1-9]\d*|solana:[A-Za-z0-9]+)$/)
+export const fetchRequest = z.object({
+  walletId: z.string().uuid(), url: z.url().max(4096), maxAmountAtomic: positiveAtomic,
+  reason: z.string().trim().max(500).default(''),
+}).strict()
+export type FetchRequest = z.input<typeof fetchRequest>
+export const x402Payment = z.object({
+  url: z.url().max(4096), maxAmountAtomic: positiveAtomic,
+  requirements: z.object({
+    scheme: z.literal('exact'), network: z.literal('eip155:84532'), asset: z.string(), amount: positiveAtomic,
+    payTo: z.string(), maxTimeoutSeconds: z.number().int().min(15).max(120),
+    extra: z.object({ name: z.literal('USDC'), version: z.literal('2') }).strict(),
+  }).strict(),
+}).strict()
+export type PaidHttpResponse = { status: number; headers: Record<string, string>; bodyBase64: string }
 export const operationInput = z.object({
   walletId: z.string().uuid(),
-  action: z.literal('transfer'),
+  action: z.enum(['transfer', 'paid_fetch']),
+  payment: x402Payment.optional(),
   chainId,
   asset: z.union([z.literal('native'), z.string().regex(/^(erc20:0x[0-9a-fA-F]{40}|spl:[1-9A-HJ-NP-Za-km-z]{32,44})$/)]),
   to: z.string().min(1).max(128),
   amountAtomic: positiveAtomic,
-  maxFeeAtomic: positiveAtomic,
+  maxFeeAtomic: atomic,
   reason: z.string().trim().max(500).default(''),
-}).strict()
+}).strict().refine(input => input.action === 'paid_fetch' ? !!input.payment && input.maxFeeAtomic === '0' : !input.payment && BigInt(input.maxFeeAtomic) > 0n, 'Invalid payment action or fee cap')
 export type OperationInput = z.input<typeof operationInput>
 
 export const walletPolicy = z.object({
@@ -57,6 +72,7 @@ export const operationStatuses = ['pending_approval', 'queued', 'submitting', 's
 export type OperationStatus = typeof operationStatuses[number]
 export type UsdQuote = { assetPrice: string; feePrice: string; assetDecimals: number; feeDecimals: number; expiresAt: number }
 export type Operation = OperationInput & {
+  httpResponse?: PaidHttpResponse | null
   usdReservedMicros?: string | null
   usdSettledMicros?: string | null
   id: string

@@ -64,6 +64,7 @@ export const operations = pgTable('operations', {
   usdReservedMicros: text(),
   usdSettledMicros: text(),
   receipt: jsonb().$type<Operation['receipt']>(),
+  httpResponse: jsonb().$type<Operation['httpResponse']>(),
   error: text(),
   approvedAt: timestamp({ withTimezone: true, mode: 'date' }),
   settledAt: timestamp({ withTimezone: true, mode: 'date' }),

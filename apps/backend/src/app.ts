@@ -107,7 +107,7 @@ export function createApp(service: OperationService, identity: Identity, origins
     const enabled = await service.db.select().from(wallets).where(and(eq(wallets.agentId, agentId), eq(wallets.ownerId, principal.ownerId), eq(wallets.enabled, true)))
     return c.json(await agentBalance(enabled))
   })
-  app.get('/v1/capabilities', c => c.json({ defaultChain: defaultProductChain, networks: Object.fromEntries(supportedNetworks.map(network => [network.chainId, { name: network.name, testnet: network.testnet, execution: service.executor?.id === 'privy' && ['base', 'arc'].includes(network.key) }])), core: { transfers: !!service.executor, x402: false, mpp: false }, plugins: service.config, executor: service.executor?.id ?? null, approvalSecurity: service.executor?.id === 'anvil' ? 'local-demo-app-authorization' : service.executor?.id === 'privy' ? 'backend-policy-and-owner-approval' : 'live-execution-unavailable' }))
+  app.get('/v1/capabilities', c => c.json({ defaultChain: defaultProductChain, networks: Object.fromEntries(supportedNetworks.map(network => [network.chainId, { name: network.name, testnet: network.testnet, execution: service.executor?.id === 'privy' && ['base', 'arc'].includes(network.key) }])), core: { transfers: !!service.executor, x402: service.executor?.id === 'privy', mpp: false }, paidFetch: { methods: ['GET'], x402Networks: service.executor?.id === 'privy' ? ['eip155:84532'] : [], mppNetworks: [] }, plugins: service.config, executor: service.executor?.id ?? null, approvalSecurity: service.executor?.id === 'anvil' ? 'local-demo-app-authorization' : service.executor?.id === 'privy' ? 'backend-policy-and-owner-approval' : 'live-execution-unavailable' }))
   app.get('/v1/wallets', async c => {
     const principal = c.get('principal')
     let scope = eq(wallets.ownerId, principal.ownerId)
@@ -155,6 +155,7 @@ export function createApp(service: OperationService, identity: Identity, origins
   })
   app.post('/v1/grants', async c => c.json(await service.createGrant(c.get('principal'), grantInput.parse(await c.req.json())), 201))
   app.delete('/v1/grants/:id', async c => { await service.revoke(c.get('principal'), id.parse(c.req.param('id'))); return c.body(null, 204) })
+  app.post('/v1/fetch', async c => c.json(await service.fetch(c.get('principal'), await c.req.json(), c.req.header('Idempotency-Key') ?? ''), 202))
   app.get('/v1/operations', async c => c.json(await service.list(c.get('principal'))))
   app.post('/v1/operations', async c => c.json(await service.create(c.get('principal'), await c.req.json(), c.req.header('Idempotency-Key') ?? ''), 202))
   app.get('/v1/operations/:id', async c => c.json(await service.get(c.get('principal'), id.parse(c.req.param('id')))))
