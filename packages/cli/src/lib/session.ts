@@ -5,6 +5,9 @@ import { createHash, randomBytes } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { setTimeout } from 'node:timers/promises'
 import { AgentisClient, type CliCredential } from '@agentis-hq/sdk'
+import { namedChain } from './output'
+
+const agentSummary = (credential: CliCredential) => ({ name: credential.agentName, chains: credential.chainIds.map(namedChain) })
 
 const directory = join(homedir(), '.agentis')
 const file = join(directory, 'cli-session.json')
@@ -28,7 +31,7 @@ export function readSession(): Session | null {
   if (session.apiUrl !== apiUrl()) throw Error('Stored login belongs to a different API URL; set AGENTIS_API_URL to that server or log out first')
   return session
 }
-export async function login(noBrowser = false) {
+export async function login(noBrowser = false, json = false) {
   if (process.env.AGENTIS_TOKEN) throw Error('Unset AGENTIS_TOKEN before browser login; it overrides stored credentials')
   if (readSession()) throw Error('Already linked. Run agentis logout before connecting a new selection; revoke old keys in the dashboard if no longer needed')
   const secret = randomBytes(32).toString('hex')
@@ -36,10 +39,11 @@ export async function login(noBrowser = false) {
   const request = await client.cliLogin.start(createHash('sha256').update(secret).digest('hex'))
   const url = new URL(request.approvalUrl)
   if (url.username || url.password || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)))) throw Error('Unsafe login URL')
-  console.log(`Open: ${url.href}\nConfirmation code: ${request.code}\nChoose agents and wallets in the browser. Waiting for owner approval…`)
+  const progress = (message: string) => { (json ? process.stderr : process.stdout).write(`${message}\n`) }
+  progress(`Open: ${url.href}\nConfirmation code: ${request.code}\nChoose agents and wallets in the browser. Waiting for owner approval…`)
   if (!noBrowser && ['darwin', 'linux'].includes(process.platform)) {
     const child = spawn(process.platform === 'darwin' ? 'open' : 'xdg-open', [url.href], { stdio: 'ignore', detached: true })
-    child.on('error', () => console.log('Open the link above manually.'))
+    child.on('error', () => progress('Open the link above manually.'))
     child.unref()
   }
   while (Date.now() < Date.parse(request.expiresAt)) {
@@ -49,7 +53,7 @@ export async function login(noBrowser = false) {
       // raw wallet key or exchange secret is stored. Filesystem protection only.
       try { writeFileSync(file, JSON.stringify({ version: 1, apiUrl: apiUrl(), credentials: result.credentials } satisfies Session, null, 2), { mode: 0o600, flag: 'wx' }) }
       catch { throw Error(`CLI keys were issued but could not be saved. Revoke these keys in the dashboard before retrying: ${result.credentials.map(c => c.id).join(', ')}`) }
-      return { connected: result.credentials.map(({ token: _token, ...credential }) => credential), storage: file }
+      return { agents: result.credentials.map(agentSummary) }
     }
     await setTimeout(2000)
   }
@@ -73,8 +77,8 @@ export function sessions(agent?: string) {
   return credentials.map(c => ({ client: new AgentisClient({ baseUrl: session.apiUrl, token: c.token }), agentId: c.agentId, agentName: c.agentName }))
 }
 export function whoami() {
-  if (process.env.AGENTIS_TOKEN) return { source: 'AGENTIS_TOKEN (overrides stored login)', apiUrl: apiUrl() }
+  if (process.env.AGENTIS_TOKEN) return { message: 'Using AGENTIS_TOKEN; stored browser login is overridden.' }
   const session = readSession()
   if (!session) return { connected: false }
-  return { apiUrl: session.apiUrl, agents: session.credentials.map(({ token: _token, ...credential }) => credential) }
+  return { agents: session.credentials.map(agentSummary) }
 }

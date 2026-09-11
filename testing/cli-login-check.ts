@@ -80,7 +80,7 @@ try {
       const saved = JSON.parse(readFileSync(file, 'utf8'))
       assert.equal(saved.credentials.length, 2)
       assert(!readFileSync(file, 'utf8').includes('fixture-owner-auth'))
-      const listing = Bun.spawn([process.execPath, resolve('packages/cli/src/index.ts'), 'wallet', 'list'], { env: environment, stdout: 'pipe', stderr: 'pipe' })
+      const listing = Bun.spawn([process.execPath, resolve('packages/cli/src/index.ts'), 'wallet', 'list', '--json'], { env: environment, stdout: 'pipe', stderr: 'pipe' })
       assert.equal(await listing.exited, 0)
       assert.equal(JSON.parse(await new Response(listing.stdout).text()).length, 2)
     } finally { cli.kill(); server.stop(true); rmSync(home, { recursive: true, force: true }) }

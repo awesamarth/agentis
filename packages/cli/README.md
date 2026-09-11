@@ -2,6 +2,8 @@
 
 Run from the repo after `bun run build:packages`: `bun packages/cli/src/index.ts --help`.
 
+Output is human-readable by default; use `--json` for machine-readable results. `whoami` shows only agent names and named chains with their IDs, not backend URLs or grant IDs. Normal login progress goes to stdout; with `login --json`, progress goes to stderr so stdout contains only the final JSON. Large/binary paid-response bodies remain available in full through `--json`.
+
 Set `AGENTIS_API_URL` if needed (defaults to loopback port 3001), then run `agentis login`. Alternatively set `AGENTIS_TOKEN` privately; it overrides stored login. Use scoped executor grants for agents, not owner credentials.
 
 ## Browser login

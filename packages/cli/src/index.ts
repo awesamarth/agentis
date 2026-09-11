@@ -5,6 +5,7 @@ import { AgentisApiError } from '@agentis-hq/sdk'
 import { login, logout, sessions, whoami } from './lib/session'
 import { createLocalWallet, listLocalWallets } from './lib/local-wallet'
 import { validateCommand } from './lib/command-validation'
+import { formatOutput } from './lib/output'
 
 const args = process.argv.slice(2)
 async function main() {
@@ -33,6 +34,7 @@ async function main() {
   operations approve|reject <id> --hash <operation-hash>   (owner only)
   capabilities
 
+Human-readable output by default. Add --json for machine-readable output.
 Run agentis login, or set AGENTIS_TOKEN to override stored login.
 Set AGENTIS_API_URL (default http://localhost:3001). Use --agent <id-or-name>
 to narrow commands to one linked agent; wallet IDs route payments automatically.
@@ -42,7 +44,7 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
     return
   }
   let output: unknown
-  if (command === 'login') output = await login(values['no-browser'])
+  if (command === 'login') output = await login(values['no-browser'], values.json)
   else if (command === 'logout') output = logout()
   else if (command === 'whoami') output = whoami()
   else if (command === 'wallet' && values.local) {
@@ -91,6 +93,6 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
       }
     } else throw new Error('Hosted creation and unmigrated capabilities are unavailable; use the wallet-link API')
   }
-  console.log(JSON.stringify(output, null, 2))
+  console.log(values.json ? JSON.stringify(output, null, 2) : formatOutput(command!, output))
 }
 main().catch(error => { console.error(error instanceof Error ? error.message : 'Command failed'); process.exitCode = 1 })
