@@ -3,7 +3,7 @@ import { usePrivy } from '@privy-io/react-auth'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AgentisClient, type Operation } from '@agentis-hq/sdk'
 import { formatUnits } from 'viem'
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowUpRight, LoaderCircle } from 'lucide-react'
 
 export default function Operations({ id }: { id?: string }) {
   const { ready, authenticated, getAccessToken, user, login } = usePrivy()
@@ -31,6 +31,8 @@ export default function Operations({ id }: { id?: string }) {
       const network = networks.data?.networks.find(network => network.chainId === operation.chainId)
       const asset = network?.assets.find(asset => operation.asset.startsWith('erc20:') ? asset.id.toLowerCase() === operation.asset.toLowerCase() : asset.id === operation.asset)
       const status = { pending_approval: 'Needs approval', queued: 'Approved', submitting: 'Sending', submitted: 'Confirming', unknown: 'Checking payment', confirmed: 'Completed', failed: 'Failed', denied: 'Not allowed', expired: 'Expired', rejected: 'Declined' }[operation.status]
+      const approving = decision.isPending && decision.variables?.approve && decision.variables.operation.id === operation.id && operation.status === 'pending_approval'
+      const processing = ['queued', 'submitting', 'submitted'].includes(operation.status)
       const explorer = network && operation.transactionHash ? `${network.explorer}/tx/${encodeURIComponent(operation.transactionHash)}${network.key === 'solana' ? '?cluster=devnet' : ''}` : null
       return <article className="border border-beige-darker bg-[#faf7f1] p-5 sm:p-7" key={operation.id}>
         <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">{network?.name ?? operation.chainId}</p><h3 className="mt-2 font-serif text-3xl font-bold">{asset ? `${formatUnits(BigInt(operation.amountAtomic), asset.decimals)} ${asset.symbol}` : `${operation.amountAtomic} atomic units`}</h3></div><span className={`border px-3 py-2 font-mono text-[10px] uppercase tracking-widest ${operation.status === 'pending_approval' ? 'border-ink bg-beige-dark' : 'border-beige-darker text-ink-muted'}`}>{status}</span></div>
@@ -40,6 +42,7 @@ export default function Operations({ id }: { id?: string }) {
         {operation.httpResponse && <p className="mt-3 text-sm">API response: HTTP {operation.httpResponse.status}. Payment settlement is tracked separately.</p>}
         <dl className="mt-5 grid gap-4 border-t border-beige-darker pt-5 text-sm sm:grid-cols-2"><div className="sm:col-span-2"><dt className="mb-1 text-xs text-ink-muted">Recipient</dt><dd className="break-all font-mono text-xs leading-relaxed">{operation.to}</dd></div><div><dt className="mb-1 text-xs text-ink-muted">Maximum network fee</dt><dd>{network ? `${formatUnits(BigInt(operation.maxFeeAtomic), network.decimals)} ${network.currency}` : `${operation.maxFeeAtomic} atomic units`}</dd></div>{operation.usdReservedMicros != null && <div><dt className="mb-1 text-xs text-ink-muted">{operation.usdSettledMicros != null ? 'Budget charged' : 'Maximum USD cost · including fees'}</dt><dd>${formatUnits(BigInt(operation.usdSettledMicros ?? operation.usdReservedMicros), 6)}</dd></div>}</dl>
         {operation.status === 'pending_approval' && <p className="mt-4 text-xs text-ink-muted">Approval expires {new Date(operation.expiresAt).toLocaleString()}.</p>}
+        {(approving || processing) && <p role="status" className="mt-4 flex items-center gap-2 text-sm text-ink"><LoaderCircle size={16} className="motion-safe:animate-spin" aria-hidden="true" />{approving ? 'Approving payment…' : 'Processing transaction…'}</p>}
         {operation.status === 'unknown' && <p role="status" className="mt-4 border-l-2 border-accent pl-3 text-sm">We’re checking whether this payment went through. Don’t send it again.</p>}
         {operation.error && <p className="mt-4 text-sm">{operation.error}</p>}
         {operation.status === 'pending_approval' && <div className="mt-6 flex flex-wrap gap-3"><button className="bg-black px-5 py-3 font-mono text-xs uppercase tracking-widest text-beige disabled:opacity-40" disabled={decision.isPending || !asset} onClick={() => decision.mutate({ operation, approve: true })}>{decision.isPending ? 'Working…' : 'Approve payment'}</button><button className="border border-beige-darker px-5 py-3 font-mono text-xs uppercase tracking-widest disabled:opacity-40" disabled={decision.isPending} onClick={() => decision.mutate({ operation, approve: false })}>Decline</button></div>}
