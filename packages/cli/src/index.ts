@@ -6,6 +6,8 @@ import { login, logout, sessions, whoami } from './lib/session'
 import { createLocalWallet, listLocalWallets } from './lib/local-wallet'
 import { validateCommand } from './lib/command-validation'
 import { formatOutput } from './lib/output'
+import { banner, localCreationOptions, confirmLocalSend } from './lib/local-prompts'
+import { localSendTerms, sendLocalTransfer } from './lib/local-send'
 
 const args = process.argv.slice(2)
 async function main() {
@@ -14,6 +16,7 @@ async function main() {
     help: { type: 'boolean', short: 'h' }, 'no-browser': { type: 'boolean' }, agent: { type: 'string' }, local: { type: 'boolean' }, name: { type: 'string' },
     wallet: { type: 'string' }, 'max-amount-atomic': { type: 'string' }, 'max-fee-atomic': { type: 'string' },
     file: { type: 'string' }, key: { type: 'string' }, hash: { type: 'string' }, json: { type: 'boolean' },
+    chains: { type: 'string' }, chain: { type: 'string' }, to: { type: 'string' }, amount: { type: 'string' }, asset: { type: 'string' }, 'max-fee': { type: 'string' }, yes: { type: 'boolean' },
   } })
   const [command, subcommand, id] = positionals
   if (values.help && ['login', 'logout', 'whoami'].includes(command ?? '')) {
@@ -21,12 +24,18 @@ async function main() {
     return
   }
   if (!command || values.help) {
+    if (!values.json) banner()
     console.log(`Usage: agentis ${command ?? '<command>'}
   login [--no-browser]
   logout
   whoami
   wallet list [--local]
-  wallet create --local --name <name>
+  wallet create --local [--name <name>] [--chains base,arc,tempo,solana]
+    Interactive name + chain selection; Base selected by default. Flags work without a terminal.
+  wallet send --local --wallet <name-or-id> --chain <chain> --to <address> --amount <decimal> --key <request-key>
+    [--asset ETH|SOL|USDC|alphaUSD] [--max-fee <decimal>] [--yes]
+    Testnets only. Native asset by default (alphaUSD on Tempo). --yes skips user confirmation.
+    Reuse identical terms and --key after uncertainty: only the receipt is checked, never a resend.
   fetch <url> --wallet <wallet-id> --max-amount-atomic <cap> --key <idempotency-key>
     Base/Arc/Solana testnet USDC x402 or Tempo alphaUSD MPP GET; Tempo also requires --max-fee-atomic (18-decimal protocol USD units).
   operations create --file <request.json> --key <idempotency-key>
@@ -43,13 +52,23 @@ Hosted legacy money commands are unavailable during migration. Local wallets use
 filesystem protection, not encrypted custody. No transaction can target mainnet yet.`)
     return
   }
+  if (values.local && command !== 'wallet') throw Error('--local currently supports wallet create/list/send only; local x402/MPP is not implemented yet')
+  if (command === 'wallet' && subcommand === 'send' && !values.local) throw Error('Use wallet send --local; hosted transfers use operations create')
   let output: unknown
   if (command === 'login') output = await login(values['no-browser'], values.json)
   else if (command === 'logout') output = logout()
   else if (command === 'whoami') output = whoami()
   else if (command === 'wallet' && values.local) {
-    if (subcommand === 'create') output = await createLocalWallet(values.name ?? '')
-    else output = listLocalWallets()
+    if (subcommand === 'create') {
+      const options = await localCreationOptions(values.name, values.chains, values.json)
+      output = await createLocalWallet(options.name, undefined, options.chains)
+    } else if (subcommand === 'send') {
+      if (!values.wallet || !values.chain || !values.to || !values.amount || !values.key) throw Error('--wallet, --chain, --to, --amount and --key required; amounts are decimal token units')
+      const input = { wallet: values.wallet, chain: values.chain, to: values.to, amount: values.amount, key: values.key, asset: values.asset, maxFee: values['max-fee'] }
+      const terms = localSendTerms(input)
+      await confirmLocalSend(`Send ${values.amount} ${terms.symbol} from ${terms.wallet.name} to ${terms.to} on ${terms.chain} testnet? Fee budget: ${terms.maxFee} ${terms.chain === 'base' ? 'ETH' : terms.chain === 'solana' ? 'SOL' : terms.chain === 'tempo' ? 'alphaUSD' : 'USDC'}.`, values.yes ?? false, values.json ?? false)
+      output = await sendLocalTransfer(input)
+    } else output = listLocalWallets()
   } else {
     const linked = sessions(values.agent)
     let client = linked[0]!.client

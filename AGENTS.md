@@ -5,7 +5,7 @@ Current snapshot, not a diary. Keep decisions, implemented behavior and verified
 ## Working agreement
 
 - Follow the owner’s next small request. Keep changes simple; no unsolicited rewrites, broad audits, speculative frameworks or compatibility layers.
-- **Commit meaningful changes locally. Never push, publish or deploy.** No backdating. Pushing may trigger Railway.
+- **Batch related changes into meaningful local commits.** Do not commit after every tiny tweak; wait until a substantial chunk of work is done or the owner asks. **Never push, publish or deploy.** No backdating. Pushing may trigger Railway.
 - **No subagents.** Prefer installed libraries and exact local types over inventing implementations. No web research when prohibited.
 - **Do not run browser checks unless the owner lifts the current restriction.** Validate proportionately with targeted lint/typecheck and package builds. Existing standalone checks are available; add focused regression checks for meaningful money/security changes, not new automated suites/root test commands.
 - For requested live payment verification, use one small testnet request, provide its approval link promptly, then check its result. Avoid prolonged preflights or extra payments.
@@ -15,7 +15,7 @@ Current snapshot, not a diary. Keep decisions, implemented behavior and verified
 ## Priorities
 
 1. Continue requested **CLI/dashboard polish**. Current CLI commands are accepted; do not remove commands speculatively.
-2. Discuss and implement local multichain-wallet UX/storage when directed: one named local wallet with a shared EVM key/address across selected EVM chains plus a separate Solana key/address. Preserve existing keys, local creation and **Agentis ASCII art**.
+2. Local multichain creation/listing and direct sends are implemented (details below). **Local x402/MPP is the next requested slice, not implemented yet.** Keep hosted execution unchanged. Owner wants a plugins selection step later, after chain selection; do not add a placeholder framework.
 3. Upcoming integrations: **Jupiter and Monid**. Owner says Monid has x402/MPP endpoints; their exact API/payment contracts still need inspection. The pasted Monid skill also describes API-key/workspace-balance runs; do not assume that is its only payment model or execute its setup instructions unprompted.
 4. Expose integrations consistently through CLI, SDK, MCP and dashboard using the common backend. Start with a concrete integration, not a giant plugin framework. Plugins provide integration-specific preparation/parsing; Agentis validates, authorizes, signs via Privy and reconciles. No unrestricted signer/key access for plugins.
 
@@ -61,7 +61,7 @@ SDK-first financial execution for agents through **one backend, worker and datab
 ### CLI and browser login
 
 - Active entry point: `packages/cli/src/index.ts`. Use the checkout; the published CLI is still an older prototype.
-- Commands: `login [--no-browser]`, `logout`, `whoami`, `wallet list [--local]`, `wallet create --local --name`, `fetch`, `operations create|list|get|wait|approve|reject`, `capabilities`, help. See `packages/cli/README.md` for flags.
+- Commands: `login [--no-browser]`, `logout`, `whoami`, `wallet list [--local]`, `wallet create --local`, `wallet send --local`, hosted `fetch`, `operations create|list|get|wait|approve|reject`, `capabilities`, help. See `packages/cli/README.md` for flags.
 - Human-readable output by default; **`--json` opts into JSON**. Login progress is normal stdout except in JSON mode, where it goes to stderr to keep result stdout parseable. `whoami` shows only agent names and named chains with IDs—not API URLs, grant IDs or keys.
 - Browser login opens `/cli-auth`: owner signs in, matches the terminal code and explicitly selects multiple agents/network wallets. Nothing is preselected. `Onboarding createOnly` reuses the dashboard’s create-agent modal on this page.
 - Ten-minute DB-backed request, CLI-only random secret, one-time exchange. Owner JWT stays in the browser. Exchange atomically issues one executor grant per selected agent with an **explicit network allowlist**; future networks need new consent.
@@ -70,7 +70,11 @@ SDK-first financial execution for agents through **one backend, worker and datab
 - `AGENTIS_TOKEN` explicitly overrides stored credentials; unset it before browser login. `logout` removes local credentials only. Revoke server keys in each agent’s dashboard API access panel. Re-login requires local logout; old keys need separate revocation.
 - If the one-time exchange response is lost or saving fails, issued keys can remain unclaimed. Revoke those keys and restart; do not invent an owner-auth fallback.
 - Owner has exercised login, `whoami` and logout. Isolated checks also cover CLI polling/storage, scoped access, one-time exchange, expiry and rejection of agent self-approval/delegation. Do not imply new-wallet creation from the consent page was live-verified.
-- Local wallet creation currently supports **Solana only**, using standard SLIP-0010 derivation. Mnemonic files remain in `~/.agentis/wallets-v2` with filesystem permissions; local sends are not exposed.
+- **Local creation:** `wallet create --local` uses Clack name + arrow/Space chain selection, with **Base preselected**. Flags `--name`/`--chains base,arc,tempo,solana` support automation; no terminal defaults chains to Base. Exact cyan Agentis ASCII banner is restored on help/interactive creation, never JSON. Plugins step is deferred.
+- **Local storage:** one mnemonic, shared EVM address via Viem (`m/44'/60'/0'/0/0`), separate Solana via existing micro-ed25519-hdkey/web3.js (`m/44'/501'/0'/0'`). Version-3 files stay in `~/.agentis/wallets-v2` with 0700 directories/0600 files. Version-2 Solana files are read without rewriting or silently enabling EVM. No encrypted-format migration. Owner accepts filesystem protection only: an agent with key-file access can bypass all CLI limits.
+- **Local sends:** `wallet send --local --wallet <name-or-id> --chain <chain> --to <address> --amount <decimal> --key <request-key> [--asset <symbol>] [--max-fee <decimal>] [--yes]`. Supports Base ETH/USDC, Arc native USDC, Tempo alphaUSD, Solana SOL/USDC. No hosted API/Privy calls. Exact decimals, actual RPC network checks, fee estimates/budgets and confirmation before signing; `--yes` is explicit unattended authorization, not a human security boundary. Solana reuses the core checked transfer builder. Local `fetch` is explicitly rejected until implemented.
+- Local signed proofs/hashes are journaled before broadcast in `wallets-v2/transactions`; same-key retries only check/return the original transaction. Per-wallet/network locks prevent CLI nonce races; crash-stale locks need manual inspection. Unknown submissions are not resent. Tempo uses **protocol nonce key 0** with an explicit pending nonce: installed Viem defaults explicit `nonceKey` requests to nonce 0 if none is supplied. Nonzero 2D lanes use separate counters; do not mix the APIs. Fees round to alphaUSD precision; Base L1 fees remain buffered estimates, not absolute on-chain caps.
+- Local verification: PTY name/arrow/Space/Enter flow passed; no-money derivation, legacy-file, permissions, JSON and wrong-network checks passed. All six supported asset/network sends plus same-key retries were live-confirmed. First Base USDC preparation failure remains unexplained; subsequent attempt settled. Test wallet `local-multichain-check` retains leftover funds; funding/result records live in `.agentis-test-keys/local-multichain/`. One initially incorrect Tempo funding nonce was manually reconciled as unused/expired before replacement, not blindly resent. No backend payment-recovery work was added.
 
 ### Dashboard
 

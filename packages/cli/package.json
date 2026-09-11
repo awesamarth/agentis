@@ -40,10 +40,16 @@
     "check": "tsc --noEmit --incremental false"
   },
   "dependencies": {
+    "@agentis-hq/core": "workspace:*",
     "@agentis-hq/sdk": "^0.2.0",
+    "@clack/prompts": "^1.8.0",
     "@scure/bip39": "^2.2.0",
+    "@solana-program/token": "0.11.0",
+    "@solana/kit": "6.8.0",
     "@solana/web3.js": "3.0.0-rc.3",
-    "micro-ed25519-hdkey": "^0.1.2"
+    "micro-ed25519-hdkey": "^0.1.2",
+    "ox": "0.14.15",
+    "viem": "2.56.3"
   },
   "devDependencies": {
     "@types/bun": "latest",

@@ -23,14 +23,42 @@ Login requests expire after ten minutes. A random CLI-only secret binds the one-
 ## Commands
 
 - `wallet list [--local]`
-- `wallet create --local --name <name>`
+- `wallet create --local [--name <name>] [--chains base,arc,tempo,solana]`
+- `wallet send --local --wallet <name-or-id> --chain <chain> --to <address> --amount <decimal> --key <request-key> [--asset <symbol>] [--max-fee <decimal>] [--yes]`
 - `fetch <url> --wallet <wallet-id> --max-amount-atomic <cap> --key <stable-idempotency-key>`
 - `operations create --file <request.json> --key <stable-idempotency-key>`
 - `operations list|get <id>|wait <id>`
 - `operations approve|reject <id> --hash <operation-hash>` (owner only)
 - `capabilities`
 
-Local Solana wallets use web3.js v3 RC + standard SLIP-0010 Ed25519 derivation. Mnemonics are stored in `~/.agentis/wallets-v2` with 0700 directory/0600 file permissions, not printed to stdout. Anyone with file access can recover the wallet. Local sends and legacy hosted commands are not exposed until migrated.
+## Local multichain wallets
+
+```sh
+# Interactive: name, then ↑/↓ + Space to select chains, Enter to continue.
+# Base is preselected. No plugins step yet.
+bun packages/cli/src/index.ts wallet create --local
+
+# Non-interactive; omitted --chains defaults to Base.
+bun packages/cli/src/index.ts wallet create --local --name personal --chains base,arc,tempo,solana --json
+bun packages/cli/src/index.ts wallet list --local
+
+# Amount and fee budget are decimal token units, not atomic units.
+bun packages/cli/src/index.ts wallet send --local --wallet personal --chain base \
+  --to <recipient> --amount 0.001 --asset ETH --key my-transfer-001
+# Add --yes for automation and --json for machine-readable results.
+```
+
+One name/mnemonic derives a shared EVM address for enabled Base/Arc/Tempo networks (`m/44'/60'/0'/0/0`, Viem) and a separate Solana address (`m/44'/501'/0'/0'`, existing micro-ed25519-hdkey + web3.js). Creation is offline; no Privy or hosted API calls. The exact cyan Agentis banner appears on help/interactive creation, never in JSON results.
+
+Version-3 wallet files remain in `~/.agentis/wallets-v2` (0700 directory / 0600 files). Existing version-2 Solana files are read in place without rewriting their mnemonic/address or enabling new networks. No automatic migration of older encrypted formats. Mnemonics are never printed. **Files are not encrypted; anyone with file access can sign or bypass CLI restrictions.** There is no local agent-vs-owner permission boundary or hosted approval/budget enforcement.
+
+Supported local sends (testnet only): Base ETH/USDC, Arc native USDC, Tempo alphaUSD, Solana SOL/USDC. RPC URLs use `BASE_SEPOLIA_RPC_URL`, `ARC_TESTNET_RPC_URL`, `TEMPO_TESTNET_RPC_URL`, `SOLANA_DEVNET_RPC_URL` or public defaults; actual EVM chain IDs / Solana genesis are checked before signing. Solana token sends can create the recipient ATA. Funds are sent directly with the local key, not via the backend. Local x402/MPP remains unimplemented; `fetch --local` fails explicitly.
+
+Default fee budgets: Base 0.0001 ETH, Arc 0.01 USDC, Tempo 0.01 alphaUSD, Solana 0.005 SOL; override with `--max-fee`. Base checks estimated execution fees plus a buffer for L1 fees (not a fixed on-chain cap on changing L1 fees). Solana budgets possible ATA rent as well as fees. Tempo uses protocol nonce lane 0 with an explicitly fetched pending nonce; 2D lanes are not allocated. Tempo gas accounting uses 18-decimal protocol USD units, rounded to alphaUSD precision.
+
+Local sends persist signed proof/hash in owner-only `wallets-v2/transactions` journals before submitting. **Reuse identical arguments and the same `--key` to check an uncertain send.** Existing keys only return/check the original transaction, never sign/resend. Preparation failures have no submitted transaction; inspect the journal before using a new key. Per-wallet/network locks prevent concurrent CLI nonce selection; a crash may leave a lock needing manual inspection/removal. Other software using the same private key is not coordinated. Settled journals discard signed bytes. No automatic expired-proof recovery was added.
+
+`testing/local-wallet-check.ts` covers no-money derivation/storage/CLI/network guards. `testing/local-wallet-live.ts --execute` is an explicit small testnet funding/send check, not a routine suite; ignored funding journals prevent blind funding retries. All six supported sends and same-key retries were live-confirmed; one original Base USDC preparation failure was not diagnosed, while a later attempt succeeded.
 
 Hosted testnet transfers, Base/Arc/Solana testnet USDC x402 and Tempo alphaUSD MPP paid GETs use the common backend. Mainnet, other x402 networks and plugins remain unavailable. Published npm CLI is still the old prototype; use this checkout.
 
