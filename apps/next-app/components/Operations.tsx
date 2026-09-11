@@ -21,7 +21,7 @@ export default function Operations({ id }: { id?: string }) {
   }, onSuccess: () => queries.invalidateQueries({ queryKey: ['operations'] }) })
   if (!ready) return <p role="status">Loading your payments…</p>
   if (!authenticated) return <button className="border p-3" onClick={login}>Sign in to review payments</button>
-  return <section className="space-y-3">
+  return <section className="space-y-4">
     <div className="border-b border-beige-darker pb-4"><h2 className="font-serif text-2xl font-bold">{id ? 'Review payment' : 'Payment activity'}</h2><p className="mt-2 text-sm text-ink-muted">{id ? 'Check the amount and recipient before you approve.' : 'Your requests, approvals and receipts in one place.'}</p></div>
     {query.isPending && <p>Loading…</p>}
     {query.error && <p role="alert">{query.error.message}</p>}
