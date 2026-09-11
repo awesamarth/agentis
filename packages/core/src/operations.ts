@@ -7,6 +7,7 @@ export const positiveAtomic = atomic.refine(value => BigInt(value) > 0n, 'Must b
 export const chainId = z.string().regex(/^(eip155:[1-9]\d*|solana:[A-Za-z0-9]+)$/)
 export const fetchRequest = z.object({
   walletId: z.string().uuid(), url: z.url().max(4096), maxAmountAtomic: positiveAtomic,
+  maxFeeAtomic: positiveAtomic.optional(),
   reason: z.string().trim().max(500).default(''),
 }).strict()
 export type FetchRequest = z.input<typeof fetchRequest>
@@ -23,13 +24,14 @@ export const operationInput = z.object({
   walletId: z.string().uuid(),
   action: z.enum(['transfer', 'paid_fetch']),
   payment: x402Payment.optional(),
+  mpp: z.object({ url: z.url().max(4096), challenge: z.string().max(16384), maxAmountAtomic: positiveAtomic, expiresAt: z.iso.datetime() }).strict().optional(),
   chainId,
   asset: z.union([z.literal('native'), z.string().regex(/^(erc20:0x[0-9a-fA-F]{40}|spl:[1-9A-HJ-NP-Za-km-z]{32,44})$/)]),
   to: z.string().min(1).max(128),
   amountAtomic: positiveAtomic,
   maxFeeAtomic: atomic,
   reason: z.string().trim().max(500).default(''),
-}).strict().refine(input => input.action === 'paid_fetch' ? !!input.payment && input.maxFeeAtomic === '0' : !input.payment && BigInt(input.maxFeeAtomic) > 0n, 'Invalid payment action or fee cap')
+}).strict().refine(input => input.action === 'paid_fetch' ? (!!input.payment && !input.mpp && input.maxFeeAtomic === '0') || (!!input.mpp && !input.payment && BigInt(input.maxFeeAtomic) > 0n) : !input.payment && !input.mpp && BigInt(input.maxFeeAtomic) > 0n, 'Invalid payment action or fee cap')
 export type OperationInput = z.input<typeof operationInput>
 
 export const walletPolicy = z.object({

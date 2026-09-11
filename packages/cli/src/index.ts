@@ -10,7 +10,7 @@ async function main() {
   validateCommand(args)
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
     help: { type: 'boolean', short: 'h' }, local: { type: 'boolean' }, name: { type: 'string' },
-    wallet: { type: 'string' }, 'max-amount-atomic': { type: 'string' },
+    wallet: { type: 'string' }, 'max-amount-atomic': { type: 'string' }, 'max-fee-atomic': { type: 'string' },
     file: { type: 'string' }, key: { type: 'string' }, hash: { type: 'string' }, json: { type: 'boolean' },
   } })
   const [command, subcommand, id] = positionals
@@ -19,7 +19,7 @@ async function main() {
   wallet list [--local]
   wallet create --local --name <name>
   fetch <url> --wallet <wallet-id> --max-amount-atomic <cap> --key <idempotency-key>
-    Base Sepolia USDC x402 GET only; returns approval URL or settled operation + HTTP response.
+    Base USDC x402 or Tempo alphaUSD MPP GET; Tempo also requires --max-fee-atomic (18-decimal protocol USD units).
   operations create --file <request.json> --key <idempotency-key>
   operations list|get <id>|wait <id>
   operations approve|reject <id> --hash <operation-hash>   (owner only)
@@ -41,7 +41,7 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
     const client = new AgentisClient({ baseUrl: process.env.AGENTIS_API_URL ?? 'http://localhost:3001', token })
     if (command === 'fetch') {
       if (!subcommand || !values.wallet || !values['max-amount-atomic'] || !values.key) throw new Error('URL, --wallet, --max-amount-atomic and --key required; reuse the key after timeouts')
-      const operation = await client.fetch({ url: subcommand, walletId: values.wallet, maxAmountAtomic: values['max-amount-atomic'] }, { idempotencyKey: values.key })
+      const operation = await client.fetch({ url: subcommand, walletId: values.wallet, maxAmountAtomic: values['max-amount-atomic'], ...(values['max-fee-atomic'] ? { maxFeeAtomic: values['max-fee-atomic'] } : {}) }, { idempotencyKey: values.key })
       output = operation.status === 'queued' ? await client.operations.wait(operation.id, { timeoutMs: 120_000 }) : operation
     }
     else if (command === 'capabilities') output = await client.capabilities()

@@ -1,6 +1,7 @@
 import { createWalletClient, http, encodeFunctionData, erc20Abi, getAddress, keccak256, parseTransaction, parseEventLogs, recoverTransactionAddress, toHex, type Address, type Hex, type TransactionSerialized } from 'viem'
 import { PrivyClient } from '@privy-io/node'
 import { createPrivyX402, validateX402 } from '../modules/x402'
+import { createPrivyMpp, validateMpp } from '../modules/mpp'
 import type { WalletRpcParams } from '@privy-io/node/resources'
 import type { AuthorizationRequest, OperationInput } from '@agentis-hq/core/operations'
 import { evmClient } from '../modules/networks'
@@ -20,6 +21,7 @@ export function transferCall(input: OperationInput) {
 export function createPrivyExecutor(appId: string, appSecret: string, inspectWallet: (id: string, ownerId: string) => Promise<{ address: string; serverAuthorized?: boolean }>, authorizationKey: string): Executor {
   const privy = new PrivyClient({ appId, appSecret, timeout: 20_000, maxRetries: 0 })
   const x402 = createPrivyX402(privy, authorizationKey, inspectWallet)
+  const mpp = createPrivyMpp(privy, authorizationKey, inspectWallet)
   async function check(wallet: WalletRow, input: OperationInput) {
     const owned = await inspectWallet(wallet.providerWalletId, wallet.ownerId)
     if (!owned.serverAuthorized) fail(409, 'wallet_setup_required', 'Open this agent’s rules and save once to enable hosted execution')
@@ -32,7 +34,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
   const executor: Executor & { buildRequest(wallet: WalletRow, input: OperationInput, id: string, expiresAt: Date): Promise<AuthorizationRequest> } = {
     id: 'privy',
     validate(wallet, input) {
-      if (input.action === 'paid_fetch') return validateX402(wallet, input)
+      if (input.action === 'paid_fetch') { if (input.mpp) validateMpp(wallet, input); else validateX402(wallet, input); return }
       if (input.chainId === solanaDevnet && wallet.chainId === solanaDevnet) {
         if (!['native', `spl:${solanaUsdc}`].includes(input.asset) || BigInt(input.amountAtomic) > 18_446_744_073_709_551_615n) fail(400, 'unsupported_asset', 'Unsupported Solana transfer')
         return
@@ -68,7 +70,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
     },
     async prepare(wallet, input, _authorization, execution) {
       if (!execution || execution.expiresAt.getTime() <= Date.now()) throw new Error('Valid operation context required')
-      if (input.action === 'paid_fetch') return x402.prepare(wallet, input, execution)
+      if (input.action === 'paid_fetch') return input.mpp ? mpp.prepare(wallet, input, execution) : x402.prepare(wallet, input, execution)
       const request = await executor.buildRequest(wallet, input, execution.id, execution.expiresAt)
       if (request.url !== `https://api.privy.io/v1/wallets/${encodeURIComponent(wallet.providerWalletId)}/rpc` || request.headers['privy-app-id'] !== appId || Number(request.headers['privy-request-expiry']) <= Date.now()) throw new Error('Invalid or expired authorization request')
       if (!['eth_signTransaction', 'signTransaction'].includes(String(request.body.method))) throw new Error('Only transaction signing is permitted')
@@ -97,6 +99,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
     },
     async broadcast(serialized) {
       if (serialized.startsWith('x402:')) return x402.broadcast(serialized)
+      if (serialized.startsWith('mpp:')) return mpp.broadcast(serialized)
       if (serialized.startsWith('solana:')) return broadcastSolanaTransfer(serialized.slice(7))
       const signedTransaction = serialized as TransactionSerialized
       const tx = serialized.startsWith('0x76') ? TxEnvelopeTempo.deserialize(serialized as `0x76${string}`) : parseTransaction(signedTransaction)
@@ -107,7 +110,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
     },
     async receipt(transactionHash, input, signedTransaction) {
       if (!input) throw new Error('Network context required')
-      if (input.action === 'paid_fetch') {
+      if (input.action === 'paid_fetch' && !input.mpp) {
         if (!signedTransaction) throw new Error('Persisted payment required')
         return x402.receipt(signedTransaction, input)
       }
