@@ -4,11 +4,13 @@ import type { ProfileSummary } from '@agentis-hq/sdk'
 
 const colors = ['#c8a96e', '#2a2620', '#8f7a50', '#b8955a', '#6b6459', '#d6c18a', '#4a4340', '#aeb9c8']
 
-// Display the stored USD micros without turning small payments into $0.00.
-export function profileMoney(micros: string | bigint) {
-  const value = BigInt(micros)
-  const fraction = (value % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, '').padEnd(2, '0')
-  return `$${(value / 1_000_000n).toLocaleString('en-US')}.${fraction}`
+// Round only for display; stored USD accounting stays in exact micros.
+export function profileMoney(micros: string | bigint, decimals: 2 | 3 = 2) {
+  const unit = 10n ** BigInt(6 - decimals)
+  const rounded = (BigInt(micros) + unit / 2n) / unit
+  const scale = 10n ** BigInt(decimals)
+  const fraction = (rounded % scale).toString().padStart(decimals, '0').replace(/0+$/, '').padEnd(2, '0')
+  return `$${(rounded / scale).toLocaleString('en-US')}.${fraction}`
 }
 function dateLabel(date: string, short = false) {
   const [year, month, day] = date.split('-')
@@ -52,7 +54,7 @@ export default function ProfileAnalytics({ data }: { data: ProfileSummary }) {
             <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${daily.length || 1}, minmax(0, 1fr))` }}>
               {daily.map(day => {
                 const amount = BigInt(day.spendMicros)
-                const label = `${dateLabel(day.date)}: ${profileMoney(amount)}`
+                const label = `${dateLabel(day.date)}: ${profileMoney(amount, 3)}`
                 return <div key={day.date} tabIndex={0} aria-label={label} className="group relative flex h-full items-end justify-center outline-none">
                   <div className="w-3/5 max-w-6 bg-accent group-hover:bg-ink group-focus-visible:bg-ink" style={{ height: `${Number(amount * 10_000n / ceiling) / 100}%`, minHeight: amount > 0n ? 3 : 0 }} />
                   <div aria-hidden="true" className="pointer-events-none absolute z-10 mb-2 hidden whitespace-nowrap border border-beige-darker bg-white px-2 py-1 font-mono text-[10px] shadow-sm group-hover:block group-focus-visible:block group-first:left-0 group-last:right-0" style={{ bottom: `${Number(amount * 10_000n / ceiling) / 100}%` }}>{profileMoney(amount)}</div>
@@ -70,7 +72,7 @@ export default function ProfileAnalytics({ data }: { data: ProfileSummary }) {
         <summary className="cursor-pointer font-mono text-ink-muted">daily amounts <span className="text-[10px]">· newest first · UTC</span></summary>
         <dl className="mt-3 grid gap-x-6 sm:grid-cols-2">{daily.slice().reverse().map(day => <div key={day.date} className="flex items-center justify-between gap-3 border-b border-beige-darker/50 py-2">
           <dt className="font-mono text-[11px] text-ink-muted">{dateLabel(day.date)}</dt>
-          <dd className={`font-mono text-xs tabular-nums ${BigInt(day.spendMicros) > 0n ? 'font-medium text-ink' : 'text-ink-muted'}`}>{profileMoney(day.spendMicros)}</dd>
+          <dd className={`font-mono text-xs tabular-nums ${BigInt(day.spendMicros) > 0n ? 'font-medium text-ink' : 'text-ink-muted'}`}>{profileMoney(day.spendMicros, 3)}</dd>
         </div>)}</dl>
       </details>
     </div>
