@@ -1,4 +1,5 @@
-import { createPublicClient, erc20Abi, http, type Address } from 'viem'
+import { createPublicClient, erc20Abi, multicall3Abi, http, type Address } from 'viem'
+import { baseSepolia } from 'viem/chains'
 import { clusterApiUrl, PublicKey } from '@solana/web3.js'
 import type { WalletRow } from '../db/schema'
 import { supportedNetworks, evmChains } from './networks'
@@ -11,8 +12,13 @@ export async function agentBalance(wallets: WalletRow[]) {
     const network = supportedNetworks.find(network => network.chainId === wallet.chainId)
     if (!network) return { chainId: wallet.chainId, name: wallet.chainId, tokens: [], usdMicros: null, complete: false }
     const chain = evmChains.find(chain => `eip155:${chain.id}` === wallet.chainId)
-    const client = chain ? createPublicClient({ chain, transport: http(undefined, { batch: true, timeout: 15_000, retryCount: 0 }) }) : undefined
-    const tokens = await Promise.all(network.assets.map(async asset => {
+    const client = chain ? createPublicClient({ chain, transport: http(undefined, { timeout: 15_000, retryCount: 0 }) }) : undefined
+    const balances = network.key === 'base' && client ? await client.multicall({
+      contracts: network.assets.map(asset => asset.id === 'native'
+        ? { address: baseSepolia.contracts.multicall3.address, abi: multicall3Abi, functionName: 'getEthBalance' as const, args: [wallet.address as Address] as const }
+        : { address: asset.id.slice(6) as Address, abi: erc20Abi, functionName: 'balanceOf' as const, args: [wallet.address as Address] as const }),
+    }).catch(() => null) : null
+    const tokens = await Promise.all(network.assets.map(async (asset, index) => {
       let amountAtomic: string | null = null
       let usdMicros: string | null = null
       try {
@@ -31,9 +37,15 @@ export async function agentBalance(wallets: WalletRow[]) {
           }
         } else {
           if (!client) throw new Error('Unsupported balance network')
-          amount = asset.id === 'native'
-            ? await client.getBalance({ address: wallet.address as Address })
-            : await client.readContract({ address: asset.id.slice(6) as Address, abi: erc20Abi, functionName: 'balanceOf', args: [wallet.address as Address] })
+          if (network.key === 'base') {
+            const balance = balances?.[index]
+            if (balance?.status !== 'success') throw new Error('Balance read failed')
+            amount = balance.result
+          } else {
+            amount = asset.id === 'native'
+              ? await client.getBalance({ address: wallet.address as Address })
+              : await client.readContract({ address: asset.id.slice(6) as Address, abi: erc20Abi, functionName: 'balanceOf', args: [wallet.address as Address] })
+          }
         }
         if (amount < 0n) throw new Error('Invalid balance')
         amountAtomic = amount.toString()
