@@ -36,10 +36,10 @@ export async function login(noBrowser = false) {
   const request = await client.cliLogin.start(createHash('sha256').update(secret).digest('hex'))
   const url = new URL(request.approvalUrl)
   if (url.username || url.password || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)))) throw Error('Unsafe login URL')
-  console.error(`Open: ${url.href}\nConfirmation code: ${request.code}\nChoose agents and wallets in the browser. Waiting for owner approval…`)
+  console.log(`Open: ${url.href}\nConfirmation code: ${request.code}\nChoose agents and wallets in the browser. Waiting for owner approval…`)
   if (!noBrowser && ['darwin', 'linux'].includes(process.platform)) {
     const child = spawn(process.platform === 'darwin' ? 'open' : 'xdg-open', [url.href], { stdio: 'ignore', detached: true })
-    child.on('error', () => console.error('Open the link above manually.'))
+    child.on('error', () => console.log('Open the link above manually.'))
     child.unref()
   }
   while (Date.now() < Date.parse(request.expiresAt)) {
