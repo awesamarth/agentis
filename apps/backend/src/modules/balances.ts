@@ -10,6 +10,8 @@ export async function agentBalance(wallets: WalletRow[]) {
   const networks = await Promise.all(wallets.map(async wallet => {
     const network = supportedNetworks.find(network => network.chainId === wallet.chainId)
     if (!network) return { chainId: wallet.chainId, name: wallet.chainId, tokens: [], usdMicros: null, complete: false }
+    const chain = evmChains.find(chain => `eip155:${chain.id}` === wallet.chainId)
+    const client = chain ? createPublicClient({ chain, transport: http(undefined, { batch: true, timeout: 15_000, retryCount: 0 }) }) : undefined
     const tokens = await Promise.all(network.assets.map(async asset => {
       let amountAtomic: string | null = null
       let usdMicros: string | null = null
@@ -28,9 +30,7 @@ export async function agentBalance(wallets: WalletRow[]) {
             amount = accounts.value.reduce((sum, account) => sum + BigInt(account.account.data.parsed.info.tokenAmount.amount), 0n)
           }
         } else {
-          const chain = evmChains.find(chain => `eip155:${chain.id}` === wallet.chainId)
-          if (!chain) throw new Error('Unsupported balance network')
-          const client = createPublicClient({ chain, transport: http(undefined, { timeout: 15_000, retryCount: 0 }) })
+          if (!client) throw new Error('Unsupported balance network')
           amount = asset.id === 'native'
             ? await client.getBalance({ address: wallet.address as Address })
             : await client.readContract({ address: asset.id.slice(6) as Address, abi: erc20Abi, functionName: 'balanceOf', args: [wallet.address as Address] })
