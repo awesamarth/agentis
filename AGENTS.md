@@ -81,7 +81,7 @@ SDK-first financial execution for agents through **one backend, worker and datab
 - Name-only saves are metadata-only: no Privy setup or approval invalidation. Rules saves reuse verified `serverAuthorized`; unconfigured wallets still require setup. Execution rechecks live ownership.
 - Pause runs under the owner lock without Privy setup, denies pending/queued work and preserves submitted reconciliation. Export uses the explicitly selected server quorum member after owner confirmation and live ownership checks. Revealed keys are not cached and are hidden on dialog close/tab switch. Separate step-up authentication is not implemented.
 - Cards show consolidated “Balance in USD”; only agent detail expands into network/token breakdown. Unknown prices/balances stay unavailable/partial, not zero. Base uses real Viem Multicall3 for ETH + USDC in one `eth_call`; Arc/Tempo use single reads. All four testnet balance reads were checked.
-- Reuse `Dropdown.tsx` / `MultiSelect.tsx`, the setup modal and danger-zone style. Preserve payment approval/processing spinners and the distinct uncertain-submission warning.
+- Reuse `Dropdown.tsx` / `MultiSelect.tsx`, the setup modal and danger-zone style. Payment activity uses compact, full-width rows (not a grid): small amount/status header, inline metadata and footer links. Preserve visible approval terms, controls, processing spinners and the distinct uncertain-submission warning.
 
 ## Money/security invariants
 
