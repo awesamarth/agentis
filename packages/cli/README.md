@@ -2,7 +2,23 @@
 
 Run from the repo after `bun run build:packages`: `bun packages/cli/src/index.ts --help`.
 
-Set `AGENTIS_API_URL` (defaults to loopback port 3001) and `AGENTIS_TOKEN` in a private environment. Use scoped executor grants for agents, not owner credentials.
+Set `AGENTIS_API_URL` if needed (defaults to loopback port 3001), then run `agentis login`. Alternatively set `AGENTIS_TOKEN` privately; it overrides stored login. Use scoped executor grants for agents, not owner credentials.
+
+## Browser login
+
+- `login [--no-browser]`: opens the owner consent page (or prints its link). Match the terminal code, select multiple agents and their enabled network wallets, then connect. The page reuses the dashboard’s create-agent modal. Nothing is preselected.
+- `whoami`: shows linked agents and network scopes, never keys.
+- `logout`: removes local credentials only. Revoke server keys in each agent’s dashboard API access panel when access is no longer wanted.
+
+The CLI receives one executor key per selected agent, restricted to the selected networks—not an owner JWT or account-wide key. New networks are not automatically included. Budgets, paused/ask/automatic mode and owner-only administration remain unchanged. Keys have no expiry by default and remain valid until revoked.
+
+`wallet list` and `operations list` combine the linked credentials. Payment wallet IDs select the matching credential automatically; `--agent <id-or-unique-name>` narrows commands to one linked agent. Operation lookup uses the credential that can access that operation. A new login does not inherit operations created with older keys.
+
+Credentials live in `~/.agentis/cli-session.json` (directory 0700/file 0600, filesystem protection—not encrypted custody), bound to the API URL. Unset `AGENTIS_TOKEN` before logging in. Existing sessions are not silently overwritten; log out before choosing a replacement selection, and revoke old keys separately. Local wallet files are untouched.
+
+Login requests expire after ten minutes. A random CLI-only secret binds the one-time exchange; keys and secrets never appear in the browser URL, and the backend stores only hashes of credentials/secrets. If the exchange response is lost after issuance, restart login and revoke the unclaimed CLI keys shown in the dashboard. No automatic owner-authentication fallback.
+
+## Commands
 
 - `wallet list [--local]`
 - `wallet create --local --name <name>`
@@ -18,7 +34,7 @@ Hosted testnet transfers, Base/Arc/Solana testnet USDC x402 and Tempo alphaUSD M
 
 ## x402 paid GET
 
-Create an API key on the existing agent's dashboard page and set `AGENTIS_TOKEN` privately (do not paste it into chat or pass it as a CLI argument). Select that agent's Base wallet from `wallet list`.
+Use `agentis login`, or create an API key on the agent’s dashboard page and set `AGENTIS_TOKEN` privately (never as a CLI argument). Select that agent’s Base wallet from `wallet list`.
 
 ```sh
 bun packages/cli/src/index.ts fetch 'http://127.0.0.1:3010/api/aqi?city=delhi&rail=base' \

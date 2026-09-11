@@ -1,4 +1,7 @@
 const commandTree: Record<string, readonly string[] | null> = {
+  login: null,
+  logout: null,
+  whoami: null,
   capabilities: null,
   fetch: null,
   wallet: ['create', 'list'],

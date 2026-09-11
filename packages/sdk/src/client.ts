@@ -16,6 +16,9 @@ export type ProfileSummary = {
 }
 export type AccessKey = { id: string; walletId: string | null; agentId: string | null; chainIds: string[] | null; name: string; expiresAt: string | null; revokedAt: string | null }
 
+export type CliCredential = { id: string; agentId: string; agentName: string; chainIds: string[]; token: string }
+export type CliLoginSelection = { agentId: string; chainIds: string[] }
+
 export type AgentisConfig = {
   baseUrl: string
   /** Executor grant, or a fresh Privy owner access token. Never expose an owner token to an agent. */
@@ -32,17 +35,23 @@ export class AgentisClient {
     if (url.username || url.password || url.search || url.hash || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)))) throw new Error('API URL must use HTTPS or loopback HTTP')
     this.baseUrl = config.baseUrl.replace(/\/$/, '')
   }
-  private async request<T>(path: string, method = 'GET', body?: unknown, headers: Record<string, string> = {}, signal?: AbortSignal): Promise<T> {
-    const token = typeof this.config.token === 'function' ? await this.config.token() : this.config.token
+  private async request<T>(path: string, method = 'GET', body?: unknown, headers: Record<string, string> = {}, signal?: AbortSignal, authenticated = true): Promise<T> {
+    const token = authenticated ? (typeof this.config.token === 'function' ? await this.config.token() : this.config.token) : null
     const response = await (this.config.fetch ?? globalThis.fetch)(`${this.baseUrl}/v1${path}`, {
       method, redirect: 'error', signal: signal ?? AbortSignal.timeout(15_000),
-      headers: { ...headers, 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      headers: { ...headers, 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
     if (response.status === 204) return undefined as T
     const data = await response.json() as { error?: { code?: string; message?: string } }
     if (!response.ok) throw new AgentisApiError(response.status, data.error?.code ?? 'api_error', data.error?.message ?? 'Agentis request failed')
     return data as T
+  }
+  cliLogin = {
+    start: (challenge: string) => this.request<{ id: string; approvalUrl: string; code: string; expiresAt: string }>('/cli/logins', 'POST', { challenge }, {}, undefined, false),
+    exchange: (id: string, secret: string) => this.request<{ status: 'pending' } | { status: 'complete'; credentials: CliCredential[] }>(`/cli/logins/${encodeURIComponent(id)}/exchange`, 'POST', { secret }, {}, undefined, false),
+    get: (id: string) => this.request<{ code: string; expiresAt: string; approved: boolean }>(`/cli/logins/${encodeURIComponent(id)}`),
+    approve: (id: string, selections: CliLoginSelection[], code: string) => this.request<{ approved: true }>(`/cli/logins/${encodeURIComponent(id)}/approve`, 'POST', { selections, code, confirm: true }),
   }
   fetch = (input: FetchRequest, options: { idempotencyKey: string }) => this.request<Operation>('/fetch', 'POST', input, { 'Idempotency-Key': options.idempotencyKey }, AbortSignal.timeout(60_000))
   capabilities = () => this.request<Record<string, unknown>>('/capabilities')

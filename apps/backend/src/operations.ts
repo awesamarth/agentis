@@ -250,13 +250,13 @@ export class OperationService {
     })
   }
 
-  async createGrant(principal: Principal, raw: GrantInput) {
+  async createGrant(principal: Principal, raw: GrantInput, transaction?: Transaction) {
     if (principal.kind !== 'owner') fail(403, 'owner_required', 'Only the owner can delegate access')
     const input = grantInput.parse(raw)
     const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null
     if (expiresAt && expiresAt.getTime() <= Date.now()) fail(400, 'invalid_expiry', 'Expiry must be in the future')
     const token = `agt_exec_${randomBytes(32).toString('hex')}`
-    return this.db.transaction(async tx => {
+    const issue = async (tx: Transaction) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`owner:${principal.ownerId}`}, 0))`)
       if (input.walletId) await this.lockWallet(tx, principal, input.walletId)
       else {
@@ -269,7 +269,8 @@ export class OperationService {
       }
       const [grant] = await tx.insert(grants).values({ ...input, ownerId: principal.ownerId, tokenHash: hash(token), expiresAt }).returning()
       return { id: grant!.id, walletId: grant!.walletId, agentId: grant!.agentId, chainIds: grant!.chainIds, agentName: input.agentName, expiresAt: expiresAt?.toISOString() ?? null, token }
-    })
+    }
+    return transaction ? issue(transaction) : this.db.transaction(issue)
   }
 
   async revoke(principal: Principal, id: string) {

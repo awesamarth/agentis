@@ -43,6 +43,15 @@ export const grants = pgTable('grants', {
   check('grant_network_scope', sql`${table.chainIds} is null or (${table.agentId} is not null and cardinality(${table.chainIds}) > 0 and array_position(${table.chainIds}, null) is null)`),
 ])
 
+export const cliLogins = pgTable('cli_logins', {
+  id: uuid().primaryKey().defaultRandom(),
+  challenge: text().notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
+  ownerId: text('owner_id'),
+  selections: jsonb().$type<{ agentId: string; chainIds: string[] }[]>(),
+  consumedAt: timestamp('consumed_at', { withTimezone: true, mode: 'date' }),
+})
+
 export const operations = pgTable('operations', {
   id: uuid().primaryKey().defaultRandom(),
   ownerId: text().notNull(),

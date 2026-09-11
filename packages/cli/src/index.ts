@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 import { parseArgs } from 'node:util'
 import { readFileSync } from 'node:fs'
-import { AgentisClient } from '@agentis-hq/sdk'
+import { AgentisApiError } from '@agentis-hq/sdk'
+import { login, logout, sessions, whoami } from './lib/session'
 import { createLocalWallet, listLocalWallets } from './lib/local-wallet'
 import { validateCommand } from './lib/command-validation'
 
@@ -9,13 +10,20 @@ const args = process.argv.slice(2)
 async function main() {
   validateCommand(args)
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
-    help: { type: 'boolean', short: 'h' }, local: { type: 'boolean' }, name: { type: 'string' },
+    help: { type: 'boolean', short: 'h' }, 'no-browser': { type: 'boolean' }, agent: { type: 'string' }, local: { type: 'boolean' }, name: { type: 'string' },
     wallet: { type: 'string' }, 'max-amount-atomic': { type: 'string' }, 'max-fee-atomic': { type: 'string' },
     file: { type: 'string' }, key: { type: 'string' }, hash: { type: 'string' }, json: { type: 'boolean' },
   } })
   const [command, subcommand, id] = positionals
+  if (values.help && ['login', 'logout', 'whoami'].includes(command ?? '')) {
+    console.log(command === 'login' ? 'agentis login [--no-browser]\nAuthorize selected agents and network wallets in your browser; store scoped executor keys locally. No owner JWT is stored.' : command === 'logout' ? 'agentis logout\nRemove local credentials. Server keys remain active until revoked in the dashboard.' : 'agentis whoami\nShow linked agents and network scopes without exposing keys.')
+    return
+  }
   if (!command || values.help) {
     console.log(`Usage: agentis ${command ?? '<command>'}
+  login [--no-browser]
+  logout
+  whoami
   wallet list [--local]
   wallet create --local --name <name>
   fetch <url> --wallet <wallet-id> --max-amount-atomic <cap> --key <idempotency-key>
@@ -25,34 +33,55 @@ async function main() {
   operations approve|reject <id> --hash <operation-hash>   (owner only)
   capabilities
 
-Set AGENTIS_API_URL (default http://localhost:3001) and AGENTIS_TOKEN.
+Run agentis login, or set AGENTIS_TOKEN to override stored login.
+Set AGENTIS_API_URL (default http://localhost:3001). Use --agent <id-or-name>
+to narrow commands to one linked agent; wallet IDs route payments automatically.
 Use an executor grant for agents; fresh owner JWT for administration.
 Hosted legacy money commands are unavailable during migration. Local wallets use
 filesystem protection, not encrypted custody. No transaction can target mainnet yet.`)
     return
   }
   let output: unknown
-  if (command === 'wallet' && values.local) {
+  if (command === 'login') output = await login(values['no-browser'])
+  else if (command === 'logout') output = logout()
+  else if (command === 'whoami') output = whoami()
+  else if (command === 'wallet' && values.local) {
     if (subcommand === 'create') output = await createLocalWallet(values.name ?? '')
     else output = listLocalWallets()
   } else {
-    const token = process.env.AGENTIS_TOKEN
-    if (!token) throw new Error('AGENTIS_TOKEN is required; never pass tokens inline as command arguments')
-    const client = new AgentisClient({ baseUrl: process.env.AGENTIS_API_URL ?? 'http://localhost:3001', token })
+    const linked = sessions(values.agent)
+    let client = linked[0]!.client
+    async function forWallet(walletId: string) {
+      if (linked.length === 1) return linked[0]!.client
+      for (const item of linked) if ((await item.client.wallets.list()).some(wallet => wallet.id === walletId)) return item.client
+      throw Error('Wallet is not linked to this CLI login')
+    }
+    async function forOperation(operationId: string) {
+      if (linked.length === 1) return linked[0]!.client
+      for (const item of linked) {
+        try { await item.client.operations.get(operationId); return item.client }
+        catch (error) { if (!(error instanceof AgentisApiError) || error.status !== 404) throw error }
+      }
+      throw Error('Operation is not accessible with these CLI keys')
+    }
     if (command === 'fetch') {
       if (!subcommand || !values.wallet || !values['max-amount-atomic'] || !values.key) throw new Error('URL, --wallet, --max-amount-atomic and --key required; reuse the key after timeouts')
+      client = await forWallet(values.wallet)
       const operation = await client.fetch({ url: subcommand, walletId: values.wallet, maxAmountAtomic: values['max-amount-atomic'], ...(values['max-fee-atomic'] ? { maxFeeAtomic: values['max-fee-atomic'] } : {}) }, { idempotencyKey: values.key })
       output = operation.status === 'queued' ? await client.operations.wait(operation.id, { timeoutMs: 120_000 }) : operation
     }
     else if (command === 'capabilities') output = await client.capabilities()
-    else if (command === 'wallet' && subcommand === 'list') output = await client.wallets.list()
+    else if (command === 'wallet' && subcommand === 'list') output = (await Promise.all(linked.map(item => item.client.wallets.list()))).flat()
     else if (command === 'operations') {
       if (subcommand === 'create') {
         if (!values.file || !values.key) throw new Error('--file and --key required; reuse the same key after timeouts')
-        output = await client.operations.create(JSON.parse(readFileSync(values.file, 'utf8')), { idempotencyKey: values.key })
-      } else if (subcommand === 'list') output = await client.operations.list()
+        const input = JSON.parse(readFileSync(values.file, 'utf8'))
+        client = await forWallet(input.walletId)
+        output = await client.operations.create(input, { idempotencyKey: values.key })
+      } else if (subcommand === 'list') output = (await Promise.all(linked.map(item => item.client.operations.list()))).flat().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       else {
         if (!id) throw new Error('Operation ID required')
+        client = await forOperation(id)
         if (subcommand === 'get') output = await client.operations.get(id)
         else if (subcommand === 'wait') output = await client.operations.wait(id)
         else {

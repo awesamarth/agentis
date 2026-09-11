@@ -11,6 +11,7 @@ import { hash, OperationService, type Principal } from './operations'
 import { defaultProductChain, supportedNetworks } from './modules/networks'
 import { onboardingRoutes } from './modules/onboarding'
 import { profileSummary } from './modules/profile'
+import { cliLoginRoutes } from './modules/cli-login'
 
 export type Identity = {
   authenticate(token: string): Promise<string>
@@ -35,6 +36,8 @@ export function createApp(service: OperationService, identity: Identity, origins
     return c.json({ error: { code: 'internal_error', message: 'Request failed; retry with the same idempotency key if applicable' } }, 500)
   })
   app.get('/health', c => c.json({ status: 'ok', version: 'rewrite', execution: service.executor?.id ?? 'disabled' }))
+  const cliLogin = cliLoginRoutes(service)
+  app.route('/v1/cli/logins', cliLogin.publicRoutes)
   app.use('/v1/*', async (c, next) => {
     const token = c.req.header('authorization')?.match(/^Bearer (\S+)$/)?.[1]
     if (!token) fail(401, 'unauthorized', 'Bearer token required')
@@ -49,6 +52,7 @@ export function createApp(service: OperationService, identity: Identity, origins
     }
     await next()
   })
+  app.route('/v1/cli/logins', cliLogin.ownerRoutes)
   // Local manual test only: provider wallets, never Agentis database records.
   app.use('/v1/test/*', async (c, next) => {
     if (process.env.NODE_ENV === 'production' || !origins.some(origin => ['localhost', '127.0.0.1'].includes(new URL(origin).hostname))) fail(404, 'not_found', 'Not found')
