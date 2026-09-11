@@ -14,9 +14,9 @@ Set `AGENTIS_API_URL` (defaults to loopback port 3001) and `AGENTIS_TOKEN` in a 
 
 Local Solana wallets use web3.js v3 RC + standard SLIP-0010 Ed25519 derivation. Mnemonics are stored in `~/.agentis/wallets-v2` with 0700 directory/0600 file permissions, not printed to stdout. Anyone with file access can recover the wallet. Local sends and legacy hosted commands are not exposed until migrated.
 
-Hosted testnet transfers, Base Sepolia USDC x402 and Tempo alphaUSD MPP paid GETs use the common backend. Mainnet, other x402 networks and plugins remain unavailable. Published npm CLI is still the old prototype; use this checkout.
+Hosted testnet transfers, Base/Arc/Solana testnet USDC x402 and Tempo alphaUSD MPP paid GETs use the common backend. Mainnet, other x402 networks and plugins remain unavailable. Published npm CLI is still the old prototype; use this checkout.
 
-## Base x402 paid GET
+## x402 paid GET
 
 Create an API key on the existing agent's dashboard page and set `AGENTIS_TOKEN` privately (do not paste it into chat or pass it as a CLI argument). Select that agent's Base wallet from `wallet list`.
 
@@ -31,7 +31,9 @@ bun packages/cli/src/index.ts fetch 'http://127.0.0.1:3010/api/aqi?city=delhi&ra
 - `automatic`: waits for the operation. Same per-agent rules and atomic USD reservations apply; CLI has no wallet signing keys.
 - Reuse the **same key** after any timeout. No automatic second payment. A submitted authorization stays reserved until its exact on-chain nonce settles or the finalized chain proves it expired unused.
 - The operation detail returns `httpResponse.status`, `headers` and `bodyBase64`; decode the latter for JSON or binary data. Lists omit response bodies. Payment settlement is independent of HTTP success; a lost response does not erase a settled charge.
-- x402 EIP-3009 uses a facilitator to pay gas, so the agent reserves the USDC amount with zero payer gas. Only the bound Base USDC typed-data authorization is accepted by the Privy adapter.
+- All x402 rails persist the settlement response’s transaction ID as soon as HTTP headers arrive, then verify the approved payment directly on-chain by that ID. Missing-response recovery uses EVM authorization logs or paginated Solana history. Receipt lookup retries never resend payment.
+- Base and Arc use EIP-3009 with facilitator-paid gas. Select the corresponding agent wallet and `rail=base` or `rail=arc`. The price ceiling is in 6-decimal USDC units on both. Arc’s operation uses its existing native USDC ledger (18 decimals), with an exact bigint conversion; balances are not counted twice.
+- Solana devnet uses `rail=solana` and the agent’s Solana wallet. The facilitator pays gas; the wallet needs USDC in its associated token account. Privy’s native Solana Kit adapter only partially signs a checked transfer: fixed mint/recipient/amount, no lookup tables or extra programs, and an external fee payer. Settlement matches the exact signed message and token balance deltas, not the seller’s HTTP claim. Unresolved submissions remain reserved without resending; automatic unused-expiry release remains follow-up work.
 
 ## Tempo MPP paid GET
 

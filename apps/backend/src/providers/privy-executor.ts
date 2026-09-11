@@ -2,6 +2,7 @@ import { createWalletClient, http, encodeFunctionData, erc20Abi, getAddress, kec
 import { PrivyClient } from '@privy-io/node'
 import { createPrivyX402, validateX402 } from '../modules/x402'
 import { createPrivyMpp, validateMpp } from '../modules/mpp'
+import { createPrivySvm, validateSvm } from '../modules/x402-solana'
 import type { WalletRpcParams } from '@privy-io/node/resources'
 import type { AuthorizationRequest, OperationInput } from '@agentis-hq/core/operations'
 import { evmClient } from '../modules/networks'
@@ -22,6 +23,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
   const privy = new PrivyClient({ appId, appSecret, timeout: 20_000, maxRetries: 0 })
   const x402 = createPrivyX402(privy, authorizationKey, inspectWallet)
   const mpp = createPrivyMpp(privy, authorizationKey, inspectWallet)
+  const svm = createPrivySvm(privy, authorizationKey, inspectWallet)
   async function check(wallet: WalletRow, input: OperationInput) {
     const owned = await inspectWallet(wallet.providerWalletId, wallet.ownerId)
     if (!owned.serverAuthorized) fail(409, 'wallet_setup_required', 'Open this agent’s rules and save once to enable hosted execution')
@@ -34,7 +36,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
   const executor: Executor & { buildRequest(wallet: WalletRow, input: OperationInput, id: string, expiresAt: Date): Promise<AuthorizationRequest> } = {
     id: 'privy',
     validate(wallet, input) {
-      if (input.action === 'paid_fetch') { if (input.mpp) validateMpp(wallet, input); else validateX402(wallet, input); return }
+      if (input.action === 'paid_fetch') { if (input.mpp) validateMpp(wallet, input); else if (input.chainId === solanaDevnet) validateSvm(wallet, input); else validateX402(wallet, input); return }
       if (input.chainId === solanaDevnet && wallet.chainId === solanaDevnet) {
         if (!['native', `spl:${solanaUsdc}`].includes(input.asset) || BigInt(input.amountAtomic) > 18_446_744_073_709_551_615n) fail(400, 'unsupported_asset', 'Unsupported Solana transfer')
         return
@@ -70,7 +72,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
     },
     async prepare(wallet, input, _authorization, execution) {
       if (!execution || execution.expiresAt.getTime() <= Date.now()) throw new Error('Valid operation context required')
-      if (input.action === 'paid_fetch') return input.mpp ? mpp.prepare(wallet, input, execution) : x402.prepare(wallet, input, execution)
+      if (input.action === 'paid_fetch') return input.mpp ? mpp.prepare(wallet, input, execution) : input.chainId === solanaDevnet ? svm.prepare(wallet, input, execution) : x402.prepare(wallet, input, execution)
       const request = await executor.buildRequest(wallet, input, execution.id, execution.expiresAt)
       if (request.url !== `https://api.privy.io/v1/wallets/${encodeURIComponent(wallet.providerWalletId)}/rpc` || request.headers['privy-app-id'] !== appId || Number(request.headers['privy-request-expiry']) <= Date.now()) throw new Error('Invalid or expired authorization request')
       if (!['eth_signTransaction', 'signTransaction'].includes(String(request.body.method))) throw new Error('Only transaction signing is permitted')
@@ -97,8 +99,9 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
       if (actual.chainId !== Number(input.chainId.split(':')[1]) || actual.to?.toLowerCase() !== expected.to.toLowerCase() || (actual.value ?? 0n) !== expected.value || (actual.data ?? '0x').toLowerCase() !== expected.data.toLowerCase() || actual.nonce !== Number(transaction.nonce) || actual.gas !== BigInt(transaction.gas_limit!) || actual.maxFeePerGas !== BigInt(transaction.max_fee_per_gas!) || actual.maxPriorityFeePerGas !== BigInt(transaction.max_priority_fee_per_gas!) || actual.gas! * actual.maxFeePerGas! > BigInt(input.maxFeeAtomic) || (await recoverTransactionAddress({ serializedTransaction: signedTransaction })).toLowerCase() !== wallet.address.toLowerCase()) throw new Error('Signed transaction does not match approved terms')
       return { signedTransaction, transactionHash: keccak256(signedTransaction) }
     },
-    async broadcast(serialized) {
-      if (serialized.startsWith('x402:')) return x402.broadcast(serialized)
+    async broadcast(serialized, savePaymentHash) {
+      if (serialized.startsWith('x402:')) return x402.broadcast(serialized, savePaymentHash)
+      if (serialized.startsWith('svm-x402:')) return svm.broadcast(serialized, savePaymentHash)
       if (serialized.startsWith('mpp:')) return mpp.broadcast(serialized)
       if (serialized.startsWith('solana:')) return broadcastSolanaTransfer(serialized.slice(7))
       const signedTransaction = serialized as TransactionSerialized
@@ -112,7 +115,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
       if (!input) throw new Error('Network context required')
       if (input.action === 'paid_fetch' && !input.mpp) {
         if (!signedTransaction) throw new Error('Persisted payment required')
-        return x402.receipt(signedTransaction, input)
+        return input.chainId === solanaDevnet ? svm.receipt(signedTransaction, input, transactionHash) : x402.receipt(signedTransaction, input, transactionHash)
       }
       if (!transactionHash) throw new Error('Transaction hash required')
       if (input.chainId === solanaDevnet) return solanaReceipt(transactionHash, input)

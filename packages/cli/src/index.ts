@@ -19,7 +19,7 @@ async function main() {
   wallet list [--local]
   wallet create --local --name <name>
   fetch <url> --wallet <wallet-id> --max-amount-atomic <cap> --key <idempotency-key>
-    Base USDC x402 or Tempo alphaUSD MPP GET; Tempo also requires --max-fee-atomic (18-decimal protocol USD units).
+    Base/Arc/Solana testnet USDC x402 or Tempo alphaUSD MPP GET; Tempo also requires --max-fee-atomic (18-decimal protocol USD units).
   operations create --file <request.json> --key <idempotency-key>
   operations list|get <id>|wait <id>
   operations approve|reject <id> --hash <operation-hash>   (owner only)

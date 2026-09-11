@@ -14,9 +14,12 @@ export type FetchRequest = z.input<typeof fetchRequest>
 export const x402Payment = z.object({
   url: z.url().max(4096), maxAmountAtomic: positiveAtomic,
   requirements: z.object({
-    scheme: z.literal('exact'), network: z.literal('eip155:84532'), asset: z.string(), amount: positiveAtomic,
+    scheme: z.literal('exact'), network: z.enum(['eip155:84532', 'eip155:5042002', 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1']), asset: z.string(), amount: positiveAtomic,
     payTo: z.string(), maxTimeoutSeconds: z.number().int().min(15).max(120),
-    extra: z.object({ name: z.literal('USDC'), version: z.literal('2') }).strict(),
+    extra: z.union([
+      z.object({ name: z.literal('USDC'), version: z.literal('2') }).strict(),
+      z.object({ feePayer: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/), memo: z.string().max(256).optional() }).strict(),
+    ]),
   }).strict(),
 }).strict()
 export type PaidHttpResponse = { status: number; headers: Record<string, string>; bodyBase64: string }

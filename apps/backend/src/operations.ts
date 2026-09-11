@@ -11,6 +11,7 @@ import type { Executor } from './providers/types'
 import { fetchRequest } from '@agentis-hq/core/operations'
 import { discoverX402 } from './modules/x402'
 import { discoverMpp } from './modules/mpp'
+import { discoverSvm } from './modules/x402-solana'
 
 export type Principal = { kind: 'owner'; ownerId: string } | { kind: 'agent'; ownerId: string; grantId: string }
 export const hash = (value: string) => createHash('sha256').update(value).digest('hex')
@@ -113,14 +114,14 @@ export class OperationService {
     let network = ''
     const existing = await this.db.transaction(async tx => {
       const wallet = await this.lockWallet(tx, principal, request.walletId)
-      if (!wallet.enabled || !['eip155:84532', 'eip155:42431'].includes(wallet.chainId) || wallet.provider !== 'privy') fail(400, 'unsupported_payment', 'Choose an enabled hosted Base Sepolia or Tempo testnet wallet')
+      if (!wallet.enabled || !['eip155:84532', 'eip155:5042002', 'eip155:42431', 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'].includes(wallet.chainId) || wallet.provider !== 'privy') fail(400, 'unsupported_payment', 'Choose an enabled hosted testnet wallet')
       network = wallet.chainId
       const [row] = await tx.select().from(operations).where(and(eq(operations.principalKey, principalKey), eq(operations.idempotencyKey, idempotencyKey)))
       if (row && row.requestHash !== requestHash) fail(409, 'idempotency_conflict', 'Idempotency key already used for a different request')
       return row ? this.view(row) : null
     })
     if (existing) return existing
-    return this.createInput(principal, buildTransfer(operationInput.parse(await (network === 'eip155:42431' ? discoverMpp(request) : discoverX402(request)))), idempotencyKey, requestHash)
+    return this.createInput(principal, buildTransfer(operationInput.parse(await (network === 'eip155:42431' ? discoverMpp(request) : network.startsWith('solana:') ? discoverSvm(request) : discoverX402(request, network)))), idempotencyKey, requestHash)
   }
 
   private async createInput(principal: Principal, input: OperationInput, idempotencyKey: string, requestHash = hash(JSON.stringify(input))): Promise<Operation> {
@@ -180,7 +181,7 @@ export class OperationService {
         principalKey, idempotencyKey, requestHash, input, operationHash, policyVersion: wallet.policyVersion,
         status: reason ? 'denied' : wallet.policy.mode === 'ask' || agent?.mode === 'ask' || this.executor.authorization ? 'pending_approval' : 'queued',
         usdQuote, usdReservedMicros,
-        error: reason, expiresAt: new Date(Math.min(Date.now() + (input.chainId.startsWith('solana:') ? 60_000 : lifetimeMs), input.mpp ? Date.parse(input.mpp.expiresAt) : Infinity)),
+        error: reason, expiresAt: new Date(Math.min(Date.now() + (input.chainId.startsWith('solana:') && input.action === 'transfer' ? 60_000 : lifetimeMs), input.mpp ? Date.parse(input.mpp.expiresAt) : Infinity)),
       }).returning()
       return this.view(row!)
     })
@@ -354,7 +355,9 @@ export class OperationService {
       })
       if (prepared) {
         try {
-          const httpResponse = await executor.broadcast(prepared.signedTransaction!)
+          const httpResponse = await executor.broadcast(prepared.signedTransaction!, async transactionHash => {
+            await this.db.update(operations).set({ transactionHash }).where(and(eq(operations.id, prepared.id), inArray(operations.status, ['submitting', 'unknown'])))
+          })
           await this.db.update(operations).set({ status: 'submitted', error: null, ...(httpResponse ? { httpResponse } : {}) }).where(and(eq(operations.id, prepared.id), inArray(operations.status, ['submitting', 'unknown'])))
         } catch {
           await this.db.update(operations).set({ status: 'unknown', error: 'Submission outcome unknown; reconcile before retrying' }).where(and(eq(operations.id, prepared.id), inArray(operations.status, ['submitting', 'unknown'])))

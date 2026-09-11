@@ -19,7 +19,7 @@ export function validatePaymentHeaders(headers: Record<string, string>) {
     if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name) || /[\r\n]/.test(value) || forbiddenHeaders.has(name.toLowerCase()) || (name.toLowerCase() === 'authorization' && /^Payment\s/i.test(value))) throw new Error('Unsafe or pre-signed request header')
   }
 }
-export async function paymentHttp(input: PaymentHttpRequest, paymentHeaders: Record<string, string> = {}, localOrigins: readonly string[] = []): Promise<PaymentHttpResponse> {
+export async function paymentHttp(input: PaymentHttpRequest, paymentHeaders: Record<string, string> = {}, localOrigins: readonly string[] = [], onHeaders?: (headers: Record<string, string>) => Promise<void>): Promise<PaymentHttpResponse> {
   validatePaymentHeaders(input.headers)
   const url = new URL(input.url)
   const local = process.env.NODE_ENV !== 'production' && url.protocol === 'http:' && url.hostname === '127.0.0.1' && localOrigins.includes(url.origin)
@@ -36,26 +36,31 @@ export async function paymentHttp(input: PaymentHttpRequest, paymentHeaders: Rec
   if (body && body.length > 24_576) throw new Error('Request body is too large')
   const headers = Object.fromEntries(Object.entries(input.headers).map(([name, value]) => [name.toLowerCase(), value]))
   return new Promise((resolve, reject) => {
+    let headersSaved: Promise<void> = Promise.resolve()
+    const failResponse = (error: Error) => { clearTimeout(deadline); void headersSaved.then(() => reject(error), reject) }
     const request = (local ? httpRequest : httpsRequest)(url, {
       method: input.method, headers: { ...headers, ...paymentHeaders, 'accept-encoding': 'identity', ...(body ? { 'content-length': String(body.length) } : {}) },
       agent: false, family: pinned.family, maxHeaderSize: 16_384,
       // Pin the validated address while preserving the original Host/TLS SNI.
       lookup: (_host, options, callback) => options.all ? callback(null, [pinned]) : callback(null, pinned.address, pinned.family),
     }, response => {
-      response.on('error', error => { clearTimeout(deadline); reject(error) })
+      const headers: Record<string, string> = {}
+      for (const [name, value] of Object.entries(response.headers)) if (value !== undefined && !['set-cookie', 'connection', 'transfer-encoding'].includes(name)) headers[name] = Array.isArray(value) ? value.join(', ') : value
+      // Save the settlement hash as soon as headers arrive, even if the body fails.
+      headersSaved = Promise.resolve().then(() => onHeaders?.(headers))
+      void headersSaved.catch(error => { response.destroy(); failResponse(error) })
+      response.on('error', failResponse)
       if ((response.statusCode ?? 0) >= 300 && response.statusCode! < 400) { response.destroy(new Error('Paid request redirects are not followed')); return }
       if (response.headers['content-encoding'] && response.headers['content-encoding'] !== 'identity') { response.destroy(new Error('Compressed paid responses are not accepted')); return }
       const chunks: Buffer[] = []; let size = 0
       response.on('data', (chunk: Buffer) => { size += chunk.length; if (size > 1_048_576) response.destroy(new Error('Response exceeds 1 MiB')); else chunks.push(chunk) })
       response.on('end', () => {
         clearTimeout(deadline)
-        const headers: Record<string, string> = {}
-        for (const [name, value] of Object.entries(response.headers)) if (value !== undefined && !['set-cookie', 'connection', 'transfer-encoding'].includes(name)) headers[name] = Array.isArray(value) ? value.join(', ') : value
-        resolve({ status: response.statusCode ?? 502, headers, bodyBase64: Buffer.concat(chunks).toString('base64') })
+        void headersSaved.then(() => resolve({ status: response.statusCode ?? 502, headers, bodyBase64: Buffer.concat(chunks).toString('base64') }), reject)
       })
     })
     const deadline = setTimeout(() => request.destroy(new Error('Paid request timed out')), 20_000)
-    request.on('error', error => { clearTimeout(deadline); reject(error) })
+    request.on('error', failResponse)
     request.end(body)
   })
 }

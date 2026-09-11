@@ -8,6 +8,6 @@ export interface Executor {
   validate(wallet: WalletRow, input: OperationInput): void
   authorization?(wallet: WalletRow, input: OperationInput, id: string, expiresAt: Date): Promise<AuthorizationRequest>
   prepare(wallet: WalletRow, input: OperationInput, authorization?: { request: AuthorizationRequest; signature: string }, execution?: { id: string; expiresAt: Date }): Promise<{ signedTransaction: string; transactionHash: string | null }>
-  broadcast(signedTransaction: string): Promise<void | NonNullable<Operation['httpResponse']>>
+  broadcast(signedTransaction: string, savePaymentHash?: (hash: string) => Promise<void>): Promise<void | NonNullable<Operation['httpResponse']>>
   receipt(transactionHash: string | null, input?: OperationInput, signedTransaction?: string | null): Promise<Operation['receipt'] | { expiredUnused: true }>
 }
