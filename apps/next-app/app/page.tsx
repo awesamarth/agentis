@@ -63,7 +63,7 @@ function AgentWalletVisual() {
               agent wallet
             </p>
             <p className="mt-2 font-serif text-3xl font-black leading-none text-black xl:text-4xl">
-              agent-wallet-1
+              research-agent
             </p>
             <p className="mt-2 font-mono text-[0.7rem] text-ink-muted">
               7MoLfx...9L1Ws
@@ -82,12 +82,12 @@ function AgentWalletVisual() {
             $128.40
           </p>
           <p className="mt-2 font-mono text-[0.7rem] text-ink-muted">
-            USDC + SOL controlled by Agentis
+            Across Base, Arc, Tempo &amp; Solana
           </p>
         </div>
 
         <div className="grid grid-cols-4 gap-3">
-          {['pay', 'limit', 'private', 'earn'].map(action => (
+          {['pay', 'limit', 'approve', 'track'].map(action => (
             <div
               key={action}
               className="min-w-0 border border-beige-darker bg-white px-2 py-3 text-center font-mono text-sm text-black"
@@ -104,19 +104,19 @@ function AgentWalletVisual() {
             <span className="text-right text-black">$0.01</span>
           </div>
           <div className="grid grid-cols-[5rem_1fr_4rem] items-center gap-4">
-            <span className="text-ink-muted">POLICY</span>
-            <span className="text-center text-black">daily budget check</span>
-            <span className="text-right text-black">OK</span>
+            <span className="text-ink-muted">BUDGET</span>
+            <span className="text-center text-black">daily limit remaining</span>
+            <span className="text-right text-black">$24.99</span>
           </div>
           <div className="grid grid-cols-[5rem_1fr_4rem] items-center gap-4">
-            <span className="text-ink-muted">PRIVACY</span>
-            <span className="text-center text-black">Umbra flow ready</span>
-            <span className="text-right text-black">ON</span>
+            <span className="text-ink-muted">APPROVAL</span>
+            <span className="text-center text-black">transfer request</span>
+            <span className="text-right text-black">Pending</span>
           </div>
           <div className="grid grid-cols-[5rem_1fr_4rem] items-center gap-4">
-            <span className="text-ink-muted">EARN</span>
-            <span className="text-center text-black">USDC in Jupiter Earn</span>
-            <span className="text-right text-black">$42.00</span>
+            <span className="text-ink-muted">RECEIPT</span>
+            <span className="text-center text-black">payment confirmed</span>
+            <span className="text-right text-black" aria-label="Confirmed">✓</span>
           </div>
         </div>
       </div>
