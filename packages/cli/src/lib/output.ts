@@ -1,3 +1,5 @@
+import { formatUnits } from 'viem'
+
 const chainNames: Record<string, string> = {
   'eip155:84532': 'Base',
   'eip155:5042002': 'Arc',
@@ -50,6 +52,12 @@ export function formatOutput(command: string, output: unknown, color = Boolean(p
     if (wallets.length && wallets.every(wallet => Array.isArray(wallet.wallets) || (wallet.custody === 'local' && Array.isArray(wallet.networks)))) {
       return wallets.map(wallet => `${style(text(wallet.name), '1;38;5;117')} · ${style(wallet.custody === 'local' ? 'Local' : 'Hosted', '1')}\n${style('Chains:', '1')}\n${(wallet.wallets ?? wallet.networks!).map(network => `${chainLabel(network.chainId)}\n${text(network.address)}`).join('\n\n')}`).join('\n\n\n') + '\n\n'
     }
+  }
+  if (command === 'balance' && Array.isArray(output)) {
+    const usd = (value: string | null) => value === null ? 'Unavailable' : `$${formatUnits(BigInt(value), 6)}`
+    type Balance = { wallet: string; custody: string; usdMicros: string | null; complete: boolean; networks: { name: string; tokens: { symbol: string; amountAtomic: string | null; decimals: number; usdMicros: string | null }[] }[] }
+    if (!output.length) return 'No wallets found.'
+    return (output as Balance[]).map(balance => `${style(text(balance.wallet), '1;38;5;117')} · ${style(balance.custody === 'local' ? 'Local' : 'Hosted', '1')}\n${style(balance.complete ? 'Balance in USD:' : 'Known balance in USD:', '1')} ${usd(balance.usdMicros)}${balance.complete ? '' : ' (incomplete)'}\n\n${balance.networks.map(network => `${style(text(network.name), '1')}\n${network.tokens.map(token => `${text(token.symbol)}: ${token.amountAtomic === null ? 'Unavailable' : formatUnits(BigInt(token.amountAtomic), token.decimals)} · ${usd(token.usdMicros)}`).join('\n')}`).join('\n\n')}${balance.complete ? '' : '\n\nNote: Some balances or USD prices are unavailable; the total is incomplete.'}`).join('\n\n\n') + '\n\n'
   }
   if (command === 'policy' && Array.isArray(output)) {
     return output.map(({ name, ...policy }) => `${style(text(name), '1;38;5;117')}\n${fields(policy)}`).join('\n\n')

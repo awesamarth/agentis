@@ -1,4 +1,5 @@
 'use client'
+import { useState } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AgentisClient, type Operation } from '@agentis-hq/sdk'
@@ -8,6 +9,7 @@ import { ArrowUpRight, LoaderCircle } from 'lucide-react'
 export default function Operations({ id, agentId }: { id?: string; agentId?: string }) {
   const { ready, authenticated, getAccessToken, user, login } = usePrivy()
   const queries = useQueryClient()
+  const [visibleCount, setVisibleCount] = useState(10)
   const client = new AgentisClient({
     baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001',
     token: async () => { const token = await getAccessToken(); if (!token) throw new Error('Sign in first'); return token },
@@ -28,7 +30,7 @@ export default function Operations({ id, agentId }: { id?: string; agentId?: str
     {query.error && <p role="alert">{query.error.message}</p>}
     {decision.error && <p role="alert">{decision.error.message}</p>}
     {query.data?.length === 0 && <div className="border border-dashed border-beige-darker p-10 text-center"><h3 className="font-serif text-xl font-bold">Your first payment starts here.</h3><p className="mt-2 text-sm text-ink-muted">{agentId ? 'Payments requested by this agent will appear here.' : 'Create a payment above. Requests from your agents will appear here too.'}</p></div>}
-    {query.data?.map(operation => {
+    {query.data?.slice(0, id ? 1 : visibleCount).map(operation => {
       const network = networks.data?.networks.find(network => network.chainId === operation.chainId)
       const asset = network?.assets.find(asset => operation.asset.startsWith('erc20:') ? asset.id.toLowerCase() === operation.asset.toLowerCase() : asset.id === operation.asset)
       const status = { pending_approval: 'Needs approval', queued: 'Approved', submitting: 'Sending', submitted: 'Confirming', unknown: 'Checking payment', confirmed: 'Completed', failed: 'Failed', denied: 'Not allowed', expired: 'Expired', rejected: 'Declined' }[operation.status]
@@ -53,5 +55,6 @@ export default function Operations({ id, agentId }: { id?: string; agentId?: str
         </div>
       </article>
     })}
+    {!id && (query.data?.length ?? 0) > visibleCount && <button type="button" className="border border-beige-darker px-4 py-2 font-mono text-xs text-ink hover:bg-beige-dark" onClick={() => setVisibleCount(count => count + 10)}>Show more</button>}
   </section>
 }

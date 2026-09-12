@@ -101,16 +101,23 @@ export function createApp(service: OperationService, identity: Identity, origins
     if (!identity.exportTestWallet) fail(503, 'provider_unavailable', 'Privy test unavailable')
     return c.json(await identity.exportTestWallet(c.get('principal').ownerId, input.requestId, c.req.header('authorization')!.slice(7), 'server'))
   })
-  app.route('/v1', onboardingRoutes(service, identity))
   app.get('/v1/agents/:id/balance', async c => {
     const principal = c.get('principal')
-    if (principal.kind !== 'owner') fail(403, 'owner_required', 'Balance overview requires owner access')
     const agentId = id.parse(c.req.param('id'))
+    let walletScope = and(eq(wallets.agentId, agentId), eq(wallets.ownerId, principal.ownerId), eq(wallets.enabled, true))
+    if (principal.kind === 'agent') {
+      const [grant] = await service.db.select().from(grants).where(eq(grants.id, principal.grantId))
+      if (!grant || grant.ownerId !== principal.ownerId || grant.revokedAt || (grant.expiresAt !== null && grant.expiresAt.getTime() <= Date.now())) fail(403, 'grant_inactive', 'Access key is inactive')
+      if (!grant.walletId && grant.agentId !== agentId) fail(404, 'not_found', 'Agent not found')
+      walletScope = and(walletScope, grant.walletId ? eq(wallets.id, grant.walletId) : undefined, grant.chainIds === null ? undefined : inArray(wallets.chainId, grant.chainIds))
+    }
     const [agent] = await service.db.select({ id: agents.id }).from(agents).where(and(eq(agents.id, agentId), eq(agents.ownerId, principal.ownerId)))
     if (!agent) fail(404, 'not_found', 'Agent not found')
-    const enabled = await service.db.select().from(wallets).where(and(eq(wallets.agentId, agentId), eq(wallets.ownerId, principal.ownerId), eq(wallets.enabled, true)))
+    const enabled = await service.db.select().from(wallets).where(walletScope)
+    if (principal.kind === 'agent' && !enabled.length) fail(404, 'not_found', 'No accessible agent wallets')
     return c.json(await agentBalance(enabled))
   })
+  app.route('/v1', onboardingRoutes(service, identity))
   app.get('/v1/capabilities', c => c.json({ defaultChain: defaultProductChain, networks: Object.fromEntries(supportedNetworks.map(network => [network.chainId, { name: network.name, testnet: network.testnet, execution: service.executor?.id === 'privy' }])), core: { transfers: !!service.executor, x402: service.executor?.id === 'privy', mpp: service.executor?.id === 'privy' }, paidFetch: { methods: ['GET'], x402Networks: service.executor?.id === 'privy' ? ['eip155:84532', 'eip155:5042002', 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'] : [], mppNetworks: service.executor?.id === 'privy' ? ['eip155:42431'] : [] }, plugins: service.config, executor: service.executor?.id ?? null, approvalSecurity: service.executor?.id === 'anvil' ? 'local-demo-app-authorization' : service.executor?.id === 'privy' ? 'backend-policy-and-owner-approval' : 'live-execution-unavailable' }))
   app.get('/v1/wallets', async c => {
     const principal = c.get('principal')

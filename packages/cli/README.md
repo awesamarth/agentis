@@ -64,6 +64,16 @@ Hosted testnet transfers, Base/Arc/Solana testnet USDC x402 and Tempo alphaUSD M
 
 `wallet list` shows both hosted and local wallets; `--local` or `--hosted` filters to one type (mutually exclusive). Hosted entries include only enabled wallets. Without a login, the default lists local wallets and prints a hosted-login notice to stderr; `--hosted` requires authentication. API/auth errors are not silently hidden. `--json` returns `[{name, custody, agentId?, wallets: [{walletId, chainId, address}]}]`, without internal policy/setup fields. Local network entries share their named wallet's ID. Human output starts with a blank line and uses bold cyan names, explicit Local/Hosted labels, bold chain headings and two blank lines after each wallet/agent block.
 
+## Balances
+
+```sh
+bun packages/cli/src/index.ts wallet balance
+bun packages/cli/src/index.ts wallet balance --local --wallet local-multichain-check
+bun packages/cli/src/index.ts wallet balance --hosted --agent research-agent
+```
+
+Default includes both custody types; `--local`/`--hosted` filters them, like wallet list. Shows per-chain token amounts and an estimated USD total; `--json` retains exact atomic amounts/USD micros. Local balances use existing Viem/Solana clients with network checks (Base uses Multicall3). Hosted balances reuse the backend reader, restricted to the current grant's enabled wallets/networks. Reads never sign or change budgets. Missing RPC data/prices remain unavailable or explicitly incomplete, not zero.
+
 ## Hosted sends
 
 ```sh

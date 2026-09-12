@@ -7,6 +7,7 @@ import { createLocalWallet, listLocalWallets } from './lib/local-wallet'
 import { validateCommand } from './lib/command-validation'
 import { formatOutput } from './lib/output'
 import { walletList } from './lib/wallet-list'
+import { walletBalance } from './lib/wallet-balance'
 import { sendHostedTransfer } from './lib/hosted-send'
 import { hostedPolicy, hostedHistory } from './lib/hosted-views'
 import { banner, localCreationOptions, confirmLocalSend, promptLocalRules } from './lib/local-prompts'
@@ -39,6 +40,7 @@ async function main() {
   logout
   whoami
   wallet list [--local | --hosted]   Both by default; flags select one custody type.
+  wallet balance [--local | --hosted] [--wallet <name-or-id>] [--agent <hosted-name-or-id>]
   wallet history --local --wallet <name-or-id> [--limit 20]
   wallet history [--hosted] [--agent <name-or-id>] [--wallet <wallet-id>] [--limit 20]
   policy show [--hosted] [--agent <name-or-id>] [--wallet <wallet-id>]
@@ -71,7 +73,7 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
     return
   }
   if (values.local && values.hosted) throw Error('Choose --local or --hosted, not both')
-  if (values.hosted && !((command === 'wallet' && ['list', 'history', 'send'].includes(subcommand!)) || (command === 'policy' && subcommand === 'show'))) throw Error('--hosted supports wallet list/history/send and policy show')
+  if (values.hosted && !((command === 'wallet' && ['list', 'history', 'send', 'balance'].includes(subcommand!)) || (command === 'policy' && subcommand === 'show'))) throw Error('--hosted supports wallet list/history/send/balance and policy show')
   if (values.local && !['wallet', 'fetch', 'policy'].includes(command!)) throw Error('--local supports wallet, fetch and policy commands')
   if (command === 'policy' && subcommand === 'set' && !values.local) throw Error('Hosted rules are edited in the dashboard; policy set requires --local')
   if (values.pause && values.resume) throw Error('Choose --pause or --resume, not both')
@@ -85,6 +87,7 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
   if (command === 'login') output = await login(values['no-browser'], values.json)
   else if (command === 'logout') output = logout()
   else if (command === 'whoami') output = whoami()
+  else if (command === 'wallet' && subcommand === 'balance') output = await walletBalance(values.local ?? false, values.hosted ?? false, values.wallet, values.agent)
   else if (command === 'wallet' && subcommand === 'send' && !values.local) {
     if (!values.wallet || !values.chain || !values.to || !values.amount || !values.key) throw Error('--wallet, --chain, --to, --amount and --key required; amounts are decimal token units')
     output = await sendHostedTransfer({ wallet: values.wallet, chain: values.chain, to: values.to, amount: values.amount, key: values.key, asset: values.asset, maxFee: values['max-fee'] }, values.agent)
@@ -163,6 +166,6 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
       }
     } else throw new Error('Hosted creation and unmigrated capabilities are unavailable; use the wallet-link API')
   }
-  console.log(values.json ? JSON.stringify(output, null, 2) : '\n' + formatOutput(command === 'wallet' && subcommand === 'history' ? 'history' : command!, output))
+  console.log(values.json ? JSON.stringify(output, null, 2) : '\n' + formatOutput(command === 'wallet' && ['history', 'balance'].includes(subcommand!) ? subcommand! : command!, output))
 }
 main().catch(error => { console.error(error instanceof Error ? error.message : 'Command failed'); process.exitCode = 1 })

@@ -1,6 +1,7 @@
 // Read-only policy/history authorization regression; no network, DB mutations or money.
 import assert from 'node:assert/strict'
 import { PgDialect } from 'drizzle-orm/pg-core'
+import { createApp } from '../apps/backend/src/app'
 import { OperationService } from '../apps/backend/src/operations'
 import type { Database } from '../apps/backend/src/db'
 const dialect = new PgDialect()
@@ -58,4 +59,16 @@ for (const bad of [null, { ...grant, ownerId: 'other' }, { ...grant, revokedAt: 
 assert.deepEqual(await service([[grant], []]).instance.history(principal), [])
 const unchanged = service([[]]); await unchanged.instance.list(principal)
 assert(unchanged.filters[0]!.params.includes('grant-a'), 'Operation control/list scope remains unchanged')
-console.log('Hosted read views: policy scopes, wallet/network-scoped cross-key history, inactive grants, private-field exclusion and unchanged operation permissions passed. No money sent.')
+const target = '00000000-0000-4000-8000-000000000001'
+for (const scope of [{ ...grant, agentId: target }, { ...grant, walletId: wallet.id, agentId: null }]) {
+  const fixture = service([[scope], [scope], [{ ...agent, id: target }], [{ ...wallet, chainId: 'unsupported-test-network' }]])
+  const app = createApp(fixture.instance, { authenticate: async () => 'owner-a' }, [])
+  const response = await app.request(`/v1/agents/${target}/balance`, { headers: { Authorization: 'Bearer agt_exec_fixture' } })
+  assert.equal(response.status, 200, 'Scoped balance reads must precede owner-only agent management middleware')
+  const filters = fixture.filters.at(-1)!
+  for (const value of ['owner-a', target, true, 'eip155:84532']) assert(filters.params.includes(value))
+  if (scope.walletId) assert(filters.params.includes(wallet.id))
+}
+const forbidden = service([[grant]])
+assert.equal((await createApp(forbidden.instance, { authenticate: async () => 'owner-a' }, []).request('/v1/agents', { headers: { Authorization: 'Bearer agt_exec_fixture' } })).status, 403)
+console.log('Hosted read views: scoped balance route/management isolation,  policy scopes, wallet/network-scoped cross-key history, inactive grants, private-field exclusion and unchanged operation permissions passed. No money sent.')
