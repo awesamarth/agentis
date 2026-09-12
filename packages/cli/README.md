@@ -62,7 +62,7 @@ Local sends persist signed proof/hash in owner-only `wallets-v2/transactions` jo
 
 Hosted testnet transfers, Base/Arc/Solana testnet USDC x402 and Tempo alphaUSD MPP paid GETs use the common backend. Mainnet, other x402 networks and plugins remain unavailable. Published npm CLI is still the old prototype; use this checkout.
 
-Hosted `wallet list` groups enabled wallets by agent, showing the name and chain/address pairs without internal policy/setup fields. `--json` returns `[{name, agentId, wallets: [{walletId, chainId, address}]}]`. Human hosted/local wallet output uses bold cyan names, bold chain headings and two blank lines after each wallet/agent block.
+`wallet list` shows both hosted and local wallets; `--local` or `--hosted` filters to one type (mutually exclusive). Hosted entries include only enabled wallets. Without a login, the default lists local wallets and prints a hosted-login notice to stderr; `--hosted` requires authentication. API/auth errors are not silently hidden. `--json` returns `[{name, custody, agentId?, wallets: [{walletId, chainId, address}]}]`, without internal policy/setup fields. Local network entries share their named wallet's ID. Human output starts with a blank line and uses bold cyan names, explicit Local/Hosted labels, bold chain headings and two blank lines after each wallet/agent block.
 
 ## Local policies, history and paid GET
 

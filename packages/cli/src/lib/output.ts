@@ -47,7 +47,7 @@ export function formatOutput(command: string, output: unknown, color = Boolean(p
     type Network = { chainId: string; address: string }
     const wallets = (Array.isArray(output) ? output : [output]) as { name: string; custody?: string; networks?: Network[]; wallets?: Network[] }[]
     if (wallets.length && wallets.every(wallet => Array.isArray(wallet.wallets) || (wallet.custody === 'local' && Array.isArray(wallet.networks)))) {
-      return wallets.map(wallet => `${style(text(wallet.name), '1;38;5;117')}\n${style('Chains:', '1')}\n${(wallet.wallets ?? wallet.networks!).map(network => `${chainLabel(network.chainId)}\n${text(network.address)}`).join('\n\n')}`).join('\n\n\n') + '\n\n'
+      return wallets.map(wallet => `${style(text(wallet.name), '1;38;5;117')} · ${style(wallet.custody === 'local' ? 'Local' : 'Hosted', '1')}\n${style('Chains:', '1')}\n${(wallet.wallets ?? wallet.networks!).map(network => `${chainLabel(network.chainId)}\n${text(network.address)}`).join('\n\n')}`).join('\n\n\n') + '\n\n'
     }
   }
   if (command === 'history') {

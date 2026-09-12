@@ -67,10 +67,11 @@ export function logout() {
   }
   return { message: 'Local login removed. To revoke server access too, revoke the CLI keys in each agent’s dashboard API access panel.' }
 }
-export function sessions(agent?: string) {
+export function sessions(agent?: string, allowDisconnected = false) {
   if (agent && process.env.AGENTIS_TOKEN) throw Error('--agent selects a stored login credential; unset AGENTIS_TOKEN first')
   if (process.env.AGENTIS_TOKEN) return [{ client: new AgentisClient({ baseUrl: apiUrl(), token: process.env.AGENTIS_TOKEN }), agentId: null, agentName: 'AGENTIS_TOKEN' }]
   const session = readSession()
+  if (!session && allowDisconnected && !agent) return []
   if (!session) throw Error('Run agentis login or set AGENTIS_TOKEN first')
   const credentials = agent ? session.credentials.filter(c => c.agentId === agent || c.agentName === agent) : session.credentials
   if (!credentials.length || (agent && credentials.length !== 1)) throw Error('Choose an unambiguous linked agent ID with --agent; see agentis whoami')

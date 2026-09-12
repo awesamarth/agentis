@@ -6,6 +6,7 @@ import { login, logout, sessions, whoami } from './lib/session'
 import { createLocalWallet, listLocalWallets } from './lib/local-wallet'
 import { validateCommand } from './lib/command-validation'
 import { formatOutput } from './lib/output'
+import { walletList } from './lib/wallet-list'
 import { banner, localCreationOptions, confirmLocalSend, promptLocalRules } from './lib/local-prompts'
 import { localSendTerms, sendLocalTransfer, exactAmount } from './lib/local-send'
 import { defaultRules, ruleLimit, type LocalRules } from './lib/local-rules'
@@ -18,7 +19,7 @@ const args = process.argv.slice(2)
 async function main() {
   validateCommand(args)
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
-    help: { type: 'boolean', short: 'h' }, 'no-browser': { type: 'boolean' }, agent: { type: 'string' }, local: { type: 'boolean' }, name: { type: 'string' },
+    help: { type: 'boolean', short: 'h' }, 'no-browser': { type: 'boolean' }, agent: { type: 'string' }, local: { type: 'boolean' }, hosted: { type: 'boolean' }, name: { type: 'string' },
     wallet: { type: 'string' }, 'max-amount-atomic': { type: 'string' }, 'max-fee-atomic': { type: 'string' },
     file: { type: 'string' }, key: { type: 'string' }, hash: { type: 'string' }, json: { type: 'boolean' },
     chains: { type: 'string' }, chain: { type: 'string' }, to: { type: 'string' }, amount: { type: 'string' }, asset: { type: 'string' }, 'max-fee': { type: 'string' }, yes: { type: 'boolean' },
@@ -35,7 +36,7 @@ async function main() {
   login [--no-browser]
   logout
   whoami
-  wallet list [--local]
+  wallet list [--local | --hosted]   Both by default; flags select one custody type.
   wallet history --local --wallet <name-or-id> [--limit 20]
   policy show|set --local --wallet <name-or-id>
     [--per-transaction <USD>] [--hourly <USD>] [--daily <USD>] [--total <USD>] [--pause|--resume]
@@ -64,6 +65,8 @@ Hosted legacy money commands are unavailable during migration. Local wallets use
 filesystem protection, not encrypted custody. No transaction can target mainnet yet.`)
     return
   }
+  if (values.local && values.hosted) throw Error('Choose --local or --hosted, not both')
+  if (values.hosted && !(command === 'wallet' && subcommand === 'list')) throw Error('--hosted is supported on wallet list')
   if (values.local && !['wallet', 'fetch', 'policy'].includes(command!)) throw Error('--local supports wallet, fetch and policy commands')
   if (command === 'policy' && !values.local) throw Error('Use policy --local for local wallets; hosted rules are edited in the dashboard')
   if (values.pause && values.resume) throw Error('Choose --pause or --resume, not both')
@@ -91,6 +94,8 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
   } else if (command === 'fetch' && values.local) {
     if (!subcommand || !values.wallet || !values.chain || !values.key || (!values['max-amount'] && !values['max-amount-atomic'])) throw Error('URL, --wallet, --chain, --max-amount and --key required')
     output = await localPaidFetch({ wallet: values.wallet, chain: values.chain, url: subcommand, key: values.key, maxAmountAtomic: values['max-amount-atomic'] ?? exactAmount(values['max-amount']!, 6).toString(), maxFeeAtomic: values['max-fee-atomic'] ?? exactAmount(values['max-fee'] ?? '0.01', 18).toString() }, summary => confirmLocalSend(summary, values.yes ?? false, values.json ?? false))
+  } else if (command === 'wallet' && subcommand === 'list') {
+    output = await walletList(values.local ?? false, values.hosted ?? false, values.agent)
   } else if (command === 'wallet' && values.local) {
     if (subcommand === 'create') {
       const options = await localCreationOptions(values.name, values.chains, values.json, policyChanges)
@@ -128,23 +133,6 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
       output = operation.status === 'queued' ? await client.operations.wait(operation.id, { timeoutMs: 120_000 }) : operation
     }
     else if (command === 'capabilities') output = await client.capabilities()
-    else if (command === 'wallet' && subcommand === 'list') {
-      const groups = new Map<string, { name: string; agentId: string | null; wallets: { walletId: string; chainId: string; address: string }[] }>()
-      const results = await Promise.all(linked.map(item => item.client.wallets.list()))
-      for (const [index, wallets] of results.entries()) {
-        const session = linked[index]!
-        for (const wallet of wallets.filter(wallet => wallet.enabled)) {
-          const key = wallet.agentId ?? wallet.id
-          let group = groups.get(key)
-          if (!group) {
-            group = { name: wallet.agentName ?? (wallet.agentId && session.agentId === wallet.agentId ? session.agentName : 'Unnamed wallet'), agentId: wallet.agentId, wallets: [] }
-            groups.set(key, group)
-          }
-          if (!group.wallets.some(item => item.walletId === wallet.id)) group.wallets.push({ walletId: wallet.id, chainId: wallet.chainId, address: wallet.address })
-        }
-      }
-      output = [...groups.values()]
-    }
     else if (command === 'operations') {
       if (subcommand === 'create') {
         if (!values.file || !values.key) throw new Error('--file and --key required; reuse the same key after timeouts')
@@ -164,6 +152,6 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
       }
     } else throw new Error('Hosted creation and unmigrated capabilities are unavailable; use the wallet-link API')
   }
-  console.log(values.json ? JSON.stringify(output, null, 2) : formatOutput(command === 'wallet' && subcommand === 'history' ? 'history' : command!, output))
+  console.log(values.json ? JSON.stringify(output, null, 2) : '\n' + formatOutput(command === 'wallet' && subcommand === 'history' ? 'history' : command!, output))
 }
 main().catch(error => { console.error(error instanceof Error ? error.message : 'Command failed'); process.exitCode = 1 })
