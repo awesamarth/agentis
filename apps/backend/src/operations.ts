@@ -193,9 +193,27 @@ export class OperationService {
     return this.view(row)
   }
 
-  async list(principal: Principal) {
+  async policyView(principal: Principal, walletId: string) {
+    const [wallet] = await this.db.select().from(wallets).where(and(eq(wallets.id, walletId), eq(wallets.ownerId, principal.ownerId), eq(wallets.enabled, true)))
+    if (!wallet) fail(404, 'not_found', 'Wallet not found')
+    if (principal.kind === 'agent') {
+      const [grant] = await this.db.select().from(grants).where(eq(grants.id, principal.grantId))
+      if (!grant || grant.ownerId !== principal.ownerId || grant.revokedAt || (grant.expiresAt && grant.expiresAt.getTime() <= Date.now()) || !grantAllowsWallet(grant, wallet)) fail(404, 'not_found', 'Wallet not found')
+    }
+    const [agent] = await this.db.select().from(agents).where(and(eq(agents.id, wallet.agentId!), eq(agents.ownerId, principal.ownerId)))
+    if (!agent) fail(404, 'not_found', 'Named agent not found')
+    const rows = await this.db.select({ status: operations.status, reserved: operations.usdReservedMicros, settled: operations.usdSettledMicros }).from(operations).innerJoin(wallets, eq(wallets.id, operations.walletId)).where(and(eq(operations.ownerId, principal.ownerId), eq(wallets.agentId, agent.id)))
+    let spent = 0n, held = 0n
+    for (const row of rows) {
+      if ((reserved as readonly string[]).includes(row.status)) held += BigInt(row.reserved ?? '0')
+      else spent += BigInt(row.settled ?? '0')
+    }
+    return { name: agent.name, agentId: agent.id, mode: agent.mode, limits: agent.limits, allowedRecipients: agent.allowedRecipients, spentMicros: spent.toString(), reservedMicros: held.toString(), walletPolicy: wallet.policy }
+  }
+
+  async list(principal: Principal, chronological = false) {
     const filter = principal.kind === 'owner' ? eq(operations.ownerId, principal.ownerId) : and(eq(operations.ownerId, principal.ownerId), eq(operations.grantId, principal.grantId))
-    return (await this.db.select(operationSummaryColumns).from(operations).where(filter).orderBy(desc(eq(operations.status, 'pending_approval')), desc(operations.createdAt), desc(operations.id)).limit(100)).map(row => this.view(row))
+    return (await this.db.select(operationSummaryColumns).from(operations).where(filter).orderBy(...(chronological ? [desc(operations.createdAt), desc(operations.id)] : [desc(eq(operations.status, 'pending_approval')), desc(operations.createdAt), desc(operations.id)])).limit(100)).map(row => this.view(row))
   }
 
   async authorization(principal: Principal, id: string) {

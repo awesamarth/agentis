@@ -64,6 +64,17 @@ Hosted testnet transfers, Base/Arc/Solana testnet USDC x402 and Tempo alphaUSD M
 
 `wallet list` shows both hosted and local wallets; `--local` or `--hosted` filters to one type (mutually exclusive). Hosted entries include only enabled wallets. Without a login, the default lists local wallets and prints a hosted-login notice to stderr; `--hosted` requires authentication. API/auth errors are not silently hidden. `--json` returns `[{name, custody, agentId?, wallets: [{walletId, chainId, address}]}]`, without internal policy/setup fields. Local network entries share their named wallet's ID. Human output starts with a blank line and uses bold cyan names, explicit Local/Hosted labels, bold chain headings and two blank lines after each wallet/agent block.
 
+## Hosted policy and history
+
+```sh
+bun packages/cli/src/index.ts policy show --hosted --agent research-agent
+bun packages/cli/src/index.ts wallet history --hosted --agent research-agent --limit 20
+```
+
+`--hosted` is optional on these commands; `--local` keeps the existing local behavior. Omit `--agent` to include all linked credentials, or narrow by `--wallet <wallet-id>`. Hosted `policy set` is unavailable: use the dashboard. Policy reads require an accessible enabled wallet and show its agent's mode, USD limits, aggregate spent/reserved amounts and recipient restrictions. Aggregate amounts include all of that agent's networks and credentials, not just the current key's operations.
+
+History is read-only and oldest → newest within the latest selected records (maximum 100 per credential). It uses the existing operation visibility rules: executor keys see only operations issued under that key, owners see their own account's operations. A new login/key may therefore show no history despite non-zero aggregate agent spend. No permissions are broadened and no transactions are submitted. JSON remains opt-in.
+
 ## Local policies, history and paid GET
 
 ```sh

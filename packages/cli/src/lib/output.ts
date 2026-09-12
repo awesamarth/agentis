@@ -50,13 +50,17 @@ export function formatOutput(command: string, output: unknown, color = Boolean(p
       return wallets.map(wallet => `${style(text(wallet.name), '1;38;5;117')} · ${style(wallet.custody === 'local' ? 'Local' : 'Hosted', '1')}\n${style('Chains:', '1')}\n${(wallet.wallets ?? wallet.networks!).map(network => `${chainLabel(network.chainId)}\n${text(network.address)}`).join('\n\n')}`).join('\n\n\n') + '\n\n'
     }
   }
+  if (command === 'policy' && Array.isArray(output)) {
+    return output.map(({ name, ...policy }) => `${style(text(name), '1;38;5;117')}\n${fields(policy)}`).join('\n\n')
+  }
   if (command === 'history') {
-    const transactions = record.transactions as { date: string | null; chain: string; amount: string; asset: string; status: string; to?: string; transaction?: string; httpStatus?: number; key?: string }[]
-    if (!transactions.length) return `No local transactions for ${text(record.wallet)}.`
-    return `${text(record.wallet)} — local history\n\n${transactions.map(tx => {
+    const transactions = record.transactions as { date: string | null; chain: string; amount: string; asset: string; status: string; wallet?: string; to?: string; transaction?: string; httpStatus?: number; key?: string }[]
+    const note = record.note ? `\n\nNote: ${text(record.note)}\n` : ''
+    if (!transactions.length) return `No transactions for ${text(record.wallet)}.${note}`
+    return `${text(record.wallet)} — history\n\n${transactions.map(tx => {
       const date = tx.date ? new Date(tx.date).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : 'Older entry'
-      return `${date} · ${text(tx.chain)} · ${text(tx.amount)} ${text(tx.asset)} · ${text(tx.status.replaceAll('_', ' '))}${tx.httpStatus ? ` · HTTP ${tx.httpStatus}` : ''}\n${tx.transaction ? text(tx.transaction) : `To: ${text(tx.to ?? 'Not prepared')}`}${tx.key && tx.status === 'unknown' ? `\nCheck with original command and --key ${text(tx.key)}; do not resend.` : ''}`
-    }).join('\n\n')}`
+      return `${date}${tx.wallet ? ` · ${text(tx.wallet)}` : ''} · ${text(tx.chain)} · ${text(tx.amount)} ${text(tx.asset)} · ${text(tx.status.replaceAll('_', ' '))}${tx.httpStatus ? ` · HTTP ${tx.httpStatus}` : ''}\n${tx.transaction ? text(tx.transaction) : `To: ${text(tx.to ?? 'Not prepared')}`}${tx.key && tx.status === 'unknown' ? `\nCheck with original command and --key ${text(tx.key)}; do not resend.` : ''}`
+    }).join('\n\n')}${note}`
   }
   if (Array.isArray(output) && !output.length) return 'No results.'
   return fields(output)

@@ -4,6 +4,8 @@ export type AgentisAgent = { id: string; name: string; limits: UsdLimits; mode: 
 export type AgentSettings = Pick<AgentisAgent, 'name' | 'limits' | 'mode' | 'allowedRecipients'> & { selection: { networks: string[]; defaultNetwork: string }; enableExecution?: boolean }
 export type AgentisWallet = { id: string; agentId: string | null; agentName: string | null; serverAuthorized: boolean; address: string; chainId: string; policy: WalletPolicy; policyVersion: number; enabled: boolean }
 
+export type AgentPolicyView = Pick<AgentisAgent, 'name' | 'mode' | 'limits' | 'allowedRecipients'> & { agentId: string; spentMicros: string; reservedMicros: string; walletPolicy: WalletPolicy }
+
 export type AgentBalance = {
   usdMicros: string | null; complete: boolean; checkedAt: string
   networks: { chainId: string; name: string; usdMicros: string | null; complete: boolean; tokens: { asset: string; symbol: string; decimals: number; amountAtomic: string | null; usdMicros: string | null }[] }[]
@@ -66,7 +68,9 @@ export class AgentisClient {
     create: (input: AgentSettings & { id: string }) => this.request<AgentisAgent>('/agents', 'POST', input),
     update: (id: string, input: AgentSettings) => this.request<AgentisAgent>(`/agents/${encodeURIComponent(id)}`, 'PATCH', input),
   }
+  history = () => this.request<Operation[]>('/history')
   wallets = {
+    policy: (id: string) => this.request<AgentPolicyView>(`/wallets/${encodeURIComponent(id)}/policy`),
     list: () => this.request<AgentisWallet[]>('/wallets'),
     exportKey: (id: string, input: { confirm: true }) => this.request<{ privateKey: string }>(`/wallets/${encodeURIComponent(id)}/export`, 'POST', input, {}, AbortSignal.timeout(60_000)),
     link: (input: { providerWalletId: string; chainId: string; policy: WalletPolicy }) => this.request<AgentisWallet>('/wallets', 'POST', input),

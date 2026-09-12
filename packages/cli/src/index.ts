@@ -7,6 +7,7 @@ import { createLocalWallet, listLocalWallets } from './lib/local-wallet'
 import { validateCommand } from './lib/command-validation'
 import { formatOutput } from './lib/output'
 import { walletList } from './lib/wallet-list'
+import { hostedPolicy, hostedHistory } from './lib/hosted-views'
 import { banner, localCreationOptions, confirmLocalSend, promptLocalRules } from './lib/local-prompts'
 import { localSendTerms, sendLocalTransfer, exactAmount } from './lib/local-send'
 import { defaultRules, ruleLimit, type LocalRules } from './lib/local-rules'
@@ -38,6 +39,8 @@ async function main() {
   whoami
   wallet list [--local | --hosted]   Both by default; flags select one custody type.
   wallet history --local --wallet <name-or-id> [--limit 20]
+  wallet history [--hosted] [--agent <name-or-id>] [--wallet <wallet-id>] [--limit 20]
+  policy show [--hosted] [--agent <name-or-id>] [--wallet <wallet-id>]
   policy show|set --local --wallet <name-or-id>
     [--per-transaction <USD>] [--hourly <USD>] [--daily <USD>] [--total <USD>] [--pause|--resume]
     Use none to remove a cap; zero blocks spending. No flags on set opens interactive editing.
@@ -66,9 +69,9 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
     return
   }
   if (values.local && values.hosted) throw Error('Choose --local or --hosted, not both')
-  if (values.hosted && !(command === 'wallet' && subcommand === 'list')) throw Error('--hosted is supported on wallet list')
+  if (values.hosted && !((command === 'wallet' && ['list', 'history'].includes(subcommand!)) || (command === 'policy' && subcommand === 'show'))) throw Error('--hosted supports wallet list/history and policy show')
   if (values.local && !['wallet', 'fetch', 'policy'].includes(command!)) throw Error('--local supports wallet, fetch and policy commands')
-  if (command === 'policy' && !values.local) throw Error('Use policy --local for local wallets; hosted rules are edited in the dashboard')
+  if (command === 'policy' && subcommand === 'set' && !values.local) throw Error('Hosted rules are edited in the dashboard; policy set requires --local')
   if (values.pause && values.resume) throw Error('Choose --pause or --resume, not both')
   const policyChanges: Partial<LocalRules> = {}
   for (const [flag, field] of [['per-transaction', 'perTransaction'], ['hourly', 'hourly'], ['daily', 'daily'], ['total', 'total']] as const) {
@@ -80,6 +83,8 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
   if (command === 'login') output = await login(values['no-browser'], values.json)
   else if (command === 'logout') output = logout()
   else if (command === 'whoami') output = whoami()
+  else if (command === 'policy' && !values.local) output = await hostedPolicy(values.agent, values.wallet)
+  else if (command === 'wallet' && subcommand === 'history' && !values.local) output = await hostedHistory(values.agent, values.wallet, Number(values.limit ?? '20'))
   else if (command === 'policy') {
     if (!values.wallet) throw Error('--wallet required')
     if (subcommand === 'show') output = await showLocalPolicy(values.wallet)
