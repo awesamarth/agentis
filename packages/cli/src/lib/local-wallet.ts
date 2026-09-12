@@ -7,9 +7,10 @@ import { mkdirSync, writeFileSync, readdirSync, readFileSync, lstatSync } from '
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { localNetworks, parseChains, type LocalChain } from './local-networks'
+import { localRules, defaultRules, type LocalRules } from './local-rules'
 
 export const localWalletDirectory = () => join(homedir(), '.agentis', 'wallets-v2')
-export type LocalWallet = { version: 3; id: string; name: string; chains: LocalChain[]; addresses: { evm?: string; solana?: string }; mnemonic: string; createdAt: string }
+export type LocalWallet = { version: 3; id: string; name: string; chains: LocalChain[]; addresses: { evm?: string; solana?: string }; mnemonic: string; createdAt: string; policy?: LocalRules }
 export function privatePath(path: string, directory: boolean) {
   const stat = lstatSync(path)
   if (stat.isSymbolicLink() || (directory ? !stat.isDirectory() : !stat.isFile()) || (stat.mode & 0o077) !== 0 || (process.getuid && stat.uid !== process.getuid())) throw Error('Unsafe local wallet permissions; use owner-only directories (0700) and files (0600), not symlinks')
@@ -37,15 +38,17 @@ function readWallets(directory: string): LocalWallet[] {
       wallet = stored.version === 2 && stored.chain === 'solana' ? { ...stored, version: 3, chains: ['solana'], addresses: { solana: stored.address } } : stored
       if (wallet.version !== 3 || typeof wallet.id !== 'string' || typeof wallet.name !== 'string' || !Array.isArray(wallet.chains) || !wallet.addresses || !validateMnemonic(wallet.mnemonic, wordlist)) throw Error()
       parseChains(wallet.chains.join(','))
+      if (wallet.policy !== undefined) localRules.parse(wallet.policy)
       if (wallet.chains.some(chain => typeof (chain === 'solana' ? wallet.addresses.solana : wallet.addresses.evm) !== 'string')) throw Error()
     } catch { throw Error('Invalid local wallet file; contents suppressed. Existing files were not changed.') }
     return wallet
   })
 }
-export async function createLocalWallet(name: string, directory = localWalletDirectory(), chains: LocalChain[] = ['base']) {
+export async function createLocalWallet(name: string, directory = localWalletDirectory(), chains: LocalChain[] = ['base'], policy: LocalRules = defaultRules) {
   name = name.trim()
   if (!name || name.length > 64 || /[\u0000-\u001f\u007f-\u009f]/.test(name)) throw Error('Use a wallet name of 1–64 characters without control characters')
   chains = parseChains(chains.join(','))
+  policy = localRules.parse(policy)
   mkdirSync(directory, { recursive: true, mode: 0o700 })
   privatePath(directory, true)
   if (readWallets(directory).some(wallet => wallet.name.toLowerCase() === name.toLowerCase())) throw Error('A local wallet with that name already exists')
@@ -54,7 +57,7 @@ export async function createLocalWallet(name: string, directory = localWalletDir
     ...(chains.some(chain => chain !== 'solana') ? { evm: mnemonicToAccount(mnemonic).address } : {}),
     ...(chains.includes('solana') ? { solana: await deriveLocalAddress(mnemonic) } : {}),
   }
-  const wallet: LocalWallet = { version: 3, id: crypto.randomUUID(), name, chains, addresses, mnemonic, createdAt: new Date().toISOString() }
+  const wallet: LocalWallet = { version: 3, id: crypto.randomUUID(), name, chains, addresses, mnemonic, createdAt: new Date().toISOString(), policy }
   writeFileSync(join(directory, `${wallet.id}.json`), JSON.stringify(wallet), { flag: 'wx', mode: 0o600 })
   return localWalletSummary(wallet)
 }

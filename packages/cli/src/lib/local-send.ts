@@ -11,9 +11,10 @@ import { getBase58Decoder } from '@solana/kit'
 import { buildSolanaTransfer, solanaDevnet, solanaUsdc } from '@agentis-hq/core/solana-transfer'
 import { localNetworks, solanaGenesis, parseChains, type LocalChain } from './local-networks'
 import { deriveSolanaKey, loadLocalWallet, localWalletDirectory, privatePath } from './local-wallet'
+import { reserveLocal, signWithPolicy, settleLocal, releaseUnissued, LocalPolicyError } from './local-policy'
 
 export type LocalSendInput = { wallet: string; chain: string; to: string; amount: string; asset?: string; maxFee?: string; key: string }
-type RecordData = { request: string; wallet: string; chain: LocalChain; to: string; asset: string; amount: string; maxFee: string; status: string; hash?: string; signed?: string; feeAtomic?: string; failure?: { stage: string; code: string } }
+type RecordData = { key?: string; createdAt?: string; request: string; wallet: string; chain: LocalChain; to: string; asset: string; amount: string; maxFee: string; status: string; hash?: string; signed?: string; feeAtomic?: string; failure?: { stage: string; code: string } }
 const tempoFee = (amount: bigint) => ((amount + 999_999_999_999n) / 1_000_000_000_000n) * 1_000_000_000_000n
 const defaults = { base: { asset: 'ETH', fee: '0.0001' }, arc: { asset: 'USDC', fee: '0.01' }, tempo: { asset: 'alphaUSD', fee: '0.01' }, solana: { asset: 'SOL', fee: '0.005' } }
 export function exactAmount(value: string, decimals: number) {
@@ -41,7 +42,7 @@ export function localSendTerms(input: LocalSendInput) {
   try { to = chain === 'solana' ? new PublicKey(input.to).toBase58() : getAddress(input.to) } catch { throw Error('Invalid recipient address for this chain') }
   return { chain, wallet, symbol, asset, amountAtomic, maxFee, maxFeeAtomic, to }
 }
-export async function sendLocalTransfer(input: LocalSendInput) {
+export async function sendLocalTransfer(input: LocalSendInput, confirm: () => Promise<void> = async () => {}) {
   const { chain, wallet, symbol, asset, amountAtomic, maxFee, maxFeeAtomic, to } = localSendTerms(input)
   const directory = join(localWalletDirectory(), 'transactions')
   mkdirSync(directory, { recursive: true, mode: 0o700 }); privatePath(directory, true)
@@ -49,7 +50,7 @@ export async function sendLocalTransfer(input: LocalSendInput) {
   const hash = (value: string) => createHash('sha256').update(value).digest('hex')
   const file = join(directory, `${hash(`${wallet.id}:${input.key}`)}.json`)
   const lock = join(directory, `${hash(`${wallet.id}:${chain}`)}.lock`)
-  let record: RecordData = { request, wallet: wallet.id, chain, to, asset: symbol, amount: input.amount, maxFee, status: 'preparing' }
+  let record: RecordData = { key: input.key, createdAt: new Date().toISOString(), request, wallet: wallet.id, chain, to, asset: symbol, amount: input.amount, maxFee, status: 'preparing' }
   const summary = () => ({ wallet: wallet.name, chainId: localNetworks[chain].chainId, to, amount: record.amount, asset: symbol, status: record.status, transactionHash: record.hash, feeAtomic: record.feeAtomic, key: input.key, ...(record.status === 'unknown' || record.status === 'submitted' ? { note: 'Not settled yet. Run the identical command with the same --key to check; do not send again with a new key.' } : {}) })
   const save = () => {
     const temporary = `${file}.${crypto.randomUUID()}.tmp`
@@ -64,7 +65,11 @@ export async function sendLocalTransfer(input: LocalSendInput) {
         const client = solana()
         if (await client.getGenesisHash() !== solanaGenesis) throw Error('Wrong network')
         const result = await client.getTransaction(record.hash, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 })
-        if (result?.meta) { record.status = result.meta.err ? 'failed' : 'confirmed'; record.feeAtomic = String(result.meta.fee) }
+        if (result?.meta) {
+          record.status = result.meta.err ? 'failed' : 'confirmed'
+          const nativeSent = !result.meta.err && !asset.token && to !== wallet.addresses.solana ? amountAtomic : 0n
+          record.feeAtomic = String(BigInt(result.meta.preBalances[0]!) - BigInt(result.meta.postBalances[0]!) - nativeSent)
+        }
       } else {
         const client = createPublicClient({ chain: localNetworks[chain].chain as Chain, transport: transportFor(chain) })
         if (await client.getChainId() !== localNetworks[chain].chain.id) throw Error('Wrong network')
@@ -73,7 +78,10 @@ export async function sendLocalTransfer(input: LocalSendInput) {
         const fee = result.gasUsed * result.effectiveGasPrice + BigInt((result as unknown as { l1Fee?: bigint }).l1Fee ?? 0n)
         record.feeAtomic = String(chain === 'tempo' ? tempoFee(fee) : fee)
       }
-      if (record.status === 'confirmed' || record.status === 'failed') delete record.signed
+      if (record.status === 'confirmed' || record.status === 'failed') {
+        await settleLocal(wallet.id, input.key, record.status === 'confirmed', record.feeAtomic!)
+        delete record.signed
+      }
       save()
     } catch { /* Unknown submission is not permission to sign or broadcast again. */ }
     return summary()
@@ -95,6 +103,8 @@ export async function sendLocalTransfer(input: LocalSendInput) {
         if (signer.publicKey.toBase58() !== wallet.addresses.solana) throw Error('Address mismatch')
         const client = solana()
         if (await client.getGenesisHash() !== solanaGenesis) throw Error('Wrong network')
+        await reserveLocal(wallet.id, input.key, { chain, asset: symbol, amountAtomic: amountAtomic.toString(), maxFeeAtomic: maxFeeAtomic.toString() })
+        await confirm()
         stage = 'solana-transaction-preparation'
         const latest = await client.getLatestBlockhash()
         const transaction = await buildSolanaTransfer(signer.publicKey.toBase58(), { walletId: wallet.id, action: 'transfer', chainId: solanaDevnet, asset: asset.token ? `spl:${solanaUsdc}` : 'native', to, amountAtomic: amountAtomic.toString(), maxFeeAtomic: maxFeeAtomic.toString() }, latest.blockhash)
@@ -102,7 +112,7 @@ export async function sendLocalTransfer(input: LocalSendInput) {
         const rent = asset.token ? BigInt(await client.getMinimumBalanceForRentExemption(165)) : 0n
         if (fee === null || BigInt(fee) + rent > maxFeeAtomic || BigInt(await client.getBalance(signer.publicKey)) < BigInt(fee) + rent + (asset.token ? 0n : amountAtomic)) throw Error('Insufficient balance or fee cap')
         stage = 'solana-signing'
-        await transaction.sign(signer)
+        await signWithPolicy(wallet.id, input.key, () => transaction.sign(signer))
         const bytes = await transaction.serialize()
         record.hash = getBase58Decoder().decode(transaction.signature!)
         record.signed = Buffer.from(bytes).toString('base64'); record.status = 'unknown'; save()
@@ -112,6 +122,8 @@ export async function sendLocalTransfer(input: LocalSendInput) {
         if (account.address.toLowerCase() !== wallet.addresses.evm?.toLowerCase()) throw Error('Address mismatch')
         const publicClient = createPublicClient({ chain: localNetworks[chain].chain as Chain, transport: transportFor(chain) })
         if (await publicClient.getChainId() !== localNetworks[chain].chain.id) throw Error('Wrong network')
+        await reserveLocal(wallet.id, input.key, { chain, asset: symbol, amountAtomic: amountAtomic.toString(), maxFeeAtomic: maxFeeAtomic.toString() })
+        await confirm()
         const call = asset.token ? { to: asset.token as Hex, value: 0n, data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [to as Hex, amountAtomic] }) } : { to: to as Hex, value: amountAtomic, data: '0x' as Hex }
         let signed: Hex
         stage = 'evm-transaction-preparation'
@@ -120,7 +132,7 @@ export async function sendLocalTransfer(input: LocalSendInput) {
           const prepared = await client.prepareTransactionRequest({ account, nonce: await publicClient.getTransactionCount({ address: account.address, blockTag: 'pending' }), type: 'tempo', calls: [call], feeToken: asset.token as Hex, nonceKey: 0n, validBefore: Math.floor(Date.now() / 1000) + 120 })
           if (tempoFee(prepared.gas * prepared.maxFeePerGas) > maxFeeAtomic) throw Error('Fee cap exceeded')
           stage = 'tempo-signing'
-          signed = await client.signTransaction(prepared)
+          signed = await signWithPolicy(wallet.id, input.key, () => client.signTransaction(prepared))
         } else {
           const client = createWalletClient({ account, chain: localNetworks[chain].chain as Chain, transport: transportFor(chain) })
           const prepared = await client.prepareTransactionRequest({ ...call, account, nonce: await publicClient.getTransactionCount({ address: account.address, blockTag: 'pending' }) })
@@ -130,7 +142,7 @@ export async function sendLocalTransfer(input: LocalSendInput) {
           stage = 'fee-budget-check'
           if (executionFee + l1Fee * 2n > maxFeeAtomic) throw Error('Fee estimate exceeds cap')
           stage = 'evm-signing'
-          signed = await client.signTransaction(prepared)
+          signed = await signWithPolicy(wallet.id, input.key, () => client.signTransaction(prepared))
         }
         if (chain === 'tempo') {
           const envelope = TxEnvelopeTempo.deserialize(signed as `0x76${string}`)
@@ -142,9 +154,11 @@ export async function sendLocalTransfer(input: LocalSendInput) {
       }
     } catch (error) {
       if (!record.hash) {
+        await releaseUnissued(wallet.id, input.key)
         const name = error instanceof Error ? error.name : 'UnknownError'
         record.failure = { stage, code: /^[A-Za-z]+$/.test(name) ? name : 'UnknownError' }
         record.status = 'preparation_failed'; save()
+        if (error instanceof LocalPolicyError) throw error
         throw Error(`Local send preparation failed at ${stage} (${record.failure.code}). Check balance, RPC and fee cap; no transaction was submitted. Journal retained.`)
       }
       // A hash may already be published. Never replace it with another transaction.

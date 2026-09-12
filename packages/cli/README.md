@@ -34,7 +34,7 @@ Login requests expire after ten minutes. A random CLI-only secret binds the one-
 ## Local multichain wallets
 
 ```sh
-# Interactive: name, then ↑/↓ + Space to select chains, Enter to continue.
+# Interactive: name, ↑/↓ + Space to select chains, then USD limits.
 # Base is preselected. No plugins step yet.
 bun packages/cli/src/index.ts wallet create --local
 
@@ -50,9 +50,9 @@ bun packages/cli/src/index.ts wallet send --local --wallet personal --chain base
 
 One name/mnemonic derives a shared EVM address for enabled Base/Arc/Tempo networks (`m/44'/60'/0'/0/0`, Viem) and a separate Solana address (`m/44'/501'/0'/0'`, existing micro-ed25519-hdkey + web3.js). Creation is offline; no Privy or hosted API calls. The exact cyan Agentis banner appears on help/interactive creation, never in JSON results.
 
-Version-3 wallet files remain in `~/.agentis/wallets-v2` (0700 directory / 0600 files). Existing version-2 Solana files are read in place without rewriting their mnemonic/address or enabling new networks. No automatic migration of older encrypted formats. Mnemonics are never printed. **Files are not encrypted; anyone with file access can sign or bypass CLI restrictions.** There is no local agent-vs-owner permission boundary or hosted approval/budget enforcement.
+Version-3 wallet files remain in `~/.agentis/wallets-v2` (0700 directory / 0600 files). Existing version-2 Solana files are read in place without rewriting their mnemonic/address or enabling new networks. No automatic migration of older encrypted formats. Mnemonics are never printed. **Files are not encrypted; anyone with file access can sign or bypass CLI restrictions.** There is no local agent-vs-owner permission boundary. Local policies are CLI safeguards, not hosted authorization.
 
-Supported local sends (testnet only): Base ETH/USDC, Arc native USDC, Tempo alphaUSD, Solana SOL/USDC. RPC URLs use `BASE_SEPOLIA_RPC_URL`, `ARC_TESTNET_RPC_URL`, `TEMPO_TESTNET_RPC_URL`, `SOLANA_DEVNET_RPC_URL` or public defaults; actual EVM chain IDs / Solana genesis are checked before signing. Solana token sends can create the recipient ATA. Funds are sent directly with the local key, not via the backend. Local x402/MPP remains unimplemented; `fetch --local` fails explicitly.
+Supported local sends (testnet only): Base ETH/USDC, Arc native USDC, Tempo alphaUSD, Solana SOL/USDC. RPC URLs use `BASE_SEPOLIA_RPC_URL`, `ARC_TESTNET_RPC_URL`, `TEMPO_TESTNET_RPC_URL`, `SOLANA_DEVNET_RPC_URL` or public defaults; actual EVM chain IDs / Solana genesis are checked before signing. Solana token sends can create the recipient ATA. Funds are sent directly with the local key, not via the backend. Local x402/MPP is available through `fetch --local` (below).
 
 Default fee budgets: Base 0.0001 ETH, Arc 0.01 USDC, Tempo 0.01 alphaUSD, Solana 0.005 SOL; override with `--max-fee`. Base checks estimated execution fees plus a buffer for L1 fees (not a fixed on-chain cap on changing L1 fees). Solana budgets possible ATA rent as well as fees. Tempo uses protocol nonce lane 0 with an explicitly fetched pending nonce; 2D lanes are not allocated. Tempo gas accounting uses 18-decimal protocol USD units, rounded to alphaUSD precision.
 
@@ -62,7 +62,32 @@ Local sends persist signed proof/hash in owner-only `wallets-v2/transactions` jo
 
 Hosted testnet transfers, Base/Arc/Solana testnet USDC x402 and Tempo alphaUSD MPP paid GETs use the common backend. Mainnet, other x402 networks and plugins remain unavailable. Published npm CLI is still the old prototype; use this checkout.
 
-## x402 paid GET
+## Local policies, history and paid GET
+
+```sh
+bun packages/cli/src/index.ts policy show --local --wallet personal
+bun packages/cli/src/index.ts policy set --local --wallet personal
+# No flags opens interactive editing; flags work unattended:
+bun packages/cli/src/index.ts policy set --local --wallet personal --per-transaction 5 --hourly 20 --daily 50 --total 100
+bun packages/cli/src/index.ts policy set --local --wallet personal --pause
+bun packages/cli/src/index.ts policy set --local --wallet personal --resume --daily none
+bun packages/cli/src/index.ts wallet history --local --wallet personal --limit 20
+bun packages/cli/src/index.ts fetch 'https://seller.example/paid' --local --wallet personal --chain base --max-amount 0.01 --key api-request-001
+```
+
+Creation prompts for optional USD caps after chains; the same `--per-transaction`, `--hourly`, `--daily`, `--total` flags work on creation. Blank/`none` means no cap; zero blocks. Limits combine every network of a named wallet, include fees, use rolling hourly/daily windows and a non-resetting total. ETH/SOL/USDC prices come from DefiLlama with the existing freshness/confidence checks; alphaUSD has an explicit testnet $1 valuation. Accounting is bigint USD micros. Missing/stale quotes block new signatures.
+
+Both local sends and paid fetch reserve amount + maximum fees, then recheck current rules and prices immediately before signing. Wallet-wide policy locks coordinate concurrent requests across networks. Confirmed spend uses execution quotes and actual fees; failed transactions charge fees only. Unknown signatures/submissions retain reservations, even outside rolling windows. **`--yes` skips only terminal confirmation, not policy.** No separate approval command, password or biometric flow.
+
+Policies stay in the wallet file; the owner-only `wallets-v2/policies` ledger persists spend/reservations. Existing wallets default to active/uncapped. Tracking starts with this feature: older transactions remain visible in history but are not retroactively USD-priced. History is a compact readable list, newest timestamped entries first; older undated journals say “Older entry”. It shows cached status; reuse the original request/key to reconcile unsettled work. JSON remains opt-in.
+
+Local paid GET uses separate official x402 and MPP adapters: Base/Arc USDC EIP-3009, Solana sponsored USDC partial signing, and Tempo alphaUSD MPP pull credentials. `--max-amount` uses 6-decimal token units; `--max-amount-atomic` is also accepted. Tempo `--max-fee` defaults to 0.01 alphaUSD; `--max-fee-atomic` uses 18-decimal protocol USD. MPP uses its expiring nonce lane, distinct from direct sends' protocol lane 0.
+
+Local credentials/proofs are saved before submission; x402 settlement hashes are saved when headers arrive and checked against exact on-chain payment terms. Missing hashes use nonce/token-account history recovery; no automatic payment resend or expired-proof release. HTTP success and chain settlement are separate. Binary responses are retained; small text/JSON bodies render readably. The shared transport pins public DNS, forbids redirects/embedded credentials and bounds time/body size. Explicit test fixture access requires `AGENTIS_PAID_FETCH_LOCAL_ORIGINS=http://127.0.0.1:3010`; production private-URL exceptions remain disabled.
+
+All four local paid rails returned HTTP 200 with confirmed settlement. `testing/local-policy-check.ts` exercises fee-inclusive caps, concurrency, pause/`--yes`, signing-time rechecks, failure fees, unknown retention and rolling/total semantics without money. HTTP-failure-after-payment and interruption recovery were not live-tested locally. Plugins remain deferred.
+
+## Hosted x402 paid GET
 
 Use `agentis login`, or create an API key on the agent’s dashboard page and set `AGENTIS_TOKEN` privately (never as a CLI argument). Select that agent’s Base wallet from `wallet list`.
 

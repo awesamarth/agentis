@@ -44,12 +44,18 @@
     "@agentis-hq/sdk": "^0.2.0",
     "@clack/prompts": "^1.8.0",
     "@scure/bip39": "^2.2.0",
+    "@solana-program/compute-budget": "0.11.0",
     "@solana-program/token": "0.11.0",
     "@solana/kit": "6.8.0",
     "@solana/web3.js": "3.0.0-rc.3",
+    "@x402/core": "2.25.0",
+    "@x402/evm": "2.25.0",
+    "@x402/svm": "2.25.0",
     "micro-ed25519-hdkey": "^0.1.2",
+    "mppx": "0.9.3",
     "ox": "0.14.15",
-    "viem": "2.56.3"
+    "viem": "2.56.3",
+    "zod": "4.5.4"
   },
   "devDependencies": {
     "@types/bun": "latest",

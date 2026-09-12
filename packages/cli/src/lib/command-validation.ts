@@ -4,7 +4,8 @@ const commandTree: Record<string, readonly string[] | null> = {
   whoami: null,
   capabilities: null,
   fetch: null,
-  wallet: ['create', 'list', 'send'],
+  wallet: ['create', 'list', 'send', 'history'],
+  policy: ['show', 'set'],
   operations: ['create', 'list', 'get', 'wait', 'approve', 'reject'],
 }
 

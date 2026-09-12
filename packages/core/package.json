@@ -18,6 +18,7 @@
       "require": "./dist/operations.cjs"
     },
     "./solana-transfer": { "types": "./dist/solana-transfer.d.ts", "import": "./dist/solana-transfer.js", "require": "./dist/solana-transfer.cjs" },
+    "./payment-http": { "types": "./dist/payment-http.d.ts", "import": "./dist/payment-http.js", "require": "./dist/payment-http.cjs" },
     "./package.json": "./package.json"
   },
   "files": [

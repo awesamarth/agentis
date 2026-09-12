@@ -32,15 +32,23 @@ function fields(value: unknown, depth = 0): string {
     return `${pad}${text(label(key))}: ${text(typeof item === 'boolean' ? item ? 'yes' : 'no' : item)}`
   }).join('\n')
 }
-export function formatOutput(command: string, output: unknown): string {
+export function formatOutput(command: string, output: unknown, color = Boolean(process.stdout.isTTY) && process.env.NO_COLOR === undefined): string {
   if (output === null || output === undefined) return 'Done.'
   const record = output as Record<string, unknown>
   if (typeof record.message === 'string') return text(record.message)
   if (command === 'whoami' || command === 'login') {
     const agents = record.agents as { name: string; chains: { name: string; id: string }[] }[] | undefined
     if (!agents?.length) return 'Not logged in. Run agentis login.'
-    const list = agents.map(agent => `${text(agent.name)}\n  Chains:\n${agent.chains.map(chain => `    ${text(chain.name)} (${text(chain.id)})`).join('\n')}`).join('\n\n')
-    return command === 'login' ? `Connected.\n\n${list}` : list
+    const style = (value: string, codes: string) => color ? `\x1b[${codes}m${value}\x1b[0m` : value
+    return agents.map(agent => `${style(text(agent.name), '1;38;5;117')}\n${style('Chains:', '1')}\n${agent.chains.map(chain => `${text(chain.name)} (${text(chain.id)})`).join(',\n')}`).join('\n\n')
+  }
+  if (command === 'history') {
+    const transactions = record.transactions as { date: string | null; chain: string; amount: string; asset: string; status: string; to?: string; transaction?: string; httpStatus?: number; key?: string }[]
+    if (!transactions.length) return `No local transactions for ${text(record.wallet)}.`
+    return `${text(record.wallet)} — local history\n\n${transactions.map(tx => {
+      const date = tx.date ? new Date(tx.date).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : 'Older entry'
+      return `${date} · ${text(tx.chain)} · ${text(tx.amount)} ${text(tx.asset)} · ${text(tx.status.replaceAll('_', ' '))}${tx.httpStatus ? ` · HTTP ${tx.httpStatus}` : ''}\n${tx.transaction ? text(tx.transaction) : `To: ${text(tx.to ?? 'Not prepared')}`}${tx.key && tx.status === 'unknown' ? `\nCheck with original command and --key ${text(tx.key)}; do not resend.` : ''}`
+    }).join('\n\n')}`
   }
   if (Array.isArray(output) && !output.length) return 'No results.'
   return fields(output)

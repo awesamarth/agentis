@@ -6,8 +6,13 @@ import { login, logout, sessions, whoami } from './lib/session'
 import { createLocalWallet, listLocalWallets } from './lib/local-wallet'
 import { validateCommand } from './lib/command-validation'
 import { formatOutput } from './lib/output'
-import { banner, localCreationOptions, confirmLocalSend } from './lib/local-prompts'
-import { localSendTerms, sendLocalTransfer } from './lib/local-send'
+import { banner, localCreationOptions, confirmLocalSend, promptLocalRules } from './lib/local-prompts'
+import { localSendTerms, sendLocalTransfer, exactAmount } from './lib/local-send'
+import { defaultRules, ruleLimit, type LocalRules } from './lib/local-rules'
+import { showLocalPolicy, setLocalPolicy } from './lib/local-policy'
+import { loadLocalWallet } from './lib/local-wallet'
+import { localHistory } from './lib/local-history'
+import { localPaidFetch } from './lib/local-paid'
 
 const args = process.argv.slice(2)
 async function main() {
@@ -17,6 +22,7 @@ async function main() {
     wallet: { type: 'string' }, 'max-amount-atomic': { type: 'string' }, 'max-fee-atomic': { type: 'string' },
     file: { type: 'string' }, key: { type: 'string' }, hash: { type: 'string' }, json: { type: 'boolean' },
     chains: { type: 'string' }, chain: { type: 'string' }, to: { type: 'string' }, amount: { type: 'string' }, asset: { type: 'string' }, 'max-fee': { type: 'string' }, yes: { type: 'boolean' },
+    'max-amount': { type: 'string' }, 'per-transaction': { type: 'string' }, hourly: { type: 'string' }, daily: { type: 'string' }, total: { type: 'string' }, pause: { type: 'boolean' }, resume: { type: 'boolean' }, limit: { type: 'string' },
   } })
   const [command, subcommand, id] = positionals
   if (values.help && ['login', 'logout', 'whoami'].includes(command ?? '')) {
@@ -30,6 +36,12 @@ async function main() {
   logout
   whoami
   wallet list [--local]
+  wallet history --local --wallet <name-or-id> [--limit 20]
+  policy show|set --local --wallet <name-or-id>
+    [--per-transaction <USD>] [--hourly <USD>] [--daily <USD>] [--total <USD>] [--pause|--resume]
+    Use none to remove a cap; zero blocks spending. No flags on set opens interactive editing.
+  fetch <url> --local --wallet <name-or-id> --chain <chain> --max-amount <decimal> --key <request-key>
+    [--max-fee <decimal>] [--yes]  Local x402 (Base/Arc/Solana USDC) / Tempo MPP alphaUSD.
   wallet create --local [--name <name>] [--chains base,arc,tempo,solana]
     Interactive name + chain selection; Base selected by default. Flags work without a terminal.
   wallet send --local --wallet <name-or-id> --chain <chain> --to <address> --amount <decimal> --key <request-key>
@@ -52,22 +64,46 @@ Hosted legacy money commands are unavailable during migration. Local wallets use
 filesystem protection, not encrypted custody. No transaction can target mainnet yet.`)
     return
   }
-  if (values.local && command !== 'wallet') throw Error('--local currently supports wallet create/list/send only; local x402/MPP is not implemented yet')
+  if (values.local && !['wallet', 'fetch', 'policy'].includes(command!)) throw Error('--local supports wallet, fetch and policy commands')
+  if (command === 'policy' && !values.local) throw Error('Use policy --local for local wallets; hosted rules are edited in the dashboard')
+  if (values.pause && values.resume) throw Error('Choose --pause or --resume, not both')
+  const policyChanges: Partial<LocalRules> = {}
+  for (const [flag, field] of [['per-transaction', 'perTransaction'], ['hourly', 'hourly'], ['daily', 'daily'], ['total', 'total']] as const) {
+    const limit = ruleLimit(values[flag]); if (limit !== undefined) policyChanges[field] = limit
+  }
+  if (values.pause || values.resume) policyChanges.paused = Boolean(values.pause)
   if (command === 'wallet' && subcommand === 'send' && !values.local) throw Error('Use wallet send --local; hosted transfers use operations create')
   let output: unknown
   if (command === 'login') output = await login(values['no-browser'], values.json)
   else if (command === 'logout') output = logout()
   else if (command === 'whoami') output = whoami()
-  else if (command === 'wallet' && values.local) {
+  else if (command === 'policy') {
+    if (!values.wallet) throw Error('--wallet required')
+    if (subcommand === 'show') output = await showLocalPolicy(values.wallet)
+    else {
+      let changes = policyChanges
+      if (!Object.keys(changes).length) {
+        if (values.json || !process.stdin.isTTY || !process.stdout.isTTY) throw Error('Supply policy flags without an interactive terminal')
+        changes = await promptLocalRules(loadLocalWallet(values.wallet).policy ?? defaultRules)
+      }
+      output = await setLocalPolicy(values.wallet, changes)
+    }
+  } else if (command === 'fetch' && values.local) {
+    if (!subcommand || !values.wallet || !values.chain || !values.key || (!values['max-amount'] && !values['max-amount-atomic'])) throw Error('URL, --wallet, --chain, --max-amount and --key required')
+    output = await localPaidFetch({ wallet: values.wallet, chain: values.chain, url: subcommand, key: values.key, maxAmountAtomic: values['max-amount-atomic'] ?? exactAmount(values['max-amount']!, 6).toString(), maxFeeAtomic: values['max-fee-atomic'] ?? exactAmount(values['max-fee'] ?? '0.01', 18).toString() }, summary => confirmLocalSend(summary, values.yes ?? false, values.json ?? false))
+  } else if (command === 'wallet' && values.local) {
     if (subcommand === 'create') {
-      const options = await localCreationOptions(values.name, values.chains, values.json)
-      output = await createLocalWallet(options.name, undefined, options.chains)
+      const options = await localCreationOptions(values.name, values.chains, values.json, policyChanges)
+      output = await createLocalWallet(options.name, undefined, options.chains, options.policy)
     } else if (subcommand === 'send') {
       if (!values.wallet || !values.chain || !values.to || !values.amount || !values.key) throw Error('--wallet, --chain, --to, --amount and --key required; amounts are decimal token units')
       const input = { wallet: values.wallet, chain: values.chain, to: values.to, amount: values.amount, key: values.key, asset: values.asset, maxFee: values['max-fee'] }
       const terms = localSendTerms(input)
-      await confirmLocalSend(`Send ${values.amount} ${terms.symbol} from ${terms.wallet.name} to ${terms.to} on ${terms.chain} testnet? Fee budget: ${terms.maxFee} ${terms.chain === 'base' ? 'ETH' : terms.chain === 'solana' ? 'SOL' : terms.chain === 'tempo' ? 'alphaUSD' : 'USDC'}.`, values.yes ?? false, values.json ?? false)
-      output = await sendLocalTransfer(input)
+      const confirm = () => confirmLocalSend(`Send ${values.amount} ${terms.symbol} from ${terms.wallet.name} to ${terms.to} on ${terms.chain} testnet? Fee budget: ${terms.maxFee} ${terms.chain === 'base' ? 'ETH' : terms.chain === 'solana' ? 'SOL' : terms.chain === 'tempo' ? 'alphaUSD' : 'USDC'}.`, values.yes ?? false, values.json ?? false)
+      output = await sendLocalTransfer(input, confirm)
+    } else if (subcommand === 'history') {
+      if (!values.wallet) throw Error('--wallet required')
+      output = localHistory(values.wallet, Number(values.limit ?? '20'))
     } else output = listLocalWallets()
   } else {
     const linked = sessions(values.agent)
@@ -112,6 +148,6 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
       }
     } else throw new Error('Hosted creation and unmigrated capabilities are unavailable; use the wallet-link API')
   }
-  console.log(values.json ? JSON.stringify(output, null, 2) : formatOutput(command!, output))
+  console.log(values.json ? JSON.stringify(output, null, 2) : formatOutput(command === 'wallet' && subcommand === 'history' ? 'history' : command!, output))
 }
 main().catch(error => { console.error(error instanceof Error ? error.message : 'Command failed'); process.exitCode = 1 })
