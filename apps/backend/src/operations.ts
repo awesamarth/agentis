@@ -225,8 +225,9 @@ export class OperationService {
     return (await this.db.select(operationSummaryColumns).from(operations).where(and(eq(operations.ownerId, principal.ownerId), inArray(operations.walletId, accessible.map(wallet => wallet.id)))).orderBy(desc(operations.createdAt), desc(operations.id)).limit(100)).map(row => this.view(row))
   }
 
-  async list(principal: Principal) {
-    const filter = principal.kind === 'owner' ? eq(operations.ownerId, principal.ownerId) : and(eq(operations.ownerId, principal.ownerId), eq(operations.grantId, principal.grantId))
+  async list(principal: Principal, agentId?: string) {
+    const principalScope = principal.kind === 'owner' ? eq(operations.ownerId, principal.ownerId) : and(eq(operations.ownerId, principal.ownerId), eq(operations.grantId, principal.grantId))
+    const filter = and(principalScope, agentId ? inArray(operations.walletId, this.db.select({ id: wallets.id }).from(wallets).where(and(eq(wallets.ownerId, principal.ownerId), eq(wallets.agentId, agentId)))) : undefined)
     return (await this.db.select(operationSummaryColumns).from(operations).where(filter).orderBy(desc(eq(operations.status, 'pending_approval')), desc(operations.createdAt), desc(operations.id)).limit(100)).map(row => this.view(row))
   }
 

@@ -16,6 +16,7 @@ function fields(value: unknown, depth = 0): string {
   if (typeof value !== 'object') return pad + text(typeof value === 'boolean' ? value ? 'yes' : 'no' : value)
   if (Array.isArray(value)) return value.length ? value.map(item => fields(item, depth)).join('\n\n') : `${pad}None`
   return Object.entries(value).filter(([, item]) => item !== null && item !== undefined).map(([key, item]) => {
+    if (key === 'status' && item === 'pending_approval') return `${pad}Status: Approval required`
     if (key === 'note' && typeof item === 'string') return `\n${pad}Note: ${text(item)}\n`
     if (key === 'chainId' && typeof item === 'string') return `${pad}Chain: ${chainLabel(item)}`
     if (key === 'chainIds' && Array.isArray(item)) return `${pad}Chains: ${item.map(chainLabel).join(', ')}`

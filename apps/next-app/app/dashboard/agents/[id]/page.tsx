@@ -11,6 +11,7 @@ import WalletAccess from '@/components/WalletAccess'
 import Onboarding, { WalletAddress } from '@/components/Onboarding'
 import AgentDangerZone from '@/components/AgentDangerZone'
 import AgentBalance from '@/components/AgentBalance'
+import Operations from '@/components/Operations'
 
 export default function AgentPage() {
   const { id } = useParams<{ id: string }>()
@@ -37,6 +38,7 @@ function HostedAgent({ id }: { id: string }) {
     <header className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="break-words font-serif text-3xl font-bold">{agent.name}</h1><p className="mt-2 font-mono text-xs text-ink-muted">{agent.mode === 'paused' ? 'Paused' : agent.mode === 'automatic' ? 'Auto-approve within limits' : 'Approval required'}</p></div><Onboarding agentId={id} /></header>
     <AgentBalance agentId={id} breakdown />
     <section><h2 className="mb-4 font-mono text-[0.6rem] uppercase tracking-widest text-ink-muted">Wallets</h2><div className="grid gap-4 sm:grid-cols-2">{wallets.data?.filter(w => w.agentId === id).map(wallet => <div key={wallet.id} className="min-w-0 border border-beige-darker bg-white p-5"><p className="mb-3 font-mono text-xs text-ink-muted">{networks.data?.networks.find(n => n.chainId === wallet.chainId)?.name}{!wallet.enabled && ' · Disabled'}</p><WalletAddress address={wallet.address} /></div>)}</div></section>
+    <Operations agentId={id} />
     <WalletAccess key={id} agentId={id} />
     <AgentDangerZone agent={agent} wallets={wallets.data?.filter(wallet => wallet.agentId === id) ?? []} networks={networks.data?.networks ?? []} />
   </>

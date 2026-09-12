@@ -7,6 +7,7 @@ import { createLocalWallet, listLocalWallets } from './lib/local-wallet'
 import { validateCommand } from './lib/command-validation'
 import { formatOutput } from './lib/output'
 import { walletList } from './lib/wallet-list'
+import { sendHostedTransfer } from './lib/hosted-send'
 import { hostedPolicy, hostedHistory } from './lib/hosted-views'
 import { banner, localCreationOptions, confirmLocalSend, promptLocalRules } from './lib/local-prompts'
 import { localSendTerms, sendLocalTransfer, exactAmount } from './lib/local-send'
@@ -48,9 +49,10 @@ async function main() {
     [--max-fee <decimal>] [--yes]  Local x402 (Base/Arc/Solana USDC) / Tempo MPP alphaUSD.
   wallet create --local [--name <name>] [--chains base,arc,tempo,solana]
     Interactive name + chain selection; Base selected by default. Flags work without a terminal.
-  wallet send --local --wallet <name-or-id> --chain <chain> --to <address> --amount <decimal> --key <request-key>
+  wallet send [--hosted | --local] --wallet <name-or-id> --chain <chain> --to <address> --amount <decimal> --key <request-key>
     [--asset ETH|SOL|USDC|alphaUSD] [--max-fee <decimal>] [--yes]
-    Testnets only. Native asset by default (alphaUSD on Tempo). --yes skips user confirmation.
+    Hosted by default: ask mode returns a dashboard approval link; automatic executes within policy.
+    Testnets only. Native asset by default (alphaUSD on Tempo). --yes skips local confirmation only.
     Reuse identical terms and --key after uncertainty: only the receipt is checked, never a resend.
   fetch <url> --wallet <wallet-id> --max-amount-atomic <cap> --key <idempotency-key>
     Base/Arc/Solana testnet USDC x402 or Tempo alphaUSD MPP GET; Tempo also requires --max-fee-atomic (18-decimal protocol USD units).
@@ -69,7 +71,7 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
     return
   }
   if (values.local && values.hosted) throw Error('Choose --local or --hosted, not both')
-  if (values.hosted && !((command === 'wallet' && ['list', 'history'].includes(subcommand!)) || (command === 'policy' && subcommand === 'show'))) throw Error('--hosted supports wallet list/history and policy show')
+  if (values.hosted && !((command === 'wallet' && ['list', 'history', 'send'].includes(subcommand!)) || (command === 'policy' && subcommand === 'show'))) throw Error('--hosted supports wallet list/history/send and policy show')
   if (values.local && !['wallet', 'fetch', 'policy'].includes(command!)) throw Error('--local supports wallet, fetch and policy commands')
   if (command === 'policy' && subcommand === 'set' && !values.local) throw Error('Hosted rules are edited in the dashboard; policy set requires --local')
   if (values.pause && values.resume) throw Error('Choose --pause or --resume, not both')
@@ -78,11 +80,15 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
     const limit = ruleLimit(values[flag]); if (limit !== undefined) policyChanges[field] = limit
   }
   if (values.pause || values.resume) policyChanges.paused = Boolean(values.pause)
-  if (command === 'wallet' && subcommand === 'send' && !values.local) throw Error('Use wallet send --local; hosted transfers use operations create')
+
   let output: unknown
   if (command === 'login') output = await login(values['no-browser'], values.json)
   else if (command === 'logout') output = logout()
   else if (command === 'whoami') output = whoami()
+  else if (command === 'wallet' && subcommand === 'send' && !values.local) {
+    if (!values.wallet || !values.chain || !values.to || !values.amount || !values.key) throw Error('--wallet, --chain, --to, --amount and --key required; amounts are decimal token units')
+    output = await sendHostedTransfer({ wallet: values.wallet, chain: values.chain, to: values.to, amount: values.amount, key: values.key, asset: values.asset, maxFee: values['max-fee'] }, values.agent)
+  }
   else if (command === 'policy' && !values.local) output = await hostedPolicy(values.agent, values.wallet)
   else if (command === 'wallet' && subcommand === 'history' && !values.local) output = await hostedHistory(values.agent, values.wallet, Number(values.limit ?? '20'))
   else if (command === 'policy') {

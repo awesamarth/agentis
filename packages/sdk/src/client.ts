@@ -84,7 +84,7 @@ export class AgentisClient {
   }
   operations = {
     create: (input: OperationInput, options: { idempotencyKey: string }) => this.request<Operation>('/operations', 'POST', input, { 'Idempotency-Key': options.idempotencyKey }),
-    list: () => this.request<Operation[]>('/operations'),
+    list: (agentId?: string) => this.request<Operation[]>(`/operations${agentId ? `?agentId=${encodeURIComponent(agentId)}` : ''}`),
     get: (id: string, signal?: AbortSignal) => this.request<Operation>(`/operations/${encodeURIComponent(id)}`, 'GET', undefined, {}, signal),
     authorization: (id: string) => this.request<AuthorizationRequest>(`/operations/${encodeURIComponent(id)}/authorization`),
     approve: (id: string, operationHash: string, signature?: string) => this.request<Operation>(`/operations/${encodeURIComponent(id)}/approve`, 'POST', { operationHash, ...(signature ? { signature } : {}) }),

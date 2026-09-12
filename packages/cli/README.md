@@ -64,6 +64,14 @@ Hosted testnet transfers, Base/Arc/Solana testnet USDC x402 and Tempo alphaUSD M
 
 `wallet list` shows both hosted and local wallets; `--local` or `--hosted` filters to one type (mutually exclusive). Hosted entries include only enabled wallets. Without a login, the default lists local wallets and prints a hosted-login notice to stderr; `--hosted` requires authentication. API/auth errors are not silently hidden. `--json` returns `[{name, custody, agentId?, wallets: [{walletId, chainId, address}]}]`, without internal policy/setup fields. Local network entries share their named wallet's ID. Human output starts with a blank line and uses bold cyan names, explicit Local/Hosted labels, bold chain headings and two blank lines after each wallet/agent block.
 
+## Hosted sends
+
+```sh
+bun packages/cli/src/index.ts wallet send --hosted --wallet research-agent --chain base --asset USDC --amount 0.001 --to <address> --key <unique-request-key>
+```
+
+Hosted is the default unless `--local` is supplied. Use an agent name/ID or wallet ID plus a chain; ambiguous or inaccessible selections fail. Amounts and optional `--max-fee` are decimal token units, using the same supported assets/default fee budgets as local sends. Ask mode returns **Approval required** and the dashboard approval URL; no owner token copying is needed. Automatic mode uses the existing backend execution queue and waits for the result. `--yes` cannot bypass hosted approval or policy. Reuse identical terms/key after uncertainty; do not submit under a new key. `operationId` identifies the payment request, not the wallet.
+
 ## Hosted policy and history
 
 ```sh

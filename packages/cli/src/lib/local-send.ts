@@ -23,13 +23,11 @@ export function exactAmount(value: string, decimals: number) {
   if (amount <= 0n) throw Error('Amount must be positive')
   return amount
 }
-export function localSendTerms(input: LocalSendInput) {
+export function transferTerms(input: LocalSendInput) {
   if (!input.key?.trim() || input.key.length > 200) throw Error('--key is required (1–200 characters); reuse it to check an uncertain send, never choose a new key blindly')
   const chains = parseChains(input.chain)
   if (chains.length !== 1) throw Error('Choose exactly one --chain for a send')
   const chain = chains[0]!
-  const wallet = loadLocalWallet(input.wallet)
-  if (!wallet.chains.includes(chain)) throw Error('That chain is not enabled on this local wallet')
   const assets = localNetworks[chain].assets as Record<string, { decimals: number; token: string | null }>
   const symbol = Object.keys(assets).find(key => key.toLowerCase() === (input.asset ?? defaults[chain].asset).toLowerCase())
   if (!symbol) throw Error(`Supported assets on ${chain}: ${Object.keys(assets).join(', ')}`)
@@ -40,7 +38,13 @@ export function localSendTerms(input: LocalSendInput) {
   const maxFeeAtomic = exactAmount(maxFee, chain === 'solana' ? 9 : 18)
   let to: string
   try { to = chain === 'solana' ? new PublicKey(input.to).toBase58() : getAddress(input.to) } catch { throw Error('Invalid recipient address for this chain') }
-  return { chain, wallet, symbol, asset, amountAtomic, maxFee, maxFeeAtomic, to }
+  return { chain, symbol, asset, amountAtomic, maxFee, maxFeeAtomic, to }
+}
+export function localSendTerms(input: LocalSendInput) {
+  const terms = transferTerms(input)
+  const wallet = loadLocalWallet(input.wallet)
+  if (!wallet.chains.includes(terms.chain)) throw Error('That chain is not enabled on this local wallet')
+  return { ...terms, wallet }
 }
 export async function sendLocalTransfer(input: LocalSendInput, confirm: () => Promise<void> = async () => {}) {
   const { chain, wallet, symbol, asset, amountAtomic, maxFee, maxFeeAtomic, to } = localSendTerms(input)
