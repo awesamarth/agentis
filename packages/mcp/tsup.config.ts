@@ -6,7 +6,7 @@ export default defineConfig({
   target: 'es2022',
   platform: 'node',
   clean: true,
-  dts: false,
+  dts: true,
   splitting: false,
   sourcemap: false,
 })

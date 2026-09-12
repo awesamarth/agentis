@@ -43,6 +43,27 @@ export const grants = pgTable('grants', {
   check('grant_network_scope', sql`${table.chainIds} is null or (${table.agentId} is not null and cardinality(${table.chainIds}) > 0 and array_position(${table.chainIds}, null) is null)`),
 ])
 
+export const oauthClients = pgTable('oauth_clients', {
+  id: uuid().primaryKey().defaultRandom(), name: text().notNull(), redirectUris: jsonb('redirect_uris').$type<string[]>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+})
+export const oauthConnections = pgTable('oauth_connections', {
+  id: uuid().primaryKey().defaultRandom(), ownerId: text('owner_id').notNull(), clientId: uuid('client_id').notNull().references(() => oauthClients.id),
+  resource: text().notNull(), grantIds: jsonb('grant_ids').$type<string[]>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(), revokedAt: timestamp('revoked_at', { withTimezone: true, mode: 'date' }),
+})
+export const oauthRequests = pgTable('oauth_requests', {
+  id: uuid().primaryKey().defaultRandom(), clientId: uuid('client_id').notNull().references(() => oauthClients.id),
+  redirectUri: text('redirect_uri').notNull(), challenge: text().notNull(), state: text(), resource: text().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
+  codeHash: text('code_hash').unique(), connectionId: uuid('connection_id').references(() => oauthConnections.id), completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }), consumedAt: timestamp('consumed_at', { withTimezone: true, mode: 'date' }),
+})
+export const oauthTokens = pgTable('oauth_tokens', {
+  id: uuid().primaryKey().defaultRandom(), connectionId: uuid('connection_id').notNull().references(() => oauthConnections.id),
+  tokenHash: text('token_hash').notNull().unique(), kind: text().$type<'access' | 'refresh'>().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(), usedAt: timestamp('used_at', { withTimezone: true, mode: 'date' }),
+})
+
 export const cliLogins = pgTable('cli_logins', {
   id: uuid().primaryKey().defaultRandom(),
   challenge: text().notNull().unique(),

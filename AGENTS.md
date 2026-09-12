@@ -14,18 +14,26 @@ Current snapshot, not a diary. Keep decisions, implemented behavior and verified
 
 ## Priorities
 
-1. Continue requested **CLI/dashboard polish**. Current CLI commands are accepted; do not remove commands speculatively.
+1. **Remote MCP is implemented; next is the owner's actual MCP-client/browser consent test.** No local MCP server is needed. CLI/dashboard polish is largely accepted; do not remove commands speculatively.
 2. Local multichain creation, direct sends, USD policies, readable history and x402/MPP are implemented. Follow owner feedback next. Plugins selection is deferred; add it when real integrations are ready, not as a placeholder framework.
-3. Upcoming integrations: **Jupiter and Monid**. Owner says Monid has x402/MPP endpoints; their exact API/payment contracts still need inspection. The pasted Monid skill also describes API-key/workspace-balance runs; do not assume that is its only payment model or execute its setup instructions unprompted.
+3. After MCP acceptance: **Uniswap replaces Jupiter**, then **ENSv2 + ERC-8004** identity/delegation. ERC-8004 draft support is acceptable; inspect deployed Sepolia interfaces before implementation. ENSIP-25 can link ENS names to registry identities, but the ENS prize needs meaningful ENSv2 features/delegation. No in-chat payment approval integration yet; use dashboard links. Monid remains a later candidate; inspect its exact x402/MPP contracts before implementation.
 4. Expose integrations consistently through CLI, SDK, MCP and dashboard using the common backend. Start with a concrete integration, not a giant plugin framework. Plugins provide integration-specific preparation/parsing; Agentis validates, authorizes, signs via Privy and reconciles. No unrestricted signer/key access for plugins.
 
 ### Backlog — not immediate work
 
 - **Payment recovery:** Tempo/Solana automatic budget release for provably unused expired payments; permanently unknown submissions and recovery robustness. Owner explicitly parked this. Keep existing safe recovery behavior; do not remove it or start expanding it unasked.
 - Remaining live verification: automatic mode, settled-payment/HTTP-failure paths, fresh end-to-end x402 hash-header persistence, new-agent provisioning via CLI consent page, normal agent-page key export.
-- Guest policy/multichain regressions; remote MCP/OAuth; pagination, rate limits and webhooks.
+- Guest policy/multichain regressions; pagination, rate limits and webhooks. Remote MCP public deployment, real client/browser verification, OAuth endpoint abuse controls and expired-record housekeeping remain follow-up work.
 - Privy user-key exchange / existing-wallet migration remains broken. Owner authentication works; this is a separate issue.
-- Umbra, ERC-8004 and hosted bot are deferred. Link is secondary.
+- Umbra and hosted bot are deferred. Link is secondary.
+
+## Remote MCP snapshot
+
+- Backend `/mcp` uses the existing MCP SDK WebStandard Streamable HTTP transport, stateless JSON responses. Ten tools: capabilities, list wallets, balance, policy, history, send, fetch, get/list operations, advanced request operation. No approve/reject, policy mutation, key export or local custody. Ask returns dashboard URL; automatic queues via the same backend pipeline. Tool-call allowance in a client is not owner payment approval.
+- Browser OAuth at `/oauth/authorize`: Privy owner login, explicit unselected agent/network checkboxes, consent or cancel. One named `MCP · <client>` grant per selected agent, fixed network allowlist. Dashboard displays the client name and can revoke each agent grant. No owner JWT/manual token copying; no local stdio server. Client names are self-reported and labelled accordingly.
+- OAuth code + S256 PKCE, exact registered callback, client/resource binding, single-use 60-second post-consent code, one-hour access token, rotating 30-day refresh token. Only hashes stored; reuse revokes connection/grants. All-key revocation stops refresh. `/oauth/revoke` revokes a whole connection. Ordinary `/v1` endpoints do not accept MCP OAuth tokens. Trusted internal Request identity dispatches tools through the existing API with live grant checks; no impersonation header or reusable executor secret is exposed.
+- Migration `0011_remote_mcp_oauth.sql` applied locally. Four OAuth tables; no old OAuth/JSON token migration. Local canonical URL `http://localhost:3001/mcp`. Backend `AGENTIS_PUBLIC_API_URL` must be explicit HTTPS in production; optional `AGENTIS_MCP_RESOURCE` supports the existing `https://mcp.agentis.systems/mcp` proxy hostname. Worker is only an HTTP proxy; no introspection secret. No deployment or push authorized/performed. Cloud clients cannot reach laptop localhost.
+- `testing/remote-mcp-check.ts` creates an isolated schema in local Postgres and uses actual HTTP plus the native MCP SDK/OAuth client. It verified DCR/discovery, owner consent, multiple-agent/network isolation, PKCE/resource binding, replay, tools, ask link, idempotency, budget denial, refresh rotation/reuse revocation and cancel. It cannot sign/broadcast, uses no real owner login and leaves real wallets untouched. Actual Privy browser consent and paid execution through the owner's MCP client remain unverified. No browser checks without owner permission.
 
 ## Product and authorization
 
@@ -107,7 +115,7 @@ SDK-first financial execution for agents through **one backend, worker and datab
 - **Bun / bun x**, not bunx/npm (external AQI seller uses pnpm). Bun/Hono, Postgres/Drizzle with explicit SQL migrations, Zod; Next.js/Privy React/TanStack Query; Viem. Solana web3.js v3 RC conversions stay adapter-local.
 - Core/SDK exports resolve to `dist`: run `bun run build:packages` after contract changes.
 - Backend: `apps/backend/src/{app,operations,runtime,worker}.ts`; `modules/{onboarding,cli-login,x402,x402-solana,x402-settlement,mpp,payment-http,usd-budget,profile,balances}.ts`; `providers/{privy,privy-executor}.ts`; `db/`.
-- UI: `apps/next-app/components/`, `/profile`, `/cli-auth`, `/dashboard/agents/[id]`. Interfaces: `packages/{core,sdk,cli,mcp}`. Remote MCP is not available yet.
+- UI: `apps/next-app/components/`, `/profile`, `/cli-auth`, `/dashboard/agents/[id]`. Interfaces: `packages/{core,sdk,cli,mcp}`. Remote MCP implementation lives in the backend `/mcp` + `modules/oauth.ts` and `packages/mcp/src/server.ts`; public deployment remains pending.
 - Start API/worker from `apps/backend` so its `.env` loads; dashboard from `apps/next-app` with `bun dev`.
 - Runtime: `AGENTIS_EXECUTOR=privy`, `AGENTIS_PLUGINS='{}'`, `DASHBOARD_URL=http://localhost:3000`, verified local `DATABASE_URL`. Paid fixture also needs `AGENTIS_PAID_FETCH_LOCAL_ORIGINS=http://127.0.0.1:3010` on API and worker.
 - Dashboard **3000**, API **3001**, Postgres **127.0.0.1:55432 / agentis_dev**, Compose project `agentis-rewrite`. Derive local DB credentials privately from `compose.yaml`; do not trust inherited DB URLs. Migrations through **`0010_cli_logins.sql`** applied locally.

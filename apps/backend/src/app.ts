@@ -1,4 +1,7 @@
 import { Hono } from 'hono'
+import { AgentisClient } from '@agentis-hq/sdk'
+import { createAgentisMcpServer, WebStandardStreamableHTTPServerTransport } from '@agentis-hq/mcp'
+import { remoteOAuth } from './modules/oauth'
 import { cors } from 'hono/cors'
 import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
@@ -25,9 +28,20 @@ export type Identity = {
 }
 const id = z.string().uuid()
 export function createApp(service: OperationService, identity: Identity, origins: string[]) {
-  const app = new Hono<{ Variables: { principal: Principal } }>()
+  const app = new Hono<{ Variables: { principal: Principal; delegated?: Principal } }>()
+  const issuer = (process.env.AGENTIS_PUBLIC_API_URL ?? 'http://localhost:3001').replace(/\/$/, '')
+  const oauth = remoteOAuth(service, issuer)
+  // Only this process can associate a Request object with a delegated principal.
+  // No public header/token can select or forge an internal delegation.
+  const delegatedRequests = new WeakMap<Request, Principal>()
+  app.use('*', async (c, next) => {
+    const delegated = delegatedRequests.get(c.req.raw)
+    delegatedRequests.delete(c.req.raw)
+    if (delegated) c.set('delegated', delegated)
+    await next()
+  })
   app.use('*', bodyLimit({ maxSize: 32 * 1024 }))
-  app.use('*', cors({ origin: origins, allowHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key'], allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'] }))
+  app.use('*', cors({ origin: (origin, c) => c.req.path === '/mcp' || c.req.path.startsWith('/oauth/') || c.req.path.startsWith('/.well-known/') ? '*' : origins.includes(origin) ? origin : '', allowHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'MCP-Protocol-Version', 'Last-Event-ID'], exposeHeaders: ['WWW-Authenticate', 'MCP-Protocol-Version'], allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'] }))
   app.use('*', async (c, next) => { c.header('Cache-Control', 'no-store'); await next() })
   app.onError((error, c) => {
     if (error instanceof ApiError) return c.json({ error: { code: error.code, message: error.message } }, error.status)
@@ -36,9 +50,37 @@ export function createApp(service: OperationService, identity: Identity, origins
     return c.json({ error: { code: 'internal_error', message: 'Request failed; retry with the same idempotency key if applicable' } }, 500)
   })
   app.get('/health', c => c.json({ status: 'ok', version: 'rewrite', execution: service.executor?.id ?? 'disabled' }))
+  app.route('/', oauth.publicRoutes)
+  app.all('/mcp', async c => {
+    const bearer = c.req.header('authorization')?.match(/^Bearer (\S+)$/i)?.[1] ?? ''
+    const access = await oauth.access(bearer)
+    if (!access) return c.json({ error: 'unauthorized' }, 401, { 'WWW-Authenticate': `Bearer resource_metadata="${issuer}/.well-known/oauth-protected-resource/mcp"` })
+    const names = await service.db.select({ id: agents.id, name: agents.name }).from(agents).where(and(eq(agents.ownerId, access.connection.ownerId), inArray(agents.id, access.grants.map(grant => grant.agentId!))))
+    const delegations = access.grants.filter(grant => names.some(agent => agent.id === grant.agentId)).map(grant => ({
+      agentId: grant.agentId!, name: names.find(agent => agent.id === grant.agentId)!.name,
+      client: new AgentisClient({ baseUrl: issuer, token: 'internal-delegation', fetch: Object.assign(async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        const request = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
+        if (new URL(request.url).origin !== issuer || !new URL(request.url).pathname.startsWith('/v1/')) throw Error('Invalid internal request')
+        delegatedRequests.set(request, { kind: 'agent', ownerId: grant.ownerId, grantId: grant.id })
+        return app.fetch(request)
+      }, { preconnect: fetch.preconnect }) }),
+    }))
+    if (!delegations.length) return c.json({ error: 'unauthorized' }, 401)
+    const server = createAgentisMcpServer({ delegations, networks: supportedNetworks })
+    const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true, enableDnsRebindingProtection: true, allowedHosts: [new URL(issuer).host] })
+    await server.connect(transport)
+    try { return await transport.handleRequest(c.req.raw, { authInfo: { token: bearer, clientId: access.connection.clientId, scopes: ['agentis'], expiresAt: Math.floor(access.expiresAt.getTime() / 1000), resource: new URL(oauth.resource) } }) }
+    finally { await transport.close(); await server.close() }
+  })
   const cliLogin = cliLoginRoutes(service)
   app.route('/v1/cli/logins', cliLogin.publicRoutes)
   app.use('/v1/*', async (c, next) => {
+    const delegated = c.get('delegated')
+    if (delegated?.kind === 'agent') {
+      const [grant] = await service.db.select().from(grants).where(and(eq(grants.id, delegated.grantId), eq(grants.ownerId, delegated.ownerId)))
+      if (!grant || grant.revokedAt || (grant.expiresAt !== null && grant.expiresAt.getTime() <= Date.now())) fail(401, 'unauthorized', 'Inactive executor grant')
+      c.set('principal', delegated); await next(); return
+    }
     const token = c.req.header('authorization')?.match(/^Bearer (\S+)$/)?.[1]
     if (!token) fail(401, 'unauthorized', 'Bearer token required')
     if (token.startsWith('agt_exec_')) {
@@ -53,6 +95,7 @@ export function createApp(service: OperationService, identity: Identity, origins
     await next()
   })
   app.route('/v1/cli/logins', cliLogin.ownerRoutes)
+  app.route('/v1/oauth', oauth.ownerRoutes)
   // Local manual test only: provider wallets, never Agentis database records.
   app.use('/v1/test/*', async (c, next) => {
     if (process.env.NODE_ENV === 'production' || !origins.some(origin => ['localhost', '127.0.0.1'].includes(new URL(origin).hostname))) fail(404, 'not_found', 'Not found')

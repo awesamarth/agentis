@@ -66,7 +66,8 @@ Automated suites were removed at the owner's request. The standalone Privy walle
 - Unknown submissions retain reservations and block the wallet lane. Reconciliation never blindly broadcasts another transaction.
 - Guest Solana devnet wallets remain in browser localStorage; explicitly insecure against same-origin scripts/device compromise. Never fund on mainnet.
 - Local CLI wallet files use SLIP-0010 Ed25519 derivation and filesystem permissions, not empty-password encryption.
-- Jupiter/Umbra/Link/paid-fetch plugins are explicitly unavailable pending migration. Remote MCP is also unavailable; local stdio uses executor grants.
+- Remote MCP uses browser OAuth and the common backend at `/mcp`; see [connection/setup instructions](packages/mcp/README.md). No local MCP process or manual token copying. Local HTTP/SDK checks passed; actual client/browser consent and public deployment remain unverified/pending.
+- x402/MPP paid GET uses the common hosted/local execution paths. Uniswap, ENSv2/ERC-8004 and optional integrations remain future work.
 - The Agentis facilitator product and Quasar enforcement wiring have been removed.
 
 See [AGENTS.md](AGENTS.md) for the living handoff and [docs/architecture.md](docs/architecture.md) for decisions, API routes, verification gaps and next steps.

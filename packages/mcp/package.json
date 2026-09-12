@@ -1,12 +1,10 @@
 {
   "name": "@agentis-hq/mcp",
   "version": "0.2.1",
-  "description": "Agentis MCP server for agent wallet, payment, policy, privacy, and yield tools",
+  "description": "Remote Agentis MCP tools for scoped hosted wallets, payments, balances, policies and history",
   "type": "module",
-  "bin": {
-    "agentis-mcp": "dist/index.js"
-  },
   "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
     "./package.json": "./package.json"
   },
   "files": [
@@ -14,7 +12,6 @@
     "package.json"
   ],
   "scripts": {
-    "dev": "bun run src/index.ts",
     "check": "tsc --noEmit --incremental false",
     "build": "tsup",
     "build:worker": "wrangler deploy --dry-run --outdir dist-worker",

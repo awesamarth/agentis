@@ -5,7 +5,8 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 AGENTIS_API_URL = "https://api.agentis.systems"
-AGENTIS_MCP_RESOURCE = "https://mcp.agentis.systems/mcp"
 
-# Configure before deployment:
-# wrangler secret put MCP_INTROSPECTION_SECRET
+# Backend configuration when using this hostname:
+# AGENTIS_PUBLIC_API_URL=https://api.agentis.systems
+# AGENTIS_MCP_RESOURCE=https://mcp.agentis.systems/mcp
+# No introspection secret: this worker only forwards HTTP to the backend.

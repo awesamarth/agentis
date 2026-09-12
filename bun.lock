@@ -17,6 +17,8 @@
       "name": "backend",
       "dependencies": {
         "@agentis-hq/core": "workspace:*",
+        "@agentis-hq/mcp": "workspace:*",
+        "@agentis-hq/sdk": "workspace:*",
         "@privy-io/node": "0.34.0",
         "@solana-program/token": "0.11.0",
         "@solana/kit": "6.8.0",
@@ -147,9 +149,6 @@
     "packages/mcp": {
       "name": "@agentis-hq/mcp",
       "version": "0.2.1",
-      "bin": {
-        "agentis-mcp": "dist/index.js",
-      },
       "dependencies": {
         "@agentis-hq/core": "^0.2.0",
         "@agentis-hq/sdk": "workspace:*",

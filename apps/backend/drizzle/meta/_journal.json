@@ -78,6 +78,13 @@
       "when": 1789142345000,
       "tag": "0010_cli_logins",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789232556000,
+      "tag": "0011_remote_mcp_oauth",
+      "breakpoints": true
     }
   ]
 }

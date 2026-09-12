@@ -61,6 +61,10 @@ export class AgentisClient {
     get: () => this.request<{ settings: { networks: string[]; defaultNetwork: string; totalBudgetUsd: string | null; completedAt: string } | null; networks: Array<{ key: string; name: string; chainId: string; chainType: string; currency: string; decimals: number; assets: Array<{ id: OperationInput['asset']; symbol: string; decimals: number }>; explorer: string; executionReady: boolean; testnet: boolean }> }>('/onboarding'),
 
   }
+  oauth = {
+    request: (id: string) => this.request<{ id: string; clientName: string; redirectUri: string; resource: string; expiresAt: string; completed: boolean }>(`/oauth/requests/${encodeURIComponent(id)}`),
+    complete: (id: string, input: { approve: false } | { approve: true; confirm: true; selections: CliLoginSelection[] }) => this.request<{ redirectUrl: string }>(`/oauth/requests/${encodeURIComponent(id)}/complete`, 'POST', input),
+  }
   agents = {
     list: () => this.request<AgentisAgent[]>('/agents'),
     balance: (id: string) => this.request<AgentBalance>(`/agents/${encodeURIComponent(id)}/balance`, 'GET', undefined, {}, AbortSignal.timeout(60_000)),

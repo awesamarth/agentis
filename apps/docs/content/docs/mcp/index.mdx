@@ -1,17 +1,33 @@
 ---
 title: MCP
-description: Scoped agent tools
+description: Remote agent tools with scoped browser authorization
 ---
 
-The new local MCP server exposes only:
+Agentis now implements remote Streamable HTTP MCP. Connect the MCP URL in your client, sign in through the browser, and explicitly choose agents and networks. No local MCP process or manually copied token is required.
 
-- `agentis_capabilities`
-- `agentis_request_operation`
+The local development endpoint is `http://localhost:3001/mcp`. Cloud-hosted clients require a deployed HTTPS endpoint; the new implementation has not yet been publicly deployed.
+
+## Tools
+
+- `agentis_list_wallets`
+- `agentis_balance`
+- `agentis_policy` (read-only)
+- `agentis_history`
+- `agentis_send`
+- `agentis_fetch` (x402/MPP paid GET)
 - `agentis_get_operation`
 - `agentis_list_operations`
+- `agentis_capabilities`
+- `agentis_request_operation` (advanced raw request)
 
-Provide `AGENTIS_TOKEN` as a scoped executor grant in the server's private environment. `AGENTIS_API_URL` defaults to localhost port 3001. Never give an agent an owner token to bypass approval.
+Use wallet listing to select the agent/wallet IDs. Send/fetch tools accept decimal token amounts and require a stable idempotency key. Reuse the same key after uncertainty—never blindly create another payment.
 
-Pending operations return a URL for the human. Retrying the same task must preserve its idempotency key.
+## Approval and permissions
 
-Remote MCP is deliberately unavailable during the OAuth rewrite. This working-tree change has not been deployed; do not confuse the old deployed toolset with this implementation.
+Payments share the existing backend budgets and execution pipeline. Ask mode returns a dashboard approval link for the owner; automatic mode queues execution within limits. Poll `agentis_get_operation` for the result. A client's “allow tool call” prompt does not authorize an Agentis payment.
+
+There are no approval, policy-edit, key-export or local-wallet tools. New networks require new consent. Revoke MCP entries in each agent's API access panel; OAuth disconnection can revoke the whole connection. Revocation cannot undo an already submitted transaction.
+
+OAuth uses S256 PKCE, expiring single-use codes, resource-bound access tokens and rotating refresh tokens. Owner credentials stay in the browser. Backend authorization is rechecked for every tool operation.
+
+The native MCP SDK/OAuth flow passed isolated local checks. Actual browser/client consent and paid execution through the user's MCP app remain manual verification steps.
