@@ -211,9 +211,23 @@ export class OperationService {
     return { name: agent.name, agentId: agent.id, mode: agent.mode, limits: agent.limits, allowedRecipients: agent.allowedRecipients, spentMicros: spent.toString(), reservedMicros: held.toString(), walletPolicy: wallet.policy }
   }
 
-  async list(principal: Principal, chronological = false) {
+  async history(principal: Principal) {
+    let scope = eq(wallets.ownerId, principal.ownerId)
+    if (principal.kind === 'agent') {
+      const [grant] = await this.db.select().from(grants).where(eq(grants.id, principal.grantId))
+      if (!grant || grant.ownerId !== principal.ownerId || grant.revokedAt || (grant.expiresAt !== null && grant.expiresAt.getTime() <= Date.now())) fail(403, 'grant_inactive', 'Access key is inactive')
+      scope = and(scope, eq(wallets.enabled, true), grant.walletId ? eq(wallets.id, grant.walletId) : eq(wallets.agentId, grant.agentId!), grant.chainIds === null ? undefined : inArray(wallets.chainId, grant.chainIds))!
+    }
+    const accessible = await this.db.select({ id: wallets.id }).from(wallets).where(scope)
+    if (!accessible.length) return []
+    // Read across issuing keys, but only within the currently authorized wallets.
+    // Operation get/approve/retry paths retain their separate authorization rules.
+    return (await this.db.select(operationSummaryColumns).from(operations).where(and(eq(operations.ownerId, principal.ownerId), inArray(operations.walletId, accessible.map(wallet => wallet.id)))).orderBy(desc(operations.createdAt), desc(operations.id)).limit(100)).map(row => this.view(row))
+  }
+
+  async list(principal: Principal) {
     const filter = principal.kind === 'owner' ? eq(operations.ownerId, principal.ownerId) : and(eq(operations.ownerId, principal.ownerId), eq(operations.grantId, principal.grantId))
-    return (await this.db.select(operationSummaryColumns).from(operations).where(filter).orderBy(...(chronological ? [desc(operations.createdAt), desc(operations.id)] : [desc(eq(operations.status, 'pending_approval')), desc(operations.createdAt), desc(operations.id)])).limit(100)).map(row => this.view(row))
+    return (await this.db.select(operationSummaryColumns).from(operations).where(filter).orderBy(desc(eq(operations.status, 'pending_approval')), desc(operations.createdAt), desc(operations.id)).limit(100)).map(row => this.view(row))
   }
 
   async authorization(principal: Principal, id: string) {

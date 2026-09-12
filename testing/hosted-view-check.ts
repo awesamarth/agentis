@@ -40,6 +40,22 @@ for (const changes of [
   assert.equal(denied.filters.length, 2, 'Denied grants must not read agent budgets')
 }
 await assert.rejects(service([[]]).instance.policyView(principal, 'missing'), /Wallet not found/)
-const history = service([[]]); await history.instance.list(principal, true)
-assert(history.filters[0]!.params.includes('owner-a')); assert(history.filters[0]!.params.includes('grant-a'))
-console.log('Hosted read views: grant owner/agent/wallet/network/expiry/revocation checks, shared USD aggregation and credential-scoped history passed. No money sent.')
+const oldPayment = { id: 'old-payment', grantId: 'old-key', input: { walletId: wallet.id }, status: 'confirmed', createdAt: new Date(), expiresAt: new Date(), signedTransaction: 'PRIVATE' }
+for (const scopedGrant of [grant, { ...grant, walletId: wallet.id, agentId: null, chainIds: null }]) {
+  const history = service([[scopedGrant], [{ id: wallet.id }], [oldPayment]])
+  const rows = await history.instance.history(principal)
+  assert.equal(rows[0]!.id, 'old-payment')
+  assert(!JSON.stringify(rows).includes('PRIVATE'))
+  assert(history.filters[1]!.params.includes('owner-a')); assert(history.filters[1]!.params.includes(true))
+  assert(history.filters[1]!.params.includes(scopedGrant.walletId ?? 'agent-a'))
+  if (scopedGrant.chainIds) assert(history.filters[1]!.params.includes('eip155:84532'))
+  assert(history.filters[2]!.params.includes('owner-a')); assert(history.filters[2]!.params.includes(wallet.id))
+  assert(!history.filters[2]!.sql.includes('grant_id'), 'History must include previous issuing keys')
+}
+for (const bad of [null, { ...grant, ownerId: 'other' }, { ...grant, revokedAt: new Date() }, { ...grant, expiresAt: new Date(0) }]) {
+  await assert.rejects(service([bad ? [bad] : []]).instance.history(principal), /Access key is inactive/)
+}
+assert.deepEqual(await service([[grant], []]).instance.history(principal), [])
+const unchanged = service([[]]); await unchanged.instance.list(principal)
+assert(unchanged.filters[0]!.params.includes('grant-a'), 'Operation control/list scope remains unchanged')
+console.log('Hosted read views: policy scopes, wallet/network-scoped cross-key history, inactive grants, private-field exclusion and unchanged operation permissions passed. No money sent.')

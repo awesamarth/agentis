@@ -31,12 +31,12 @@ export async function hostedHistory(agent?: string, walletId?: string, limit = 2
       seen.add(operation.id)
       const input = operation
       const network = Object.values(localNetworks).find(network => network.chainId === input.chainId)
-      const asset = network && Object.entries(network.assets).find(([, asset]) => input.asset === 'native' ? asset.token === null : input.asset.startsWith('spl:') ? input.asset.slice(4) === asset.token : input.asset.slice(7).toLowerCase() === asset.token?.toLowerCase())
+      const asset = network && Object.entries(network.assets).find(([, asset]) => input.asset === 'native' ? asset.token === null : input.asset.startsWith('spl:') ? input.asset.slice(4) === asset.token : input.asset.slice(6).toLowerCase() === asset.token?.toLowerCase())
       const hash = operation.transactionHash ?? operation.receipt?.transactionHash
       const explorer = network && ('chain' in network ? network.chain.blockExplorers.default.url : 'https://explorer.solana.com')
       const wallet = wallets.find(wallet => wallet.id === operation.walletId)
       transactions.push({ id: operation.id, date: operation.createdAt, wallet: wallet?.agentName ?? session.agentName, chain: namedChain(input.chainId).name, amount: asset ? formatUnits(BigInt(input.amountAtomic), asset[1].decimals) : input.amountAtomic, asset: asset ? asset[0] : `${input.asset} (atomic units)`, status: operation.status, to: input.to, transaction: hash && explorer ? `${explorer}/tx/${encodeURIComponent(hash)}${input.chainId.startsWith('solana:') ? '?cluster=devnet' : ''}` : undefined, spentUsd: operation.usdSettledMicros == null ? null : formatUnits(BigInt(operation.usdSettledMicros), 6) })
     }
   }
-  return { wallet: agent ?? 'Hosted wallets', transactions: transactions.sort((a, b) => b.date.localeCompare(a.date)).slice(0, limit).reverse(), note: 'Latest history within your credential scope (up to 100 records per key). Other keys’ operations are not included; changing wallets or logging in again does not transfer old-key history.' }
+  return { wallet: agent ?? 'Hosted wallets', transactions: transactions.sort((a, b) => b.date.localeCompare(a.date)).slice(0, limit).reverse(), note: 'History includes payments made by any key within your authorized wallets/networks. Up to 100 recent records per scope; read-only.' }
 }

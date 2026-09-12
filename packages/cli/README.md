@@ -14,7 +14,7 @@ Set `AGENTIS_API_URL` if needed (defaults to loopback port 3001), then run `agen
 
 The CLI receives one executor key per selected agent, restricted to the selected networks—not an owner JWT or account-wide key. New networks are not automatically included. Budgets, paused/ask/automatic mode and owner-only administration remain unchanged. Keys have no expiry by default and remain valid until revoked.
 
-`wallet list` and `operations list` combine the linked credentials. Payment wallet IDs select the matching credential automatically; `--agent <id-or-unique-name>` narrows commands to one linked agent. Operation lookup uses the credential that can access that operation. A new login does not inherit operations created with older keys.
+`wallet list` and `operations list` combine the linked credentials. Payment wallet IDs select the matching credential automatically; `--agent <id-or-unique-name>` narrows commands to one linked agent. Operation lookup uses the credential that can access that operation. Operation-control access does not transfer between keys; read-only history separately includes earlier payments within the authorized wallets/networks.
 
 Credentials live in `~/.agentis/cli-session.json` (directory 0700/file 0600, filesystem protection—not encrypted custody), bound to the API URL. Unset `AGENTIS_TOKEN` before logging in. Existing sessions are not silently overwritten; log out before choosing a replacement selection, and revoke old keys separately. Local wallet files are untouched.
 
@@ -73,7 +73,7 @@ bun packages/cli/src/index.ts wallet history --hosted --agent research-agent --l
 
 `--hosted` is optional on these commands; `--local` keeps the existing local behavior. Omit `--agent` to include all linked credentials, or narrow by `--wallet <wallet-id>`. Hosted `policy set` is unavailable: use the dashboard. Policy reads require an accessible enabled wallet and show its agent's mode, USD limits, aggregate spent/reserved amounts and recipient restrictions. Aggregate amounts include all of that agent's networks and credentials, not just the current key's operations.
 
-History is read-only and oldest → newest within the latest selected records (maximum 100 per credential). It uses the existing operation visibility rules: executor keys see only operations issued under that key, owners see their own account's operations. A new login/key may therefore show no history despite non-zero aggregate agent spend. No permissions are broadened and no transactions are submitted. JSON remains opt-in.
+History is read-only and oldest → newest within the latest selected records (maximum 100 per authorized scope). Executor keys see payments made by any key within their currently authorized enabled wallets/networks; owners see their own account's history. The issuing key does not filter history, so re-login does not hide previous payments. Operation lookup, approval and execution permissions are unchanged. JSON remains opt-in.
 
 ## Local policies, history and paid GET
 

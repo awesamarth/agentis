@@ -161,7 +161,7 @@ export function createApp(service: OperationService, identity: Identity, origins
   app.delete('/v1/grants/:id', async c => { await service.revoke(c.get('principal'), id.parse(c.req.param('id'))); return c.body(null, 204) })
   app.post('/v1/fetch', async c => c.json(await service.fetch(c.get('principal'), await c.req.json(), c.req.header('Idempotency-Key') ?? ''), 202))
   app.get('/v1/wallets/:id/policy', async c => c.json(await service.policyView(c.get('principal'), id.parse(c.req.param('id')))))
-  app.get('/v1/history', async c => c.json(await service.list(c.get('principal'), true)))
+  app.get('/v1/history', async c => c.json(await service.history(c.get('principal'))))
   app.get('/v1/operations', async c => c.json(await service.list(c.get('principal'))))
   app.post('/v1/operations', async c => c.json(await service.create(c.get('principal'), await c.req.json(), c.req.header('Idempotency-Key') ?? ''), 202))
   app.get('/v1/operations/:id', async c => c.json(await service.get(c.get('principal'), id.parse(c.req.param('id')))))
