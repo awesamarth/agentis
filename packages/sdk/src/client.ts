@@ -1,8 +1,8 @@
-import type { Operation, OperationInput, WalletPolicy, AuthorizationRequest, UsdLimits, GrantInput, FetchRequest } from '@agentis-hq/core/operations'
+import type { Operation, OperationInput, WalletPolicy, AuthorizationRequest, UsdLimits, GrantInput, FetchRequest, PluginId } from '@agentis-hq/core/operations'
 
-export type AgentisAgent = { id: string; name: string; limits: UsdLimits; mode: 'ask' | 'automatic' | 'paused'; allowedRecipients: string[]; networks: string[]; defaultNetwork: string }
-export type AgentSettings = Pick<AgentisAgent, 'name' | 'limits' | 'mode' | 'allowedRecipients'> & { selection: { networks: string[]; defaultNetwork: string }; enableExecution?: boolean }
-export type AgentisWallet = { id: string; agentId: string | null; agentName: string | null; serverAuthorized: boolean; address: string; chainId: string; policy: WalletPolicy; policyVersion: number; enabled: boolean }
+export type AgentisAgent = { id: string; name: string; plugins: PluginId[]; limits: UsdLimits; mode: 'ask' | 'automatic' | 'paused'; allowedRecipients: string[]; networks: string[]; defaultNetwork: string }
+export type AgentSettings = Pick<AgentisAgent, 'name' | 'limits' | 'mode' | 'allowedRecipients'> & { plugins?: AgentisAgent['plugins']; selection: { networks: string[]; defaultNetwork: string }; enableExecution?: boolean }
+export type AgentisWallet = { id: string; agentId: string | null; agentName: string | null; agentPlugins: AgentisAgent['plugins'] | null; serverAuthorized: boolean; address: string; chainId: string; policy: WalletPolicy; policyVersion: number; enabled: boolean }
 
 export type AgentPolicyView = Pick<AgentisAgent, 'name' | 'mode' | 'limits' | 'allowedRecipients'> & { agentId: string; spentMicros: string; reservedMicros: string; walletPolicy: WalletPolicy }
 
@@ -68,6 +68,7 @@ export class AgentisClient {
   agents = {
     list: () => this.request<AgentisAgent[]>('/agents'),
     balance: (id: string) => this.request<AgentBalance>(`/agents/${encodeURIComponent(id)}/balance`, 'GET', undefined, {}, AbortSignal.timeout(60_000)),
+    setPlugins: (id: string, plugins: AgentisAgent['plugins']) => this.request<AgentisAgent>(`/agents/${encodeURIComponent(id)}/plugins`, 'PATCH', { plugins }),
     pause: (id: string) => this.request<AgentisAgent>(`/agents/${encodeURIComponent(id)}/pause`, 'POST'),
     create: (input: AgentSettings & { id: string }) => this.request<AgentisAgent>('/agents', 'POST', input),
     update: (id: string, input: AgentSettings) => this.request<AgentisAgent>(`/agents/${encodeURIComponent(id)}`, 'PATCH', input),

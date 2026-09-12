@@ -83,6 +83,25 @@ try {
   assert.equal(unwrap(await call('agentis_get_operation', { id: pending.id })).status, 'pending_approval')
   assert.equal(unwrap(await call('agentis_policy', { agentId: agentA })).reservedMicros, '10100')
   assert.equal(unwrap(await call('agentis_history', { agentId: agentA })).length, 1)
+  // Plugin settings are owner-only metadata: do not touch wallets, budgets or approvals.
+  const patch = (path: string, body: unknown, token = 'owner-fixture') => fetch(base + path, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const beforeWallets = await db.select().from(tables.wallets).orderBy(tables.wallets.id)
+  assert.equal((await patch(`/v1/agents/${foreignAgent}/plugins`, { plugins: ['uniswap'] })).status, 404)
+  assert.equal((await patch(`/v1/agents/${agentA}/plugins`, { plugins: ['unknown'] })).status, 400)
+  assert.equal((await patch(`/v1/agents/${agentA}/plugins`, { plugins: ['uniswap', 'uniswap'] })).status, 400)
+  const executorKey = await (await request('/v1/grants', { agentId: agentA, agentName: 'SDK · plugin check' }, 'owner-fixture')).json()
+  assert.equal((await patch(`/v1/agents/${agentA}/plugins`, { plugins: ['uniswap'] }, executorKey.token)).status, 403)
+  assert.equal((await fetch(`${base}/v1/grants/${executorKey.id}`, { method: 'DELETE', headers: { Authorization: 'Bearer owner-fixture' } })).status, 204)
+  const added = await patch(`/v1/agents/${agentA}/plugins`, { plugins: ['uniswap'] }); assert.equal(added.status, 200)
+  const addedAgent = await added.json(); assert.deepEqual(addedAgent.plugins, ['uniswap'])
+  assert.deepEqual(unwrap(await call('agentis_list_wallets')).find((item: { agentId: string }) => item.agentId === agentA).plugins, ['uniswap'])
+  const settings = { name: addedAgent.name, limits: addedAgent.limits, mode: addedAgent.mode, allowedRecipients: addedAgent.allowedRecipients, selection: { networks: addedAgent.networks, defaultNetwork: addedAgent.defaultNetwork } }
+  assert.equal((await patch(`/v1/agents/${agentA}`, settings)).status, 200, 'Omitting plugin settings preserves selection')
+  assert.deepEqual((await db.select().from(tables.agents).where(eq(tables.agents.id, agentA)))[0]!.plugins, ['uniswap'])
+  assert.equal((await patch(`/v1/agents/${agentA}`, { ...settings, plugins: [] })).status, 200)
+  assert.deepEqual((await db.select().from(tables.agents).where(eq(tables.agents.id, agentB)))[0]!.plugins, [])
+  assert.deepEqual(await db.select().from(tables.wallets).orderBy(tables.wallets.id), beforeWallets)
+  assert.equal(unwrap(await call('agentis_get_operation', { id: pending.id })).status, 'pending_approval')
   assert((await call('agentis_send', { ...send, amount: '2', idempotencyKey: 'over-cap' })).isError === undefined) // Denied is a durable operation, not a transport error.
   assert.equal(unwrap(await call('agentis_send', { ...send, amount: '2', idempotencyKey: 'over-cap' })).status, 'denied')
   const rotated = await form('/oauth/token', { grant_type: 'refresh_token', client_id: client.client_id, refresh_token: tokens.refresh_token, resource }); assert.equal(rotated.status, 200)
@@ -120,7 +139,7 @@ try {
     assert.equal((await form('/oauth/revoke', { token: savedTokens!.refresh_token!, client_id: clientInfo!.client_id })).status, 200)
     assert.equal((await request('/mcp', undefined, savedTokens!.access_token)).status, 401)
   } finally { await nativeClient.close() }
-  console.log('Remote OAuth + real MCP HTTP SDK passed: native SDK OAuth connect,  discovery, DCR, explicit multi-agent/network consent, PKCE/resource binding, code replay, scoped tools, ask link, idempotency, budget denial, refresh rotation/reuse revocation and cancellation. No signing or money.')
+  console.log('Remote OAuth + real MCP HTTP SDK passed: owner-only per-agent plugins without wallet/approval mutations, native SDK OAuth connect, discovery, DCR, explicit multi-agent/network consent, PKCE/resource binding, code replay, scoped tools, ask link, idempotency, budget denial, refresh rotation/reuse revocation and cancellation. No signing or money.')
 } finally {
   await mcp?.close().catch(() => {})
   http.stop(true)

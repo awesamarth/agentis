@@ -1,18 +1,19 @@
 import { pgTable, uuid, text, timestamp, integer, jsonb, uniqueIndex, boolean, check } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
-import type { Operation, OperationInput, OperationStatus, WalletPolicy, AuthorizationRequest, UsdQuote, UsdLimits } from '@agentis-hq/core/operations'
+import type { Operation, OperationInput, OperationStatus, WalletPolicy, AuthorizationRequest, UsdQuote, UsdLimits, PluginId } from '@agentis-hq/core/operations'
 
 export const agents = pgTable('agents', {
   id: uuid().primaryKey(),
   ownerId: text().notNull(),
   name: text().notNull(),
+  plugins: jsonb().$type<PluginId[]>().notNull().default([]),
   // USD micro-units; null explicitly means no cap.
   limits: jsonb().$type<UsdLimits>().notNull(),
   mode: text().$type<'ask' | 'automatic' | 'paused'>().notNull(),
   allowedRecipients: jsonb().$type<string[]>().notNull(),
   networks: jsonb().$type<string[]>().notNull(),
   defaultNetwork: text().notNull(),
-})
+}, table => [check('agents_plugins_valid', sql`${table.plugins} IN ('[]'::jsonb, '["uniswap"]'::jsonb)`)])
 
 export const wallets = pgTable('wallets', {
   id: uuid().primaryKey().defaultRandom(),
