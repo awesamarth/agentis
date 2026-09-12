@@ -16,6 +16,7 @@ function fields(value: unknown, depth = 0): string {
   if (typeof value !== 'object') return pad + text(typeof value === 'boolean' ? value ? 'yes' : 'no' : value)
   if (Array.isArray(value)) return value.length ? value.map(item => fields(item, depth)).join('\n\n') : `${pad}None`
   return Object.entries(value).filter(([, item]) => item !== null && item !== undefined).map(([key, item]) => {
+    if (key === 'note' && typeof item === 'string') return `\n${pad}Note: ${text(item)}\n`
     if (key === 'chainId' && typeof item === 'string') return `${pad}Chain: ${chainLabel(item)}`
     if (key === 'chainIds' && Array.isArray(item)) return `${pad}Chains: ${item.map(chainLabel).join(', ')}`
     if (key === 'bodyBase64' && typeof item === 'string') {
@@ -35,12 +36,19 @@ function fields(value: unknown, depth = 0): string {
 export function formatOutput(command: string, output: unknown, color = Boolean(process.stdout.isTTY) && process.env.NO_COLOR === undefined): string {
   if (output === null || output === undefined) return 'Done.'
   const record = output as Record<string, unknown>
+  const style = (value: string, codes: string) => color ? `\x1b[${codes}m${value}\x1b[0m` : value
   if (typeof record.message === 'string') return text(record.message)
   if (command === 'whoami' || command === 'login') {
     const agents = record.agents as { name: string; chains: { name: string; id: string }[] }[] | undefined
     if (!agents?.length) return 'Not logged in. Run agentis login.'
-    const style = (value: string, codes: string) => color ? `\x1b[${codes}m${value}\x1b[0m` : value
-    return agents.map(agent => `${style(text(agent.name), '1;38;5;117')}\n${style('Chains:', '1')}\n${agent.chains.map(chain => `${text(chain.name)} (${text(chain.id)})`).join(',\n')}`).join('\n\n')
+    return agents.map(agent => `${style(text(agent.name), '1;38;5;117')}\n${style('Chains:', '1')}\n${agent.chains.map(chain => `${text(chain.name)} (${text(chain.id)})`).join(',\n')}`).join('\n\n\n') + '\n\n'
+  }
+  if (command === 'wallet') {
+    type Network = { chainId: string; address: string }
+    const wallets = (Array.isArray(output) ? output : [output]) as { name: string; custody?: string; networks?: Network[]; wallets?: Network[] }[]
+    if (wallets.length && wallets.every(wallet => Array.isArray(wallet.wallets) || (wallet.custody === 'local' && Array.isArray(wallet.networks)))) {
+      return wallets.map(wallet => `${style(text(wallet.name), '1;38;5;117')}\n${style('Chains:', '1')}\n${(wallet.wallets ?? wallet.networks!).map(network => `${chainLabel(network.chainId)}\n${text(network.address)}`).join('\n\n')}`).join('\n\n\n') + '\n\n'
+    }
   }
   if (command === 'history') {
     const transactions = record.transactions as { date: string | null; chain: string; amount: string; asset: string; status: string; to?: string; transaction?: string; httpStatus?: number; key?: string }[]

@@ -128,7 +128,23 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
       output = operation.status === 'queued' ? await client.operations.wait(operation.id, { timeoutMs: 120_000 }) : operation
     }
     else if (command === 'capabilities') output = await client.capabilities()
-    else if (command === 'wallet' && subcommand === 'list') output = (await Promise.all(linked.map(item => item.client.wallets.list()))).flat()
+    else if (command === 'wallet' && subcommand === 'list') {
+      const groups = new Map<string, { name: string; agentId: string | null; wallets: { walletId: string; chainId: string; address: string }[] }>()
+      const results = await Promise.all(linked.map(item => item.client.wallets.list()))
+      for (const [index, wallets] of results.entries()) {
+        const session = linked[index]!
+        for (const wallet of wallets.filter(wallet => wallet.enabled)) {
+          const key = wallet.agentId ?? wallet.id
+          let group = groups.get(key)
+          if (!group) {
+            group = { name: wallet.agentName ?? (wallet.agentId && session.agentId === wallet.agentId ? session.agentName : 'Unnamed wallet'), agentId: wallet.agentId, wallets: [] }
+            groups.set(key, group)
+          }
+          if (!group.wallets.some(item => item.walletId === wallet.id)) group.wallets.push({ walletId: wallet.id, chainId: wallet.chainId, address: wallet.address })
+        }
+      }
+      output = [...groups.values()]
+    }
     else if (command === 'operations') {
       if (subcommand === 'create') {
         if (!values.file || !values.key) throw new Error('--file and --key required; reuse the same key after timeouts')

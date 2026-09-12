@@ -120,7 +120,7 @@ export function createApp(service: OperationService, identity: Identity, origins
       if (!grant || grant.ownerId !== principal.ownerId || grant.revokedAt || (grant.expiresAt !== null && grant.expiresAt.getTime() <= Date.now())) fail(403, 'grant_inactive', 'Access key is inactive')
       scope = and(scope, eq(wallets.enabled, true), grant.walletId ? eq(wallets.id, grant.walletId) : eq(wallets.agentId, grant.agentId!), grant.chainIds === null ? undefined : inArray(wallets.chainId, grant.chainIds))!
     }
-    return c.json(await service.db.select({ id: wallets.id, agentId: wallets.agentId, address: wallets.address, chainId: wallets.chainId, policy: wallets.policy, policyVersion: wallets.policyVersion, enabled: wallets.enabled, serverAuthorized: wallets.serverAuthorized }).from(wallets).where(scope))
+    return c.json(await service.db.select({ id: wallets.id, agentId: wallets.agentId, agentName: agents.name, address: wallets.address, chainId: wallets.chainId, policy: wallets.policy, policyVersion: wallets.policyVersion, enabled: wallets.enabled, serverAuthorized: wallets.serverAuthorized }).from(wallets).leftJoin(agents, and(eq(agents.id, wallets.agentId), eq(agents.ownerId, wallets.ownerId))).where(scope))
   })
   app.post('/v1/wallets', async c => {
     const principal = c.get('principal')

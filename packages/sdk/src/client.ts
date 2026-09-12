@@ -2,7 +2,7 @@ import type { Operation, OperationInput, WalletPolicy, AuthorizationRequest, Usd
 
 export type AgentisAgent = { id: string; name: string; limits: UsdLimits; mode: 'ask' | 'automatic' | 'paused'; allowedRecipients: string[]; networks: string[]; defaultNetwork: string }
 export type AgentSettings = Pick<AgentisAgent, 'name' | 'limits' | 'mode' | 'allowedRecipients'> & { selection: { networks: string[]; defaultNetwork: string }; enableExecution?: boolean }
-export type AgentisWallet = { id: string; agentId: string | null; serverAuthorized: boolean; address: string; chainId: string; policy: WalletPolicy; policyVersion: number; enabled: boolean }
+export type AgentisWallet = { id: string; agentId: string | null; agentName: string | null; serverAuthorized: boolean; address: string; chainId: string; policy: WalletPolicy; policyVersion: number; enabled: boolean }
 
 export type AgentBalance = {
   usdMicros: string | null; complete: boolean; checkedAt: string

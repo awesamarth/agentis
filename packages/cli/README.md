@@ -62,6 +62,8 @@ Local sends persist signed proof/hash in owner-only `wallets-v2/transactions` jo
 
 Hosted testnet transfers, Base/Arc/Solana testnet USDC x402 and Tempo alphaUSD MPP paid GETs use the common backend. Mainnet, other x402 networks and plugins remain unavailable. Published npm CLI is still the old prototype; use this checkout.
 
+Hosted `wallet list` groups enabled wallets by agent, showing the name and chain/address pairs without internal policy/setup fields. `--json` returns `[{name, agentId, wallets: [{walletId, chainId, address}]}]`. Human hosted/local wallet output uses bold cyan names, bold chain headings and two blank lines after each wallet/agent block.
+
 ## Local policies, history and paid GET
 
 ```sh
@@ -79,7 +81,7 @@ Creation prompts for optional USD caps after chains; the same `--per-transaction
 
 Both local sends and paid fetch reserve amount + maximum fees, then recheck current rules and prices immediately before signing. Wallet-wide policy locks coordinate concurrent requests across networks. Confirmed spend uses execution quotes and actual fees; failed transactions charge fees only. Unknown signatures/submissions retain reservations, even outside rolling windows. **`--yes` skips only terminal confirmation, not policy.** No separate approval command, password or biometric flow.
 
-Policies stay in the wallet file; the owner-only `wallets-v2/policies` ledger persists spend/reservations. Existing wallets default to active/uncapped. Tracking starts with this feature: older transactions remain visible in history but are not retroactively USD-priced. History is a compact readable list, newest timestamped entries first; older undated journals say “Older entry”. It shows cached status; reuse the original request/key to reconcile unsettled work. JSON remains opt-in.
+Policies stay in the wallet file; the owner-only `wallets-v2/policies` ledger persists spend/reservations. Existing wallets default to active/uncapped. Tracking starts with this feature: older transactions remain visible in history but are not retroactively USD-priced. History is a compact readable list, most recent entries displayed oldest → newest; older undated journals say “Older entry”. It shows cached status; reuse the original request/key to reconcile unsettled work. JSON remains opt-in.
 
 Local paid GET uses separate official x402 and MPP adapters: Base/Arc USDC EIP-3009, Solana sponsored USDC partial signing, and Tempo alphaUSD MPP pull credentials. `--max-amount` uses 6-decimal token units; `--max-amount-atomic` is also accepted. Tempo `--max-fee` defaults to 0.01 alphaUSD; `--max-fee-atomic` uses 18-decimal protocol USD. MPP uses its expiring nonce lane, distinct from direct sends' protocol lane 0.
 
