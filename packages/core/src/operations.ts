@@ -25,17 +25,19 @@ export const x402Payment = z.object({
 export type PaidHttpResponse = { status: number; headers: Record<string, string>; bodyBase64: string }
 export const operationInput = z.object({
   walletId: z.string().uuid(),
-  action: z.enum(['transfer', 'paid_fetch', 'uniswap_swap', 'uniswap_approval']),
+  action: z.enum(['transfer', 'paid_fetch', 'uniswap_swap', 'uniswap_approval', 'identity_write']),
+  identity: z.object({ id: z.string().uuid(), kind: z.enum(['register', 'document', 'record']), name: z.string().max(255), resolver: z.string().regex(/^0x[0-9a-fA-F]{40}$/), key: z.enum(['endpoint', 'description']).optional(), value: z.string().max(12000), agentId: atomic.optional() }).strict().optional(),
   swap: z.object({ planId: z.string().uuid(), tokenOut: z.enum(['ETH', 'USDC']), fee: z.union([z.literal(100), z.literal(500), z.literal(3000), z.literal(10000)]), pool: z.string().regex(/^0x[0-9a-fA-F]{40}$/), minimumOutputAtomic: positiveAtomic, exactOutput: z.boolean(), deadline: z.number().int().positive() }).strict().optional(),
+  ens: z.object({ name: z.string().max(255), resolver: z.string().regex(/^0x[0-9a-fA-F]{40}$/), resolutionChainId: z.literal('eip155:11155111') }).strict().optional(),
   payment: x402Payment.optional(),
   mpp: z.object({ url: z.url().max(4096), challenge: z.string().max(16384), maxAmountAtomic: positiveAtomic, expiresAt: z.iso.datetime() }).strict().optional(),
   chainId,
   asset: z.union([z.literal('native'), z.string().regex(/^(erc20:0x[0-9a-fA-F]{40}|spl:[1-9A-HJ-NP-Za-km-z]{32,44})$/)]),
   to: z.string().min(1).max(128),
-  amountAtomic: positiveAtomic,
+  amountAtomic: atomic,
   maxFeeAtomic: atomic,
   reason: z.string().trim().max(500).default(''),
-}).strict().refine(input => input.action.startsWith('uniswap_') ? !!input.swap && !input.payment && !input.mpp && BigInt(input.maxFeeAtomic) > 0n : !input.swap).refine(input => input.action === 'paid_fetch' ? (!!input.payment && !input.mpp && input.maxFeeAtomic === '0') || (!!input.mpp && !input.payment && BigInt(input.maxFeeAtomic) > 0n) : !input.payment && !input.mpp && BigInt(input.maxFeeAtomic) > 0n, 'Invalid payment action or fee cap')
+}).strict().refine(input => input.action === 'identity_write' ? !!input.identity && input.amountAtomic === '0' && input.asset === 'native' && input.chainId === 'eip155:11155111' && !input.swap : !input.identity && BigInt(input.amountAtomic) > 0n, 'Invalid identity action or amount').refine(input => input.action.startsWith('uniswap_') ? !!input.swap && !input.payment && !input.mpp && BigInt(input.maxFeeAtomic) > 0n : !input.swap).refine(input => input.action === 'paid_fetch' ? (!!input.payment && !input.mpp && input.maxFeeAtomic === '0') || (!!input.mpp && !input.payment && BigInt(input.maxFeeAtomic) > 0n) : !input.payment && !input.mpp && BigInt(input.maxFeeAtomic) > 0n, 'Invalid payment action or fee cap')
 export type OperationInput = z.input<typeof operationInput>
 
 export const walletPolicy = z.object({
@@ -57,7 +59,7 @@ export const usdLimits = z.object({
   total: z.string().regex(/^(0|[1-9]\d{0,11})(\.\d{1,6})?$/).nullable(),
 }).strict()
 export type UsdLimits = z.infer<typeof usdLimits>
-export const pluginIds = z.array(z.enum(['uniswap'])).max(1)
+export const pluginIds = z.array(z.enum(['uniswap', 'ens'])).max(2).refine(items => new Set(items).size === items.length, 'Duplicate plugins')
 export type PluginId = z.infer<typeof pluginIds>[number]
 export const agentSettings = z.object({
   plugins: pluginIds.optional(),
@@ -93,6 +95,6 @@ export type Operation = OperationInput & {
   approvalUrl: string | null
   transactionHash: string | null
   error: string | null
-  receipt: { transactionHash: string; chainId: string; blockNumber: string; feeAtomic: string; success: boolean; swap?: { inputAtomic: string; outputAtomic: string; tokenOut: 'ETH' | 'USDC' }; feePayment?: { asset: string; amountAtomic: string; decimals: number } } | null
+  receipt: { transactionHash: string; chainId: string; blockNumber: string; feeAtomic: string; success: boolean; identity?: { agentId?: string; key?: string; value?: string }; swap?: { inputAtomic: string; outputAtomic: string; tokenOut: 'ETH' | 'USDC' }; feePayment?: { asset: string; amountAtomic: string; decimals: number } } | null
 }
 export const terminalStatuses = new Set<OperationStatus>(['confirmed', 'failed', 'denied', 'expired', 'rejected'])

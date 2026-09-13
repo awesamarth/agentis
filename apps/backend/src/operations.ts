@@ -1,4 +1,6 @@
 import { isDeepStrictEqual } from 'node:util'
+import { EnsService } from './plugins/ens/service'
+import { resolveRecipient } from './plugins/ens/resolution'
 import { swapInput } from './modules/uniswap'
 import { UniswapService } from './modules/uniswap-service'
 import { createHash, randomBytes } from 'node:crypto'
@@ -34,6 +36,7 @@ const grantAllowsWallet = (grant: typeof grants.$inferSelect, wallet: WalletRow)
 export class OperationService {
   constructor(readonly db: Database, readonly executor: Executor | null, readonly config: PluginConfig, readonly dashboardUrl: string, readonly priceQuote: typeof quoteUsd = quoteUsd) {}
   readonly uniswap = new UniswapService(this)
+  readonly ens = new EnsService(this)
 
   view(row: Omit<OperationRow, 'httpResponse'> & { httpResponse?: OperationRow['httpResponse'] }): Operation {
     return {
@@ -105,6 +108,7 @@ export class OperationService {
   }
 
   private async pluginReason(tx: Transaction, wallet: WalletRow, input: OperationInput) {
+    if (input.identity) return this.ens.reason(tx, wallet, input)
     if (!input.swap) return null
     const [agent] = wallet.agentId ? await tx.select().from(agents).where(eq(agents.id, wallet.agentId)) : []
     if (!agent?.plugins.includes('uniswap')) return 'Uniswap is disabled for this agent'
@@ -124,10 +128,24 @@ export class OperationService {
     return this.createInput(principal, input, idempotencyKey)
   }
 
-  async create(principal: Principal, raw: unknown, idempotencyKey: string): Promise<Operation> {
-    const input = buildTransfer(operationInput.parse(raw))
-    if (input.action !== 'transfer') fail(400, 'use_fetch', 'Use /v1/fetch for server-resolved payment terms')
+  async createIdentity(principal: Principal, raw: OperationInput, idempotencyKey: string) {
+    const input = operationInput.parse(raw)
+    if (!input.identity || input.action !== 'identity_write') fail(400, 'invalid_plugin_operation', 'Expected an identity operation')
     return this.createInput(principal, input, idempotencyKey)
+  }
+
+  async create(principal: Principal, raw: unknown, idempotencyKey: string): Promise<Operation> {
+    const parsed = operationInput.parse(raw)
+    if (parsed.ens) fail(400, 'server_resolution', 'ENS payment metadata is server-managed; put the name in to')
+    const requestHash = hash(JSON.stringify(parsed))
+    if (parsed.action === 'transfer' && parsed.to.includes('.')) {
+      const resolved = await resolveRecipient(parsed.to, parsed.chainId)
+      parsed.to = resolved.address
+      parsed.ens = { name: resolved.name, resolver: resolved.resolver, resolutionChainId: 'eip155:11155111' }
+    }
+    const input = buildTransfer(parsed)
+    if (input.action !== 'transfer') fail(400, 'use_fetch', 'Use /v1/fetch for server-resolved payment terms')
+    return this.createInput(principal, input, idempotencyKey, input.ens ? requestHash : undefined)
   }
 
   async fetch(principal: Principal, raw: unknown, idempotencyKey: string): Promise<Operation> {

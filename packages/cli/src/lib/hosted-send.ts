@@ -3,7 +3,7 @@ import { transferTerms, type LocalSendInput } from './local-send'
 import { localNetworks } from './local-networks'
 
 export async function sendHostedTransfer(input: LocalSendInput, agent?: string) {
-  const terms = transferTerms(input)
+  const terms = transferTerms(input, true)
   const chainId = localNetworks[terms.chain].chainId
   const candidates = []
   for (const session of sessions(agent)) {
@@ -21,7 +21,7 @@ export async function sendHostedTransfer(input: LocalSendInput, agent?: string) 
   }, { idempotencyKey: input.key })
   if (operation.status === 'queued') operation = await session.client.operations.wait(operation.id, { timeoutMs: 120_000 })
   return {
-    wallet: name ?? 'Hosted wallet', chainId, to: terms.to, amount: input.amount, asset: terms.symbol,
+    wallet: name ?? 'Hosted wallet', chainId, to: operation.to, ...(operation.ens ? { ensName: operation.ens.name } : {}), amount: input.amount, asset: terms.symbol,
     status: operation.status,
     operationId: operation.id, approvalUrl: operation.approvalUrl, transactionHash: operation.transactionHash,
     ...(operation.error ? { error: operation.error } : {}),

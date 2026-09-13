@@ -20,7 +20,7 @@ export function onboardingRoutes(service: OperationService, identity: Identity) 
   app.use('/agents/*', ownerOnly)
   app.get('/onboarding', async c => {
     const [saved] = await service.db.select().from(onboarding).where(eq(onboarding.ownerId, c.get('principal').ownerId))
-    return c.json({ settings: saved ? { networks: saved.networks, defaultNetwork: saved.defaultNetwork, totalBudgetUsd: saved.totalBudgetUsdMicros === null ? null : formatUnits(BigInt(saved.totalBudgetUsdMicros), 6), completedAt: saved.completedAt.toISOString() } : null, networks: supportedNetworks.map(network => ({ ...network, executionReady: service.executor?.id === 'privy' && ['base', 'arc', 'tempo', 'solana'].includes(network.key) })) })
+    return c.json({ settings: saved ? { networks: saved.networks, defaultNetwork: saved.defaultNetwork, totalBudgetUsd: saved.totalBudgetUsdMicros === null ? null : formatUnits(BigInt(saved.totalBudgetUsdMicros), 6), completedAt: saved.completedAt.toISOString() } : null, networks: supportedNetworks.map(network => ({ ...network, executionReady: service.executor?.id === 'privy' && ['base', 'arc', 'tempo', 'solana', 'sepolia'].includes(network.key) })) })
   })
   app.get('/agents', async c => c.json((await service.db.select().from(agents).where(eq(agents.ownerId, c.get('principal').ownerId))).map(view)))
   const save: Handler<Env> = async c => {

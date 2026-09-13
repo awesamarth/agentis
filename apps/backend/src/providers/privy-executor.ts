@@ -1,4 +1,5 @@
 import { createWalletClient, http, encodeFunctionData, erc20Abi, getAddress, keccak256, parseTransaction, parseEventLogs, recoverTransactionAddress, toHex, type Address, type Hex, type TransactionSerialized } from 'viem'
+import { identityCall, identityReceipt, validateIdentityChain } from '../plugins/ens/execution'
 import { PrivyClient } from '@privy-io/node'
 import { createPrivyX402, validateX402 } from '../modules/x402'
 import { createPrivyMpp, validateMpp } from '../modules/mpp'
@@ -16,6 +17,7 @@ import { prepareSolanaTransfer, verifySolanaTransfer, broadcastSolanaTransfer, s
 import { uniswapCall, validateSwapPool, uniswap, poolSwapAbi } from '../modules/uniswap'
 
 export function transferCall(input: OperationInput) {
+  if (input.identity) return identityCall(input)
   if (input.swap) return uniswapCall(input, input.to)
   return input.asset === 'native'
     ? { to: getAddress(input.to), value: BigInt(input.amountAtomic), data: '0x' as Hex }
@@ -39,13 +41,14 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
   const executor: Executor & { buildRequest(wallet: WalletRow, input: OperationInput, id: string, expiresAt: Date): Promise<AuthorizationRequest> } = {
     id: 'privy',
     validate(wallet, input) {
+      if (input.identity) { if (wallet.chainId !== 'eip155:11155111') fail(400, 'unsupported_network', 'Identity writes require Ethereum Sepolia'); identityCall(input); return }
       if (input.swap) { if (wallet.chainId !== uniswap.chainId) fail(400, 'unsupported_network', 'Uniswap currently requires Base Sepolia'); uniswapCall(input, wallet.address); return }
       if (input.action === 'paid_fetch') { if (input.mpp) validateMpp(wallet, input); else if (input.chainId === solanaDevnet) validateSvm(wallet, input); else validateX402(wallet, input); return }
       if (input.chainId === solanaDevnet && wallet.chainId === solanaDevnet) {
         if (!['native', `spl:${solanaUsdc}`].includes(input.asset) || BigInt(input.amountAtomic) > 18_446_744_073_709_551_615n) fail(400, 'unsupported_asset', 'Unsupported Solana transfer')
         return
       }
-      if (wallet.chainId !== input.chainId || !['eip155:84532', 'eip155:5042002', 'eip155:42431'].includes(input.chainId)) fail(503, 'unsupported_execution', 'Hosted transfer network is not enabled')
+      if (wallet.chainId !== input.chainId || !['eip155:84532', 'eip155:5042002', 'eip155:42431', 'eip155:11155111'].includes(input.chainId)) fail(503, 'unsupported_execution', 'Hosted transfer network is not enabled')
       if (input.chainId === 'eip155:42431' && input.asset === 'native') fail(400, 'unsupported_asset', 'Tempo payments use TIP-20 tokens, not a native coin')
       const token = input.chainId === 'eip155:84532' ? 'erc20:0x036cbd53842c5426634e7929541ec2318f3dcf7e' : input.chainId === 'eip155:42431' ? 'erc20:0x20c0000000000000000000000000000000000001' : null
       if (input.asset !== 'native' && input.asset.toLowerCase() !== token) fail(400, 'unsupported_asset', 'Transfer asset has not been enabled for this network')
@@ -54,11 +57,12 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
       this.validate(wallet, input)
       const client = await check(wallet, input)
       if (!client) return { version: 1, method: 'POST', url: `https://api.privy.io/v1/wallets/${encodeURIComponent(wallet.providerWalletId)}/rpc`, headers: { 'privy-app-id': appId, 'privy-idempotency-key': id, 'privy-request-expiry': String(expiresAt.getTime()) }, body: await prepareSolanaTransfer(wallet.address, input) }
+      if (input.identity) await validateIdentityChain(input, wallet.address as Address)
       if (input.swap) await validateSwapPool(input)
       const call = transferCall(input)
       const code = await client.getCode({ address: call.to })
-      if (!input.swap && input.asset === 'native' && code && code !== '0x') throw new Error('Native transfer recipient must not be a contract')
-      if ((input.swap || input.asset !== 'native') && (!code || code === '0x')) throw new Error('Token contract not found')
+      if (!input.swap && !input.identity && input.asset === 'native' && code && code !== '0x') throw new Error('Native transfer recipient must not be a contract')
+      if ((input.swap || input.identity || input.asset !== 'native') && (!code || code === '0x')) throw new Error('Token contract not found')
       const signer = createWalletClient({ chain: client.chain, transport: http(client.transport.url, { retryCount: 0, timeout: 15_000 }) })
       let transaction: Record<string, unknown>
       if (input.chainId === 'eip155:42431') {
@@ -111,7 +115,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
       if (serialized.startsWith('solana:')) return broadcastSolanaTransfer(serialized.slice(7))
       const signedTransaction = serialized as TransactionSerialized
       const tx = serialized.startsWith('0x76') ? TxEnvelopeTempo.deserialize(serialized as `0x76${string}`) : parseTransaction(signedTransaction)
-      if (![84532, 5042002, 42431].includes(tx.chainId!)) throw new Error('Broadcast network not permitted')
+      if (![84532, 5042002, 42431, 11155111].includes(tx.chainId!)) throw new Error('Broadcast network not permitted')
       const client = evmClient(`eip155:${tx.chainId}`)
       if (await client.getChainId() !== tx.chainId) throw new Error('RPC network mismatch')
       await client.sendRawTransaction({ serializedTransaction: signedTransaction })
@@ -130,6 +134,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
         const receipt = await client.getTransactionReceipt({ hash: transactionHash as Hex })
         const tempo = input.chainId === 'eip155:42431'
         const fee = tempo ? roundedTempoFee(receipt.gasUsed * receipt.effectiveGasPrice) : receipt.gasUsed * receipt.effectiveGasPrice + BigInt((receipt as unknown as { l1Fee?: bigint }).l1Fee ?? 0n)
+        if (input.identity) return { transactionHash: receipt.transactionHash, chainId: input.chainId, blockNumber: receipt.blockNumber.toString(), feeAtomic: fee.toString(), success: receipt.status === 'success', identity: identityReceipt(input, receipt) }
         const transfers = parseEventLogs({ abi: erc20Abi, logs: receipt.logs, eventName: 'Transfer' })
         if (tempo && (receipt as unknown as { feeToken?: string }).feeToken?.toLowerCase() !== tempoFeeToken) throw new Error('Unexpected Tempo fee token')
         if (input.swap) {

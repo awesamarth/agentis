@@ -6,7 +6,7 @@ import { hash, type OperationService, type Principal } from '../operations'
 import { fail } from '../errors'
 
 const id = z.string().uuid()
-const selections = z.array(z.object({ agentId: id, chainIds: z.array(z.string().min(1).max(100)).min(1).max(4).refine(chains => new Set(chains).size === chains.length) }).strict()).min(1).max(20).refine(items => new Set(items.map(item => item.agentId)).size === items.length)
+const selections = z.array(z.object({ agentId: id, chainIds: z.array(z.string().min(1).max(100)).min(1).max(5).refine(chains => new Set(chains).size === chains.length) }).strict()).min(1).max(20).refine(items => new Set(items.map(item => item.agentId)).size === items.length)
 
 export function cliLoginRoutes(service: OperationService) {
   const publicRoutes = new Hono()

@@ -23,7 +23,7 @@ export function exactAmount(value: string, decimals: number) {
   if (amount <= 0n) throw Error('Amount must be positive')
   return amount
 }
-export function transferTerms(input: LocalSendInput) {
+export function transferTerms(input: LocalSendInput, allowEns = false) {
   if (!input.key?.trim() || input.key.length > 200) throw Error('--key is required (1–200 characters); reuse it to check an uncertain send, never choose a new key blindly')
   const chains = parseChains(input.chain)
   if (chains.length !== 1) throw Error('Choose exactly one --chain for a send')
@@ -37,7 +37,7 @@ export function transferTerms(input: LocalSendInput) {
   // EVM gas (including Tempo) is denominated in 18-decimal protocol units.
   const maxFeeAtomic = exactAmount(maxFee, chain === 'solana' ? 9 : 18)
   let to: string
-  try { to = chain === 'solana' ? new PublicKey(input.to).toBase58() : getAddress(input.to) } catch { throw Error('Invalid recipient address for this chain') }
+  try { to = allowEns && input.to.includes('.') ? input.to.trim() : chain === 'solana' ? new PublicKey(input.to).toBase58() : getAddress(input.to) } catch { throw Error('Invalid recipient address for this chain') }
   return { chain, symbol, asset, amountAtomic, maxFee, maxFeeAtomic, to }
 }
 export function localSendTerms(input: LocalSendInput) {

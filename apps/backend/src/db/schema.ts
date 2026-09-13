@@ -13,7 +13,7 @@ export const agents = pgTable('agents', {
   allowedRecipients: jsonb().$type<string[]>().notNull(),
   networks: jsonb().$type<string[]>().notNull(),
   defaultNetwork: text().notNull(),
-}, table => [check('agents_plugins_valid', sql`${table.plugins} IN ('[]'::jsonb, '["uniswap"]'::jsonb)`)])
+}, table => [check('agents_plugins_valid', sql`${table.plugins} IN ('[]'::jsonb, '["uniswap"]'::jsonb, '["ens"]'::jsonb, '["uniswap","ens"]'::jsonb, '["ens","uniswap"]'::jsonb)`)])
 
 export const wallets = pgTable('wallets', {
   id: uuid().primaryKey().defaultRandom(),
@@ -111,6 +111,13 @@ export const onboarding = pgTable('onboarding', {
   completedAt: timestamp({ withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 })
 
+export const agentIdentities = pgTable('agent_identities', {
+  id: uuid().primaryKey().defaultRandom(), agentId: uuid().notNull().unique().references(() => agents.id), ownerId: text().notNull(),
+  walletId: uuid().notNull().references(() => wallets.id), name: text().notNull().unique(), parent: text().notNull(),
+  parentOwner: text().notNull(), registry: text(), resolver: text().notNull(), salt: text().notNull(),
+  description: text().notNull().default(''), verified: boolean().notNull().default(false),
+  registrationOperationId: uuid().references(() => operations.id), createdAt: timestamp({ withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+})
 export const uniswapTargets = pgTable('uniswap_targets', { walletId: uuid().primaryKey().references(() => wallets.id), ownerId: text().notNull(), ethPercent: integer().notNull() })
 export const uniswapPlans = pgTable('uniswap_plans', {
   id: uuid().primaryKey().defaultRandom(), ownerId: text().notNull(), agentId: uuid().notNull().references(() => agents.id), walletId: uuid().notNull().references(() => wallets.id), grantId: uuid().references(() => grants.id),

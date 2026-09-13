@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
 import { parseArgs } from 'node:util'
 import { readFileSync } from 'node:fs'
-import { AgentisApiError } from '@agentis-hq/sdk'
-import { login, logout, sessions, whoami } from './lib/session'
+import { AgentisClient, AgentisApiError } from '@agentis-hq/sdk'
+import { localNetworks, parseChains } from './lib/local-networks'
+import { login, logout, sessions, whoami, apiUrl } from './lib/session'
 import { createLocalWallet, listLocalWallets } from './lib/local-wallet'
 import { validateCommand } from './lib/command-validation'
 import { formatOutput } from './lib/output'
@@ -17,6 +18,7 @@ import { showLocalPolicy, setLocalPolicy } from './lib/local-policy'
 import { loadLocalWallet } from './lib/local-wallet'
 import { localHistory } from './lib/local-history'
 import { localPaidFetch } from './lib/local-paid'
+import { runIdentity, identityHelp } from './lib/identity'
 import { runUniswap, uniswapAvailable, uniswapHelp, planText } from './lib/uniswap'
 
 const args = process.argv.slice(2)
@@ -27,11 +29,13 @@ async function main() {
     wallet: { type: 'string' }, 'max-amount-atomic': { type: 'string' }, 'max-fee-atomic': { type: 'string' },
     from: { type: 'string' }, 'exact-output': { type: 'boolean' }, 'slippage-bps': { type: 'string' }, 'eth-percent': { type: 'string' }, 'every-minutes': { type: 'string' }, preview: { type: 'boolean' }, 'swap-funding': { type: 'boolean' },
     'minimum-output-atomic': { type: 'string' }, 'maximum-input-atomic': { type: 'string' },
+    parent: { type: 'string' }, label: { type: 'string' }, record: { type: 'string' }, endpoint: { type: 'string' }, description: { type: 'string' },
     file: { type: 'string' }, key: { type: 'string' }, hash: { type: 'string' }, json: { type: 'boolean' },
     chains: { type: 'string' }, chain: { type: 'string' }, to: { type: 'string' }, amount: { type: 'string' }, asset: { type: 'string' }, 'max-fee': { type: 'string' }, yes: { type: 'boolean' },
     'max-amount': { type: 'string' }, 'per-transaction': { type: 'string' }, hourly: { type: 'string' }, daily: { type: 'string' }, total: { type: 'string' }, pause: { type: 'boolean' }, resume: { type: 'boolean' }, limit: { type: 'string' },
   } })
   const [command, subcommand, id] = positionals
+  if (command === 'identity') { await runIdentity(subcommand, id, values); return }
   if (['swap', 'rebalance', 'dca'].includes(command ?? '')) { if (values.local) throw Error('Uniswap currently supports hosted agents only'); await runUniswap(command!, subcommand, id, values); return }
   if (values['swap-funding'] && (values.local || command !== 'fetch')) throw Error('--swap-funding currently supports hosted fetch only')
   if (values.help && ['login', 'logout', 'whoami'].includes(command ?? '')) {
@@ -70,6 +74,7 @@ async function main() {
   capabilities
 
 ${pluginHelp}
+${identityHelp}
 Human-readable output by default. Add --json for machine-readable output.
 Run agentis login, or set AGENTIS_TOKEN to override stored login.
 Set AGENTIS_API_URL (default http://localhost:3001). Use --agent <id-or-name>
@@ -124,6 +129,12 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
     } else if (subcommand === 'send') {
       if (!values.wallet || !values.chain || !values.to || !values.amount || !values.key) throw Error('--wallet, --chain, --to, --amount and --key required; amounts are decimal token units')
       const input = { wallet: values.wallet, chain: values.chain, to: values.to, amount: values.amount, key: values.key, asset: values.asset, maxFee: values['max-fee'] }
+      if (input.to.includes('.')) {
+        const chains = parseChains(input.chain); if (chains.length !== 1) throw Error('Choose one payment network')
+        const resolved = await new AgentisClient({ baseUrl: apiUrl(), token: '' }).identity.resolve(input.to, localNetworks[chains[0]!].chainId)
+        if (!values.json) console.log(`${resolved.name} → ${resolved.address} (${resolved.chainId})`)
+        input.to = resolved.address
+      }
       const terms = localSendTerms(input)
       const confirm = () => confirmLocalSend(`Send ${values.amount} ${terms.symbol} from ${terms.wallet.name} to ${terms.to} on ${terms.chain} testnet? Fee budget: ${terms.maxFee} ${terms.chain === 'base' ? 'ETH' : terms.chain === 'solana' ? 'SOL' : terms.chain === 'tempo' ? 'alphaUSD' : 'USDC'}.`, values.yes ?? false, values.json ?? false)
       output = await sendLocalTransfer(input, confirm)

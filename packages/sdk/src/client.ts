@@ -1,5 +1,6 @@
 import type { Operation, OperationInput, WalletPolicy, AuthorizationRequest, UsdLimits, GrantInput, FetchRequest, PluginId } from '@agentis-hq/core/operations'
 
+import type { AgentIdentity, IdentityStep, EnsRecipient } from './identity'
 import type { SwapRequest, SwapQuote, SwapPlan, DcaInput, DcaSchedule, RebalancePreview } from './uniswap'
 
 export type AgentisAgent = { id: string; name: string; plugins: PluginId[]; limits: UsdLimits; mode: 'ask' | 'automatic' | 'paused'; allowedRecipients: string[]; networks: string[]; defaultNetwork: string }
@@ -74,6 +75,16 @@ export class AgentisClient {
     pause: (id: string) => this.request<AgentisAgent>(`/agents/${encodeURIComponent(id)}/pause`, 'POST'),
     create: (input: AgentSettings & { id: string }) => this.request<AgentisAgent>('/agents', 'POST', input),
     update: (id: string, input: AgentSettings) => this.request<AgentisAgent>(`/agents/${encodeURIComponent(id)}`, 'PATCH', input),
+  }
+  identity = {
+    resolve: (name: string, chainId: string) => this.request<EnsRecipient>(`/ens/resolve?${new URLSearchParams({ name, chainId })}`, 'GET', undefined, {}, undefined, false),
+    show: (walletId: string) => this.request<AgentIdentity>(`/plugins/ens/?walletId=${encodeURIComponent(walletId)}`, 'GET', undefined, {}, AbortSignal.timeout(60000)),
+    setup: (input: { walletId: string; parent: string; label: string; description?: string }) => this.request<IdentityStep>('/plugins/ens/setup', 'POST', input, {}, AbortSignal.timeout(60000)),
+    next: (walletId: string) => this.request<IdentityStep>('/plugins/ens/next', 'POST', { walletId }, {}, AbortSignal.timeout(60000)),
+    update: (input: { walletId: string; key: 'endpoint' | 'description'; value: string }, options: { idempotencyKey: string }) => this.request<Operation>('/plugins/ens/records', 'POST', input, { 'Idempotency-Key': options.idempotencyKey }, AbortSignal.timeout(60000)),
+    retry: (walletId: string, operationId: string) => this.request<IdentityStep>('/plugins/ens/retry', 'POST', { walletId, operationId, confirm: true }, {}, AbortSignal.timeout(60000)),
+    delegation: (walletId: string, key: 'endpoint' | 'description', grant: boolean) => this.request<IdentityStep>('/plugins/ens/delegation', 'POST', { walletId, key, grant }),
+    requestSetup: (input: { walletId: string; parent?: string; label?: string }) => this.request<{ approvalUrl: string; message: string }>('/plugins/ens/request-setup', 'POST', input),
   }
   uniswap = {
     fetch: (input: FetchRequest, options: { idempotencyKey: string }) => this.request<{ funding: SwapPlan | null; payment: Operation | null }>('/plugins/uniswap/fetch', 'POST', input, { 'Idempotency-Key': options.idempotencyKey }, AbortSignal.timeout(60_000)),

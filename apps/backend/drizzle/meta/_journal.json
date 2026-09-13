@@ -106,6 +106,20 @@
       "when": 1789491756000,
       "tag": "0014_uniswap_targets",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1789491756001,
+      "tag": "0015_agent_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1789491756002,
+      "tag": "0016_single_ens_plugin",
+      "breakpoints": true
     }
   ]
 }

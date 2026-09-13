@@ -1,4 +1,6 @@
 import { Hono } from 'hono'
+import { resolveRecipient } from './plugins/ens/resolution'
+import { ensRoutes } from './plugins/ens/routes'
 import { AgentisClient } from '@agentis-hq/sdk'
 import { createAgentisMcpServer, WebStandardStreamableHTTPServerTransport } from '@agentis-hq/mcp'
 import { remoteOAuth } from './modules/oauth'
@@ -74,6 +76,7 @@ export function createApp(service: OperationService, identity: Identity, origins
   })
   const cliLogin = cliLoginRoutes(service)
   app.route('/v1/cli/logins', cliLogin.publicRoutes)
+  app.get('/v1/ens/resolve', async c => c.json(await resolveRecipient(z.string().min(1).max(255).parse(c.req.query('name')), z.string().max(128).parse(c.req.query('chainId')))))
   app.use('/v1/*', async (c, next) => {
     const delegated = c.get('delegated')
     if (delegated?.kind === 'agent') {
@@ -209,6 +212,7 @@ export function createApp(service: OperationService, identity: Identity, origins
   })
   app.post('/v1/grants', async c => c.json(await service.createGrant(c.get('principal'), grantInput.parse(await c.req.json())), 201))
   app.delete('/v1/grants/:id', async c => { await service.revoke(c.get('principal'), id.parse(c.req.param('id'))); return c.body(null, 204) })
+  app.route('/v1/plugins/ens', ensRoutes(service))
   app.post('/v1/plugins/uniswap/dca-requests', async c => c.json(await service.uniswap.requestSetup(c.get('principal'), await c.req.json()), 201))
   app.get('/v1/plugins/uniswap/dca-requests/:id', async c => c.json(await service.uniswap.setup(c.get('principal'), id.parse(c.req.param('id')))))
   app.post('/v1/plugins/uniswap/dca-requests/:id', async c => {
