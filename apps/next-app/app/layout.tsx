@@ -2,40 +2,34 @@ import type { Metadata } from 'next'
 import './globals.css'
 import Providers from './providers'
 
+const description = 'Complete financial infrastructure for AI agents. Wallets, payments, spending controls and on-chain identity.'
+const socialImage = {
+  url: '/agentis-og.png',
+  width: 1200,
+  height: 630,
+  alt: 'Agentis - Complete financial infrastructure for AI agents',
+}
+
 export const metadata: Metadata = {
   metadataBase: new URL('https://agentis.systems'),
   title: 'Agentis - Financial Infrastructure for Agents',
-  description: 'Wallets, payments, policy enforcement, privacy, and yield for AI agents on Solana.',
+  description,
   icons: {
     icon: '/icon.png',
     apple: '/apple-icon.png',
   },
   openGraph: {
     title: 'Agentis - Financial Infrastructure for Agents',
-    description: 'Wallets, payments, policy enforcement, privacy, and yield for AI agents on Solana.',
+    description,
     url: 'https://agentis.systems',
     siteName: 'Agentis',
-    images: [
-      {
-        url: '/agentis-twitter-header.png',
-        width: 1200,
-        height: 630,
-        alt: 'Agentis - Complete financial infrastructure for AI agents on Solana',
-      },
-    ],
+    images: [socialImage],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Agentis - Financial Infrastructure for Agents',
-    description: 'Wallets, payments, policy enforcement, privacy, and yield for AI agents on Solana.',
-    images: [
-      {
-        url: '/agentis-twitter-header.png',
-        width: 1200,
-        height: 630,
-        alt: 'Agentis - Complete financial infrastructure for AI agents on Solana',
-      },
-    ],
+    description,
+    images: [socialImage],
   },
 }
 
