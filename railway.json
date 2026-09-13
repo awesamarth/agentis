@@ -2,6 +2,7 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "RAILPACK",
+    "buildCommand": "bun run build:backend-deps",
     "watchPatterns": [
       "/apps/backend/**",
       "/packages/**",
@@ -11,8 +12,9 @@
     ]
   },
   "deploy": {
-    "startCommand": "bun run backend:start",
-    "healthcheckPath": "/",
+    "preDeployCommand": ["cd apps/backend && bun run db:migrate"],
+    "startCommand": "cd apps/backend && bun run index.ts",
+    "healthcheckPath": "/health",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }

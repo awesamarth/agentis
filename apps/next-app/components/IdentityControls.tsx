@@ -7,7 +7,7 @@ import { createPublicClient, createWalletClient, custom, http, parseEther, forma
 import { sepolia } from 'viem/chains'
 import Dropdown from './Dropdown'
 
-export const ensDescription = 'ENSv2 namespace + ERC-8004 identity on Ethereum Sepolia. Wallet records enable payments on your other testnets. Identity does not grant spending permission.'
+export const ensDescription = 'ENSv2 namespace + ERC-8004 identity on Ethereum Sepolia'
 const button = 'border border-beige-darker px-4 py-2.5 text-base font-medium hover:border-ink disabled:opacity-40'
 const field = 'mt-1 w-full border border-beige-darker bg-beige p-3 text-base'
 const chain = createPublicClient({ chain: sepolia, transport: http('https://ethereum-sepolia-rpc.publicnode.com', { timeout: 15000, retryCount: 0 }) })
