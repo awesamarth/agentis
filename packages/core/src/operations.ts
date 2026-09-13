@@ -14,7 +14,7 @@ export type FetchRequest = z.input<typeof fetchRequest>
 export const x402Payment = z.object({
   url: z.url().max(4096), maxAmountAtomic: positiveAtomic,
   requirements: z.object({
-    scheme: z.literal('exact'), network: z.enum(['eip155:84532', 'eip155:5042002', 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1']), asset: z.string(), amount: positiveAtomic,
+    scheme: z.literal('exact'), network: z.enum(['eip155:84532', 'eip155:11155111', 'eip155:5042002', 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1']), asset: z.string(), amount: positiveAtomic,
     payTo: z.string(), maxTimeoutSeconds: z.number().int().min(15).max(120),
     extra: z.union([
       z.object({ name: z.literal('USDC'), version: z.literal('2') }).strict(),

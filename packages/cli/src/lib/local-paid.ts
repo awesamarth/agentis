@@ -23,7 +23,7 @@ import { reserveLocal, signWithPolicy, releaseUnissued, settleLocal, LocalPolicy
 import { prepareLocalSvm, localSvmReceipt, type SolanaProof } from './local-paid-solana'
 export type LocalFetchInput = { wallet: string; chain: string; url: string; maxAmountAtomic: string; maxFeeAtomic?: string; key: string }
 type PaidRecord = { kind: 'paid-fetch'; createdAt: string; request: string; key: string; wallet: string; chain: LocalChain; url: string; status: string; asset: string; amount: string; amountAtomic?: string; to?: string; credential?: string; signed?: string; signature?: string; hash?: string; nonce?: Hex; fromBlock?: string; solana?: SolanaProof; feeAtomic?: string; httpResponse?: PaidHttpResponse; httpError?: string }
-const token = (chain: LocalChain) => chain === 'base' ? '0x036cbd53842c5426634e7929541ec2318f3dcf7e' : chain === 'arc' ? '0x3600000000000000000000000000000000000000' : '0x20c0000000000000000000000000000000000001'
+const token = (chain: LocalChain) => chain === 'sepolia' ? '0x1c7d4b196cb0c7b01d743fbc6116a902379c7238' : chain === 'base' ? '0x036cbd53842c5426634e7929541ec2318f3dcf7e' : chain === 'arc' ? '0x3600000000000000000000000000000000000000' : '0x20c0000000000000000000000000000000000001'
 const used = parseAbiItem('event AuthorizationUsed(address indexed authorizer, bytes32 indexed nonce)')
 const rpc = (chain: Exclude<LocalChain, 'solana'>) => createPublicClient({ chain: localNetworks[chain].chain as Chain, transport: http(process.env[localNetworks[chain].rpcEnv] ?? localNetworks[chain].chain.rpcUrls.default.http[0], { timeout: 15000, retryCount: 0 }) })
 const roundTempo = (fee: bigint) => ((fee + 999_999_999_999n) / 1_000_000_000_000n) * 1_000_000_000_000n

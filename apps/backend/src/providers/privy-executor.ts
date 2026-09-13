@@ -50,7 +50,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
       }
       if (wallet.chainId !== input.chainId || !['eip155:84532', 'eip155:5042002', 'eip155:42431', 'eip155:11155111'].includes(input.chainId)) fail(503, 'unsupported_execution', 'Hosted transfer network is not enabled')
       if (input.chainId === 'eip155:42431' && input.asset === 'native') fail(400, 'unsupported_asset', 'Tempo payments use TIP-20 tokens, not a native coin')
-      const token = input.chainId === 'eip155:84532' ? 'erc20:0x036cbd53842c5426634e7929541ec2318f3dcf7e' : input.chainId === 'eip155:42431' ? 'erc20:0x20c0000000000000000000000000000000000001' : null
+      const token = input.chainId === 'eip155:84532' ? 'erc20:0x036cbd53842c5426634e7929541ec2318f3dcf7e' : input.chainId === 'eip155:42431' ? 'erc20:0x20c0000000000000000000000000000000000001' : input.chainId === 'eip155:11155111' ? 'erc20:0x1c7d4b196cb0c7b01d743fbc6116a902379c7238' : null
       if (input.asset !== 'native' && input.asset.toLowerCase() !== token) fail(400, 'unsupported_asset', 'Transfer asset has not been enabled for this network')
     },
     async buildRequest(wallet: WalletRow, input: OperationInput, id: string, expiresAt: Date): Promise<AuthorizationRequest> {

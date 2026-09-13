@@ -57,7 +57,7 @@ export function createAgentisMcpServer(options: { delegations: Delegation[]; net
     const item = await forWallet(walletId), network = networks.find(network => network.chainId === item.wallet.chainId)!
     const token = network.assets.find(token => token.symbol.toLowerCase() === asset.toLowerCase())
     if (!token) throw Error('Unsupported asset')
-    const fee = maxFee ?? (network.chainId === 'eip155:84532' ? '0.0001' : network.chainId.startsWith('solana:') ? '0.005' : '0.01')
+    const fee = maxFee ?? (['eip155:84532', 'eip155:11155111'].includes(network.chainId) ? '0.0001' : network.chainId.startsWith('solana:') ? '0.005' : '0.01')
     return item.client.operations.create({ action: 'transfer', walletId, chainId: network.chainId, asset: token.id, amountAtomic: atomic(amount, token.decimals), maxFeeAtomic: atomic(fee, network.decimals), to, reason }, { idempotencyKey })
   }))
   server.registerTool('agentis_fetch', {

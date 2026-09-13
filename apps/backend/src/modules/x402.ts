@@ -8,12 +8,13 @@ import { PrivyClient } from '@privy-io/node'
 import type { FetchRequest, OperationInput, Operation, PaidHttpResponse } from '@agentis-hq/core/operations'
 import { x402Payment } from '@agentis-hq/core/operations'
 import type { WalletRow } from '../db/schema'
-import { baseUsdc, evmClient } from './networks'
+import { baseUsdc, sepoliaUsdc, evmClient } from './networks'
 import { paymentHttp } from './payment-http'
 import { settlementHeaders, type SavePaymentHash } from './x402-settlement'
 import { fail } from '../errors'
 
 function evmRail(network: string): { network: `eip155:${number}`; chainId: number; token: Hex; asset: string; scale: bigint } {
+  if (network === 'eip155:11155111') return { network, chainId: 11155111, token: sepoliaUsdc as Hex, asset: `erc20:${sepoliaUsdc}`, scale: 1n }
   if (network === 'eip155:84532') return { network, chainId: 84532, token: baseUsdc as Hex, asset: `erc20:${baseUsdc}`, scale: 1n }
   // Arc exposes the same USDC balance as native 18-decimal units and ERC-20 6-decimal units.
   if (network === 'eip155:5042002') return { network, chainId: 5042002, token: '0x3600000000000000000000000000000000000000' as Hex, asset: 'native', scale: 1_000_000_000_000n }

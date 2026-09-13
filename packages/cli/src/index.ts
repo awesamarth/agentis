@@ -59,7 +59,7 @@ async function main() {
     Use none to remove a cap; zero blocks spending. No flags on set opens interactive editing.
   fetch <url> --local --wallet <name-or-id> --chain <chain> --max-amount <decimal> --key <request-key>
     [--max-fee <decimal>] [--yes]  Local x402 (Base/Arc/Solana USDC) / Tempo MPP alphaUSD.
-  wallet create --local [--name <name>] [--chains base,arc,tempo,solana]
+  wallet create --local [--name <name>] [--chains base,arc,tempo,solana,sepolia]
     Interactive name + chain selection; Base selected by default. Flags work without a terminal.
   wallet send [--hosted | --local] --wallet <name-or-id> --chain <chain> --to <address> --amount <decimal> --key <request-key>
     [--asset ETH|SOL|USDC|alphaUSD] [--max-fee <decimal>] [--yes]
@@ -136,7 +136,7 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
         input.to = resolved.address
       }
       const terms = localSendTerms(input)
-      const confirm = () => confirmLocalSend(`Send ${values.amount} ${terms.symbol} from ${terms.wallet.name} to ${terms.to} on ${terms.chain} testnet? Fee budget: ${terms.maxFee} ${terms.chain === 'base' ? 'ETH' : terms.chain === 'solana' ? 'SOL' : terms.chain === 'tempo' ? 'alphaUSD' : 'USDC'}.`, values.yes ?? false, values.json ?? false)
+      const confirm = () => confirmLocalSend(`Send ${values.amount} ${terms.symbol} from ${terms.wallet.name} to ${terms.to} on ${terms.chain} testnet? Fee budget: ${terms.maxFee} ${(terms.chain === 'base' || terms.chain === 'sepolia') ? 'ETH' : terms.chain === 'solana' ? 'SOL' : terms.chain === 'tempo' ? 'alphaUSD' : 'USDC'}.`, values.yes ?? false, values.json ?? false)
       output = await sendLocalTransfer(input, confirm)
     } else if (subcommand === 'history') {
       if (!values.wallet) throw Error('--wallet required')

@@ -2,6 +2,7 @@ import { formatUnits } from 'viem'
 
 const chainNames: Record<string, string> = {
   'eip155:84532': 'Base',
+  'eip155:11155111': 'Ethereum Sepolia',
   'eip155:5042002': 'Arc',
   'eip155:42431': 'Tempo',
   'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1': 'Solana',

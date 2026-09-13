@@ -14,7 +14,7 @@ const ceil = (n: bigint, d: bigint) => (n + d - 1n) / d
 export type SpendTerms = { chain: LocalChain; asset: string; amountAtomic: string; maxFeeAtomic: string }
 const quoteSchema = z.object({ amountPrice: z.string().regex(/^\d+$/), feePrice: z.string().regex(/^\d+$/), amountDecimals: z.number().int(), feeDecimals: z.number().int(), expiresAt: z.number() })
 type Quote = z.infer<typeof quoteSchema>
-const entrySchema = z.object({ key: z.string(), terms: z.object({ chain: z.enum(['base', 'arc', 'tempo', 'solana']), asset: z.string(), amountAtomic: z.string().regex(/^\d+$/), maxFeeAtomic: z.string().regex(/^\d+$/) }), createdAt: z.number(), signedAt: z.number().optional(), settledAt: z.number().optional(), status: z.enum(['reserved', 'signing', 'confirmed', 'failed', 'released']), reservedUsd: z.string().regex(/^\d+$/), settledUsd: z.string().regex(/^\d+$/).optional(), quote: quoteSchema })
+const entrySchema = z.object({ key: z.string(), terms: z.object({ chain: z.enum(['base', 'arc', 'tempo', 'solana', 'sepolia']), asset: z.string(), amountAtomic: z.string().regex(/^\d+$/), maxFeeAtomic: z.string().regex(/^\d+$/) }), createdAt: z.number(), signedAt: z.number().optional(), settledAt: z.number().optional(), status: z.enum(['reserved', 'signing', 'confirmed', 'failed', 'released']), reservedUsd: z.string().regex(/^\d+$/), settledUsd: z.string().regex(/^\d+$/).optional(), quote: quoteSchema })
 type Entry = z.infer<typeof entrySchema>
 const ledgerSchema = z.object({ version: z.literal(1), startedAt: z.number(), entries: z.array(entrySchema) })
 export const costUsd = (terms: SpendTerms, quote: Quote, fee = terms.maxFeeAtomic, success = true) => (success ? ceil(BigInt(terms.amountAtomic) * BigInt(quote.amountPrice), 10n ** BigInt(quote.amountDecimals) * 1_000_000_000_000n) : 0n) + ceil(BigInt(fee) * BigInt(quote.feePrice), 10n ** BigInt(quote.feeDecimals) * 1_000_000_000_000n)
@@ -24,7 +24,7 @@ export async function localQuote(terms: SpendTerms): Promise<Quote> {
   const asset = assets[terms.asset]
   if (!asset) throw new LocalPolicyError('No USD price mapping for this asset')
   const amountId = terms.asset === 'ETH' ? 'coingecko:ethereum' : terms.asset === 'SOL' ? 'coingecko:solana' : terms.asset === 'alphaUSD' ? 'test-usd' : 'coingecko:usd-coin'
-  const feeId = terms.chain === 'base' ? 'coingecko:ethereum' : terms.chain === 'solana' ? 'coingecko:solana' : terms.chain === 'tempo' ? 'test-usd' : 'coingecko:usd-coin'
+  const feeId = (terms.chain === 'base' || terms.chain === 'sepolia') ? 'coingecko:ethereum' : terms.chain === 'solana' ? 'coingecko:solana' : terms.chain === 'tempo' ? 'test-usd' : 'coingecko:usd-coin'
   const ids = [...new Set([amountId, ...(BigInt(terms.maxFeeAtomic) ? [feeId] : [])])].filter(id => id !== 'test-usd')
   const missing = ids.filter(id => (prices.get(id)?.expiresAt ?? 0) <= Date.now())
   try {

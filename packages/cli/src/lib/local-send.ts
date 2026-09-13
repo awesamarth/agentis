@@ -16,7 +16,7 @@ import { reserveLocal, signWithPolicy, settleLocal, releaseUnissued, LocalPolicy
 export type LocalSendInput = { wallet: string; chain: string; to: string; amount: string; asset?: string; maxFee?: string; key: string }
 type RecordData = { key?: string; createdAt?: string; request: string; wallet: string; chain: LocalChain; to: string; asset: string; amount: string; maxFee: string; status: string; hash?: string; signed?: string; feeAtomic?: string; failure?: { stage: string; code: string } }
 const tempoFee = (amount: bigint) => ((amount + 999_999_999_999n) / 1_000_000_000_000n) * 1_000_000_000_000n
-const defaults = { base: { asset: 'ETH', fee: '0.0001' }, arc: { asset: 'USDC', fee: '0.01' }, tempo: { asset: 'alphaUSD', fee: '0.01' }, solana: { asset: 'SOL', fee: '0.005' } }
+const defaults = { sepolia: { asset: 'ETH', fee: '0.0001' }, base: { asset: 'ETH', fee: '0.0001' }, arc: { asset: 'USDC', fee: '0.01' }, tempo: { asset: 'alphaUSD', fee: '0.01' }, solana: { asset: 'SOL', fee: '0.005' } }
 export function exactAmount(value: string, decimals: number) {
   if (!/^\d+(\.\d+)?$/.test(value) || (value.split('.')[1]?.length ?? 0) > decimals) throw Error(`Use a positive decimal amount with at most ${decimals} decimal places`)
   const amount = parseUnits(value, decimals)
