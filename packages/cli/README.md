@@ -1,10 +1,14 @@
-# Agentis CLI (rewrite)
+# Agentis CLI
 
-Run from the repo after `bun run build:packages`: `bun packages/cli/src/index.ts --help`.
+Requires [Bun](https://bun.sh) on your PATH (the CLI executable uses Bun).
+
+Install: `bun add -g @agentis-hq/cli@0.5.0` (or `npm install -g @agentis-hq/cli@0.5.0`). Then run `agentis login` and `agentis --help`.
+
+For repository development, run `bun run build:packages`, then `bun packages/cli/src/index.ts --help`. Source commands in the examples below also work as `agentis ...` after installation.
 
 Output is human-readable by default; use `--json` for machine-readable results. `whoami` shows only agent names and named chains with their IDs, not backend URLs or grant IDs. Normal login progress goes to stdout; with `login --json`, progress goes to stderr so stdout contains only the final JSON. Large/binary paid-response bodies remain available in full through `--json`.
 
-Set `AGENTIS_API_URL` if needed (defaults to loopback port 3001), then run `agentis login`. Alternatively set `AGENTIS_TOKEN` privately; it overrides stored login. Use scoped executor grants for agents, not owner credentials.
+Set `AGENTIS_API_URL` if needed (defaults to `https://api.agentis.systems`; use `http://localhost:3001` only for a separate development backend), then run `agentis login`. Alternatively set `AGENTIS_TOKEN` privately; it overrides stored login. Use scoped executor grants for agents, not owner credentials.
 
 ## Browser login
 
@@ -52,15 +56,15 @@ One name/mnemonic derives a shared EVM address for enabled Base/Arc/Tempo networ
 
 Version-3 wallet files remain in `~/.agentis/wallets-v2` (0700 directory / 0600 files). Existing version-2 Solana files are read in place without rewriting their mnemonic/address or enabling new networks. No automatic migration of older encrypted formats. Mnemonics are never printed. **Files are not encrypted; anyone with file access can sign or bypass CLI restrictions.** There is no local agent-vs-owner permission boundary. Local policies are CLI safeguards, not hosted authorization.
 
-Supported local sends (testnet only): Base ETH/USDC, Arc native USDC, Tempo alphaUSD, Solana SOL/USDC. RPC URLs use `BASE_SEPOLIA_RPC_URL`, `ARC_TESTNET_RPC_URL`, `TEMPO_TESTNET_RPC_URL`, `SOLANA_DEVNET_RPC_URL` or public defaults; actual EVM chain IDs / Solana genesis are checked before signing. Solana token sends can create the recipient ATA. Funds are sent directly with the local key, not via the backend. Local x402/MPP is available through `fetch --local` (below).
+Supported local sends (testnet only): Base and Ethereum Sepolia ETH/USDC, Arc native USDC, Tempo alphaUSD, Solana SOL/USDC. RPC URLs use `BASE_SEPOLIA_RPC_URL`, `SEPOLIA_RPC_URL`, `ARC_TESTNET_RPC_URL`, `TEMPO_TESTNET_RPC_URL`, `SOLANA_DEVNET_RPC_URL` or public defaults; actual EVM chain IDs / Solana genesis are checked before signing. Solana token sends can create the recipient ATA. Funds are sent directly with the local key, not via the backend. Local x402/MPP is available through `fetch --local` (below).
 
-Default fee budgets: Base 0.0001 ETH, Arc 0.01 USDC, Tempo 0.01 alphaUSD, Solana 0.005 SOL; override with `--max-fee`. Base checks estimated execution fees plus a buffer for L1 fees (not a fixed on-chain cap on changing L1 fees). Solana budgets possible ATA rent as well as fees. Tempo uses protocol nonce lane 0 with an explicitly fetched pending nonce; 2D lanes are not allocated. Tempo gas accounting uses 18-decimal protocol USD units, rounded to alphaUSD precision.
+Default fee budgets: Base and Ethereum Sepolia 0.0001 ETH, Arc 0.01 USDC, Tempo 0.01 alphaUSD, Solana 0.005 SOL; override with `--max-fee`. Base checks estimated execution fees plus a buffer for L1 fees (not a fixed on-chain cap on changing L1 fees). Solana budgets possible ATA rent as well as fees. Tempo uses protocol nonce lane 0 with an explicitly fetched pending nonce; 2D lanes are not allocated. Tempo gas accounting uses 18-decimal protocol USD units, rounded to alphaUSD precision.
 
 Local sends persist signed proof/hash in owner-only `wallets-v2/transactions` journals before submitting. **Reuse identical arguments and the same `--key` to check an uncertain send.** Existing keys only return/check the original transaction, never sign/resend. Preparation failures have no submitted transaction; inspect the journal before using a new key. Per-wallet/network locks prevent concurrent CLI nonce selection; a crash may leave a lock needing manual inspection/removal. Other software using the same private key is not coordinated. Settled journals discard signed bytes. No automatic expired-proof recovery was added.
 
 `testing/local-wallet-check.ts` covers no-money derivation/storage/CLI/network guards. `testing/local-wallet-live.ts --execute` is an explicit small testnet funding/send check, not a routine suite; ignored funding journals prevent blind funding retries. All six supported sends and same-key retries were live-confirmed; one original Base USDC preparation failure was not diagnosed, while a later attempt succeeded.
 
-Hosted testnet transfers, Base/Arc/Solana testnet USDC x402 and Tempo alphaUSD MPP paid GETs use the common backend. Mainnet, other x402 networks and plugins remain unavailable. Published npm CLI is still the old prototype; use this checkout.
+Hosted testnet transfers, Base/Arc/Solana/Ethereum Sepolia USDC x402 and Tempo alphaUSD MPP paid GETs use the common backend. Sepolia x402 requires a supporting seller/facilitator. Per-agent Uniswap and ENS commands are available for enabled plugins; mainnet remains unsupported.
 
 `wallet list` shows both hosted and local wallets; `--local` or `--hosted` filters to one type (mutually exclusive). Hosted entries include only enabled wallets. Without a login, the default lists local wallets and prints a hosted-login notice to stderr; `--hosted` requires authentication. API/auth errors are not silently hidden. `--json` returns `[{name, custody, agentId?, wallets: [{walletId, chainId, address}]}]`, without internal policy/setup fields. Local network entries share their named wallet's ID. Human output starts with a blank line and uses bold cyan names, explicit Local/Hosted labels, bold chain headings and two blank lines after each wallet/agent block.
 

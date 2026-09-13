@@ -1,17 +1,13 @@
 # Uniswap developer feedback — Agentis
 
-Agentis integrates Uniswap V3 with scoped agent wallets, owner approvals, shared USD budgets, swaps, DCA and paid-API funding. [Integration code, contracts and verification](docs/uniswap.md).
+Integrating Uniswap V3 into Agentis was straightforward and, overall, pretty smooth sailing. Direct on-chain quotes and swaps on Base Sepolia fit well with our agent wallets, owner approvals and spending budgets. We also confirmed a real ETH → USDC swap through the owner-approval flow.
 
-## What worked
+## Tempo testnet support
 
-- The Base deployment table identified the exact Sepolia Factory, QuoterV2 and SwapRouter02 addresses. On-chain pool lookup and ETH/USDC quotes worked across four fee tiers.
-- V3 exact-output swaps fit payment shortfalls: acquire the missing payment-token amount with a bounded input.
-- The official `uniswap-ai` repository provides relevant agent examples, including pay-with-any-token and DCA.
+The remaining blocker to our planned multichain integration was Tempo testnet availability. The Trading API rejected Tempo testnet chain `42431`; the supported Tempo network was chain `4217`. We kept the Uniswap integration on Base Sepolia rather than switching to mainnet. Adding Tempo testnet support would make it easier to develop and validate agent-payment flows safely.
 
-## Friction and suggestions
+## Feedback form
 
-- The supported-chains page lists Base Sepolia API access, but our `/v1/quote` requests returned HTTP 404 `UpstreamTimeoutError` for native ETH/WETH → the canonical Base Sepolia USDC, including V3-only and V3/V4 requests. Direct on-chain quotes for that pair succeeded. Clearer testnet RPC/route diagnostics would help distinguish outages from missing liquidity.
-- Tempo is listed as chain `4217`; our existing testnet `42431` was rejected with HTTP 400 `RequestValidationError`. A prominent per-network testnet-support matrix would help agent-payment integrations avoid assuming mainnet support includes their testnet.
-- The pay-with-any-token guide lists x402 v1 and a mainnet Tempo funding flow. Explicit current-version and testnet guidance would help integrators using x402 v2.
+I have completed the [Uniswap Developer Feedback Form](https://developers.uniswap.org/hackathon-feedback).
 
-These are observed integration notes, not a claim that the complete browser/Privy swap flow is verified. Real swap settlement remains to be tested; no funds were moved in the isolated authorization/accounting checks.
+[Integration code, contracts and verification details](docs/uniswap.md).

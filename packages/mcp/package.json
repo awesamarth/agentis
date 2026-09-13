@@ -18,7 +18,7 @@
     "dev:worker": "wrangler dev"
   },
   "dependencies": {
-    "@agentis-hq/core": "^0.2.0",
+    "@agentis-hq/core": "^0.3.0",
     "@agentis-hq/sdk": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "zod": "4.5.4"

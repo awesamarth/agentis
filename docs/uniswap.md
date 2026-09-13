@@ -49,8 +49,8 @@ Saved allocation targets are remembered manual-task preferences, not automatic t
 
 - Package builds, backend/dashboard typechecks and targeted lint passed.
 - `testing/uniswap-check.ts`: isolated Postgres and fake signer; validates scopes, calldata, owner setup/replay, concurrent schedule idempotency, pause/revision changes, shortfall funding, payment chaining, actual-input accounting and zero caps. Native MCP SDK tool calls included.
-- Real Base Sepolia pool discovery and read-only quotes succeeded. **Real Privy swap signing/settlement and browser interaction remain unverified.** No real funds moved during these checks.
+- Real Base Sepolia pool discovery and quotes succeeded. The dashboard owner-approval flow also confirmed a Privy-executed **0.000001 ETH → 0.00326 USDC** swap: [transaction](https://sepolia.basescan.org/tx/0x8c740f96a453072a4e31273858874cacc05377d649d190f0e5af7ecfe4012f99).
 - Uniswap's API rejects Tempo testnet `42431` with `RequestValidationError`; its supported Tempo chain is `4217`. Existing Tempo MPP payments remain available, but **MPP auto-funding is not implemented**. No mainnet workaround or testnet bridge is claimed.
-- Apply migrations `0013_uniswap_execution.sql` and `0014_uniswap_targets.sql`; restart API and worker. No public deployment performed.
+- Migrations `0013_uniswap_execution.sql` and `0014_uniswap_targets.sql` are applied in the deployed database. The [dashboard](https://www.agentis.systems/dashboard) and [backend](https://api.agentis.systems/health) are live; Railway runs the API and reconciliation worker together.
 
-See [FEEDBACK.md](../FEEDBACK.md). The hackathon feedback form and public submission are still owner tasks, not automatically submitted.
+See [FEEDBACK.md](../FEEDBACK.md). The project author has completed the [Uniswap Developer Feedback Form](https://developers.uniswap.org/hackathon-feedback).

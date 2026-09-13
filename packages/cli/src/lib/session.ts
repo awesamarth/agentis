@@ -12,7 +12,7 @@ const agentSummary = (credential: CliCredential) => ({ name: credential.agentNam
 const directory = join(homedir(), '.agentis')
 const file = join(directory, 'cli-session.json')
 type Session = { version: 1; apiUrl: string; credentials: CliCredential[] }
-export const apiUrl = () => (process.env.AGENTIS_API_URL ?? 'http://localhost:3001').replace(/\/$/, '')
+export const apiUrl = () => (process.env.AGENTIS_API_URL ?? 'https://api.agentis.systems').replace(/\/$/, '')
 function privateDirectory() {
   if (!existsSync(directory)) mkdirSync(directory, { mode: 0o700 })
   if (lstatSync(directory).isSymbolicLink() || !lstatSync(directory).isDirectory()) throw Error('CLI configuration directory must not be a symlink')

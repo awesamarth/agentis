@@ -74,14 +74,7 @@ async function main() {
   capabilities
 
 ${pluginHelp}
-${identityHelp}
-Human-readable output by default. Add --json for machine-readable output.
-Run agentis login, or set AGENTIS_TOKEN to override stored login.
-Set AGENTIS_API_URL (default http://localhost:3001). Use --agent <id-or-name>
-to narrow commands to one linked agent; wallet IDs route payments automatically.
-Use an executor grant for agents; fresh owner JWT for administration.
-Hosted legacy money commands are unavailable during migration. Local wallets use
-filesystem protection, not encrypted custody. No transaction can target mainnet yet.`)
+${identityHelp}`)
     return
   }
   if (values.local && values.hosted) throw Error('Choose --local or --hosted, not both')
