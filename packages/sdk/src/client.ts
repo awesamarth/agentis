@@ -78,7 +78,7 @@ export class AgentisClient {
   }
   identity = {
     resolve: (name: string, chainId: string) => this.request<EnsRecipient>(`/ens/resolve?${new URLSearchParams({ name, chainId })}`, 'GET', undefined, {}, undefined, false),
-    show: (walletId: string) => this.request<AgentIdentity>(`/plugins/ens/?walletId=${encodeURIComponent(walletId)}`, 'GET', undefined, {}, AbortSignal.timeout(60000)),
+    show: (walletId: string) => this.request<AgentIdentity>(`/plugins/ens?walletId=${encodeURIComponent(walletId)}`, 'GET', undefined, {}, AbortSignal.timeout(60000)),
     setup: (input: { walletId: string; parent: string; label: string; description?: string }) => this.request<IdentityStep>('/plugins/ens/setup', 'POST', input, {}, AbortSignal.timeout(60000)),
     next: (walletId: string) => this.request<IdentityStep>('/plugins/ens/next', 'POST', { walletId }, {}, AbortSignal.timeout(60000)),
     update: (input: { walletId: string; key: 'endpoint' | 'description'; value: string }, options: { idempotencyKey: string }) => this.request<Operation>('/plugins/ens/records', 'POST', input, { 'Idempotency-Key': options.idempotencyKey }, AbortSignal.timeout(60000)),
