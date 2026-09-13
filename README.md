@@ -67,7 +67,8 @@ Automated suites were removed at the owner's request. The standalone Privy walle
 - Guest Solana devnet wallets remain in browser localStorage; explicitly insecure against same-origin scripts/device compromise. Never fund on mainnet.
 - Local CLI wallet files use SLIP-0010 Ed25519 derivation and filesystem permissions, not empty-password encryption.
 - Remote MCP uses browser OAuth and the common backend at `/mcp`; see [connection/setup instructions](packages/mcp/README.md). No local MCP process or manual token copying. Local HTTP/SDK checks passed; actual client/browser consent and public deployment remain unverified/pending.
-- x402/MPP paid GET uses the common hosted/local execution paths. Uniswap, ENSv2/ERC-8004 and optional integrations remain future work.
+- x402/MPP paid GET uses the common hosted/local execution paths. The [per-agent Uniswap plugin](docs/uniswap.md) adds Base Sepolia swaps, rebalancing, DCA, gas refill and x402 shortfall funding. Real Privy swap/browser verification remains pending; Tempo MPP auto-funding has no supported Uniswap testnet route. ENSv2/ERC-8004 remain future work.
+- Uniswap review pointers: [V3 quotes](apps/backend/src/modules/uniswap.ts#L37), [bounded router calldata](apps/backend/src/modules/uniswap.ts#L66), [persisted plan execution](apps/backend/src/modules/uniswap-service.ts#L64), [worker scheduling](apps/backend/src/modules/uniswap-service.ts#L256), [developer feedback](FEEDBACK.md).
 - The Agentis facilitator product and Quasar enforcement wiring have been removed.
 
 See [AGENTS.md](AGENTS.md) for the living handoff and [docs/architecture.md](docs/architecture.md) for decisions, API routes, verification gaps and next steps.

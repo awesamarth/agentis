@@ -17,7 +17,7 @@ const parsed = new URL(dbUrl)
 assert(['127.0.0.1', 'localhost'].includes(parsed.hostname) && parsed.port === '55432', 'Dedicated local Postgres only')
 const admin = postgres(dbUrl, { max: 1 }), schema = `mcp_check_${randomBytes(6).toString('hex')}`
 await admin.unsafe(`CREATE SCHEMA ${schema}`)
-for (const table of ['agents', 'wallets', 'grants', 'operations', 'onboarding', 'oauth_clients', 'oauth_connections', 'oauth_requests', 'oauth_tokens']) await admin.unsafe(`CREATE TABLE ${schema}.${table} (LIKE public.${table} INCLUDING ALL)`)
+for (const table of ['agents', 'wallets', 'grants', 'operations', 'onboarding', 'oauth_clients', 'oauth_connections', 'oauth_requests', 'oauth_tokens', 'uniswap_plans', 'uniswap_schedules', 'uniswap_setup_requests']) await admin.unsafe(`CREATE TABLE ${schema}.${table} (LIKE public.${table} INCLUDING ALL)`)
 const sql = postgres(dbUrl, { max: 5, connection: { search_path: schema } }), db = drizzle(sql, { schema: tables })
 const previousIssuer = process.env.AGENTIS_PUBLIC_API_URL
 let app: ReturnType<typeof createApp>

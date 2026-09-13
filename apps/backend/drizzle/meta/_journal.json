@@ -92,6 +92,20 @@
       "when": 1789318956000,
       "tag": "0012_agent_plugins",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789405356000,
+      "tag": "0013_uniswap_execution",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789491756000,
+      "tag": "0014_uniswap_targets",
+      "breakpoints": true
     }
   ]
 }

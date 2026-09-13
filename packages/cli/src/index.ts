@@ -17,6 +17,7 @@ import { showLocalPolicy, setLocalPolicy } from './lib/local-policy'
 import { loadLocalWallet } from './lib/local-wallet'
 import { localHistory } from './lib/local-history'
 import { localPaidFetch } from './lib/local-paid'
+import { runUniswap, uniswapAvailable, uniswapHelp, planText } from './lib/uniswap'
 
 const args = process.argv.slice(2)
 async function main() {
@@ -24,16 +25,21 @@ async function main() {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
     help: { type: 'boolean', short: 'h' }, 'no-browser': { type: 'boolean' }, agent: { type: 'string' }, local: { type: 'boolean' }, hosted: { type: 'boolean' }, name: { type: 'string' },
     wallet: { type: 'string' }, 'max-amount-atomic': { type: 'string' }, 'max-fee-atomic': { type: 'string' },
+    from: { type: 'string' }, 'exact-output': { type: 'boolean' }, 'slippage-bps': { type: 'string' }, 'eth-percent': { type: 'string' }, 'every-minutes': { type: 'string' }, preview: { type: 'boolean' }, 'swap-funding': { type: 'boolean' },
+    'minimum-output-atomic': { type: 'string' }, 'maximum-input-atomic': { type: 'string' },
     file: { type: 'string' }, key: { type: 'string' }, hash: { type: 'string' }, json: { type: 'boolean' },
     chains: { type: 'string' }, chain: { type: 'string' }, to: { type: 'string' }, amount: { type: 'string' }, asset: { type: 'string' }, 'max-fee': { type: 'string' }, yes: { type: 'boolean' },
     'max-amount': { type: 'string' }, 'per-transaction': { type: 'string' }, hourly: { type: 'string' }, daily: { type: 'string' }, total: { type: 'string' }, pause: { type: 'boolean' }, resume: { type: 'boolean' }, limit: { type: 'string' },
   } })
   const [command, subcommand, id] = positionals
+  if (['swap', 'rebalance', 'dca'].includes(command ?? '')) { if (values.local) throw Error('Uniswap currently supports hosted agents only'); await runUniswap(command!, subcommand, id, values); return }
+  if (values['swap-funding'] && (values.local || command !== 'fetch')) throw Error('--swap-funding currently supports hosted fetch only')
   if (values.help && ['login', 'logout', 'whoami'].includes(command ?? '')) {
     console.log(command === 'login' ? 'agentis login [--no-browser]\nAuthorize selected agents and network wallets in your browser; store scoped executor keys locally. No owner JWT is stored.' : command === 'logout' ? 'agentis logout\nRemove local credentials. Server keys remain active until revoked in the dashboard.' : 'agentis whoami\nShow linked agents and network scopes without exposing keys.')
     return
   }
   if (!command || values.help) {
+    const pluginHelp = await uniswapAvailable(values.agent) ? `\n${uniswapHelp}\n` : ''
     if (!values.json) banner()
     console.log(`Usage: agentis ${command ?? '<command>'}
   login [--no-browser]
@@ -63,6 +69,7 @@ async function main() {
   operations approve|reject <id> --hash <operation-hash>   (owner only)
   capabilities
 
+${pluginHelp}
 Human-readable output by default. Add --json for machine-readable output.
 Run agentis login, or set AGENTIS_TOKEN to override stored login.
 Set AGENTIS_API_URL (default http://localhost:3001). Use --agent <id-or-name>
@@ -143,6 +150,10 @@ filesystem protection, not encrypted custody. No transaction can target mainnet 
     if (command === 'fetch') {
       if (!subcommand || !values.wallet || !values['max-amount-atomic'] || !values.key) throw new Error('URL, --wallet, --max-amount-atomic and --key required; reuse the key after timeouts')
       client = await forWallet(values.wallet)
+      if (values['swap-funding']) {
+        const result = await client.uniswap.fetch({ url: subcommand, walletId: values.wallet, maxAmountAtomic: values['max-amount-atomic'] }, { idempotencyKey: values.key })
+        console.log(values.json ? JSON.stringify(result, null, 2) : result.funding ? planText(result.funding) : formatOutput('operations', result.payment)); return
+      }
       const operation = await client.fetch({ url: subcommand, walletId: values.wallet, maxAmountAtomic: values['max-amount-atomic'], ...(values['max-fee-atomic'] ? { maxFeeAtomic: values['max-fee-atomic'] } : {}) }, { idempotencyKey: values.key })
       output = operation.status === 'queued' ? await client.operations.wait(operation.id, { timeoutMs: 120_000 }) : operation
     }

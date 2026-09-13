@@ -10,7 +10,7 @@ const ceil = (value: bigint, divisor: bigint) => (value + divisor - 1n) / diviso
 // USD prices use 18 decimal places; ledger dollars use 6. Never round spending down.
 export function usdCost(input: OperationInput, quote: UsdQuote, fee = input.maxFeeAtomic, success = true) {
   const value = (amount: string, price: string, decimals: number) => ceil(BigInt(amount) * BigInt(price), 10n ** BigInt(decimals) * 1_000_000_000_000n)
-  return (success ? value(input.amountAtomic, quote.assetPrice, quote.assetDecimals) : 0n) + value(fee, quote.feePrice, quote.feeDecimals)
+  return (success && input.action !== 'uniswap_approval' ? value(input.amountAtomic, quote.assetPrice, quote.assetDecimals) : 0n) + value(fee, quote.feePrice, quote.feeDecimals)
 }
 export function parsePrice(raw: unknown, now = Date.now()) {
   const price = priceSchema.parse(raw)

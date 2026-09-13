@@ -55,6 +55,10 @@ The backend serves `/mcp`, OAuth discovery/registration/authorize/token/revoke e
 
 The existing `mcp.agentis.systems` Worker can remain a thin HTTP proxy to the API. For that deployment, set backend `AGENTIS_PUBLIC_API_URL=https://api.agentis.systems` and `AGENTIS_MCP_RESOURCE=https://mcp.agentis.systems/mcp`; configure the Worker with `AGENTIS_API_URL=https://api.agentis.systems`. OAuth and tools run in the backend, not a second execution service. No introspection secret is needed. Existing legacy OAuth tokens are not accepted.
 
+## Uniswap plugin
+
+Agents with Uniswap enabled expose eight additional quote/swap/status, rebalance and DCA tools. `agentis_fetch` supports optional `swapFunding: true` for missing **Base Sepolia USDC**. Recurring setup uses a separate owner-confirmation URL, not executor privileges. See [plugin scope and commands](../../docs/uniswap.md). Tempo MPP auto-funding is not supported on the current testnet; ordinary MPP payments are unchanged.
+
 ## Authorization and revocation
 
 OAuth uses exact registered redirects, authorization code + S256 PKCE, client/resource binding, single-use expiring codes, one-hour opaque access tokens and rotating 30-day refresh tokens. Only token/code hashes are stored. Refresh-token reuse revokes the connection and its grants.

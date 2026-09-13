@@ -3,6 +3,7 @@ import { useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { usePrivy } from '@privy-io/react-auth'
 import { AgentisClient, type AgentisAgent } from '@agentis-hq/sdk'
+import UniswapControls from './UniswapControls'
 import PluginPicker, { UniswapLogo, uniswapDescription } from './PluginPicker'
 
 export default function AgentPlugins({ agent }: { agent: AgentisAgent }) {
@@ -18,7 +19,7 @@ export default function AgentPlugins({ agent }: { agent: AgentisAgent }) {
   function open() { setSelected(agent.plugins); save.reset(); dialog.current?.showModal() }
   return <section aria-labelledby="agent-plugins-title" className="space-y-4">
     <header className="flex flex-wrap items-center justify-between gap-3"><h2 id="agent-plugins-title" className="font-mono text-[0.6rem] uppercase tracking-widest text-ink-muted">Plugins</h2><button className="border border-beige-darker px-3 py-2 font-mono text-xs hover:border-ink" onClick={open}>+ Add a plugin</button></header>
-    {!agent.plugins.length ? <p className="border border-beige-darker bg-[#faf7f1] p-5 text-sm text-ink-muted">No plugins added</p> : <article className="border border-beige-darker bg-[#faf7f1] p-5"><div className="flex items-start gap-3"><UniswapLogo /><div className="min-w-0 flex-1"><h3 className="font-serif text-xl font-bold">Uniswap</h3><p className="mt-1 text-sm text-ink-muted">{uniswapDescription}</p></div><button className="text-xs underline" onClick={open}>Manage</button></div><p className="mt-4 border-t border-beige-darker pt-4 text-sm text-ink-muted">Added to this agent. Swap execution, rebalancing, DCA and gas-refill controls are being connected; no automated spending is enabled yet.</p></article>}
+    {!agent.plugins.length ? <p className="border border-beige-darker bg-[#faf7f1] p-5 text-sm text-ink-muted">No plugins added</p> : <article className="border border-beige-darker bg-[#faf7f1] p-5"><div className="flex items-start gap-3"><UniswapLogo /><div className="min-w-0 flex-1"><h3 className="font-serif text-xl font-bold">Uniswap</h3><p className="mt-1 text-sm text-ink-muted">{uniswapDescription}</p></div><button className="text-xs underline" onClick={open}>Manage</button></div><UniswapControls agentId={agent.id} /></article>}
     <dialog ref={dialog} aria-labelledby="plugin-picker-title" onCancel={event => { if (save.isPending) event.preventDefault() }} onClick={event => {
       if (save.isPending || event.target !== event.currentTarget) return
       const bounds = event.currentTarget.getBoundingClientRect()

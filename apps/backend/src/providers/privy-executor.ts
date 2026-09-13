@@ -13,7 +13,10 @@ import { prepareTempoTransfer, verifyTempoTransfer, roundedTempoFee, tempoFeeSca
 import { TxEnvelopeTempo } from 'ox/tempo'
 import { prepareSolanaTransfer, verifySolanaTransfer, broadcastSolanaTransfer, solanaReceipt, solanaDevnet, solanaUsdc } from '../modules/solana'
 
+import { uniswapCall, validateSwapPool, uniswap, poolSwapAbi } from '../modules/uniswap'
+
 export function transferCall(input: OperationInput) {
+  if (input.swap) return uniswapCall(input, input.to)
   return input.asset === 'native'
     ? { to: getAddress(input.to), value: BigInt(input.amountAtomic), data: '0x' as Hex }
     : { to: getAddress(input.asset.slice(6)), value: 0n, data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [getAddress(input.to), BigInt(input.amountAtomic)] }) }
@@ -36,6 +39,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
   const executor: Executor & { buildRequest(wallet: WalletRow, input: OperationInput, id: string, expiresAt: Date): Promise<AuthorizationRequest> } = {
     id: 'privy',
     validate(wallet, input) {
+      if (input.swap) { if (wallet.chainId !== uniswap.chainId) fail(400, 'unsupported_network', 'Uniswap currently requires Base Sepolia'); uniswapCall(input, wallet.address); return }
       if (input.action === 'paid_fetch') { if (input.mpp) validateMpp(wallet, input); else if (input.chainId === solanaDevnet) validateSvm(wallet, input); else validateX402(wallet, input); return }
       if (input.chainId === solanaDevnet && wallet.chainId === solanaDevnet) {
         if (!['native', `spl:${solanaUsdc}`].includes(input.asset) || BigInt(input.amountAtomic) > 18_446_744_073_709_551_615n) fail(400, 'unsupported_asset', 'Unsupported Solana transfer')
@@ -50,10 +54,11 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
       this.validate(wallet, input)
       const client = await check(wallet, input)
       if (!client) return { version: 1, method: 'POST', url: `https://api.privy.io/v1/wallets/${encodeURIComponent(wallet.providerWalletId)}/rpc`, headers: { 'privy-app-id': appId, 'privy-idempotency-key': id, 'privy-request-expiry': String(expiresAt.getTime()) }, body: await prepareSolanaTransfer(wallet.address, input) }
+      if (input.swap) await validateSwapPool(input)
       const call = transferCall(input)
       const code = await client.getCode({ address: call.to })
-      if (input.asset === 'native' && code && code !== '0x') throw new Error('Native transfer recipient must not be a contract')
-      if (input.asset !== 'native' && (!code || code === '0x')) throw new Error('Token contract not found')
+      if (!input.swap && input.asset === 'native' && code && code !== '0x') throw new Error('Native transfer recipient must not be a contract')
+      if ((input.swap || input.asset !== 'native') && (!code || code === '0x')) throw new Error('Token contract not found')
       const signer = createWalletClient({ chain: client.chain, transport: http(client.transport.url, { retryCount: 0, timeout: 15_000 }) })
       let transaction: Record<string, unknown>
       if (input.chainId === 'eip155:42431') {
@@ -127,6 +132,28 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
         const fee = tempo ? roundedTempoFee(receipt.gasUsed * receipt.effectiveGasPrice) : receipt.gasUsed * receipt.effectiveGasPrice + BigInt((receipt as unknown as { l1Fee?: bigint }).l1Fee ?? 0n)
         const transfers = parseEventLogs({ abi: erc20Abi, logs: receipt.logs, eventName: 'Transfer' })
         if (tempo && (receipt as unknown as { feeToken?: string }).feeToken?.toLowerCase() !== tempoFeeToken) throw new Error('Unexpected Tempo fee token')
+        if (input.swap) {
+          if (input.action === 'uniswap_approval') {
+            const approvals = parseEventLogs({ abi: erc20Abi, logs: receipt.logs, eventName: 'Approval' })
+            const approved = approvals.some(log => log.address.toLowerCase() === uniswap.USDC && log.args.owner.toLowerCase() === receipt.from.toLowerCase() && log.args.spender.toLowerCase() === uniswap.router.toLowerCase() && log.args.value === BigInt(input.amountAtomic))
+            if (receipt.status === 'success' && !approved) throw Error('Successful approval missing expected event; reconcile manually')
+            return { transactionHash: receipt.transactionHash, chainId: input.chainId, blockNumber: receipt.blockNumber.toString(), feeAtomic: fee.toString(), success: receipt.status === 'success' }
+          }
+          const swaps = parseEventLogs({ abi: poolSwapAbi, logs: receipt.logs, eventName: 'Swap' }).filter(log => log.address.toLowerCase() === input.swap!.pool.toLowerCase() && log.args.sender.toLowerCase() === uniswap.router.toLowerCase())
+          let settled: { inputAtomic: string; outputAtomic: string; tokenOut: 'ETH' | 'USDC' } | undefined
+          if (receipt.status === 'success') {
+            if (swaps.length !== 1) throw Error('Missing or ambiguous swap receipt; reservation retained')
+            const event = swaps[0]!.args
+            const tokenIn = input.asset === 'native' ? uniswap.ETH : uniswap.USDC
+            const inputFirst = tokenIn.toLowerCase() < uniswap[input.swap.tokenOut].toLowerCase()
+            const spent = inputFirst ? event.amount0 : event.amount1, received = -(inputFirst ? event.amount1 : event.amount0)
+            if (spent <= 0n || spent > BigInt(input.amountAtomic) || received < BigInt(input.swap.minimumOutputAtomic)) throw Error('Swap settlement outside approved bounds')
+            const expectedRecipient = input.swap.tokenOut === 'ETH' ? uniswap.router : input.to
+            if (swaps[0]!.args.recipient.toLowerCase() !== expectedRecipient.toLowerCase()) throw Error('Unexpected swap recipient')
+            settled = { inputAtomic: spent.toString(), outputAtomic: received.toString(), tokenOut: input.swap.tokenOut }
+          }
+          return { transactionHash: receipt.transactionHash, chainId: input.chainId, blockNumber: receipt.blockNumber.toString(), feeAtomic: fee.toString(), success: receipt.status === 'success', swap: settled }
+        }
         const transferred = input.asset === 'native' || transfers.some(log => log.address.toLowerCase() === input.asset.slice(6).toLowerCase() && log.args.from.toLowerCase() === receipt.from.toLowerCase() && log.args.to.toLowerCase() === input.to.toLowerCase() && log.args.value === BigInt(input.amountAtomic))
         return { transactionHash: receipt.transactionHash, chainId: input.chainId, blockNumber: receipt.blockNumber.toString(), feeAtomic: fee.toString(), success: receipt.status === 'success' && transferred, feePayment: { asset: tempo ? `erc20:${tempoFeeToken}` : 'native', amountAtomic: (tempo ? fee / tempoFeeScale : fee).toString(), decimals: tempo ? 6 : 18 } }
       } catch (error) {

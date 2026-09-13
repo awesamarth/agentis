@@ -25,7 +25,8 @@ export const x402Payment = z.object({
 export type PaidHttpResponse = { status: number; headers: Record<string, string>; bodyBase64: string }
 export const operationInput = z.object({
   walletId: z.string().uuid(),
-  action: z.enum(['transfer', 'paid_fetch']),
+  action: z.enum(['transfer', 'paid_fetch', 'uniswap_swap', 'uniswap_approval']),
+  swap: z.object({ planId: z.string().uuid(), tokenOut: z.enum(['ETH', 'USDC']), fee: z.union([z.literal(100), z.literal(500), z.literal(3000), z.literal(10000)]), pool: z.string().regex(/^0x[0-9a-fA-F]{40}$/), minimumOutputAtomic: positiveAtomic, exactOutput: z.boolean(), deadline: z.number().int().positive() }).strict().optional(),
   payment: x402Payment.optional(),
   mpp: z.object({ url: z.url().max(4096), challenge: z.string().max(16384), maxAmountAtomic: positiveAtomic, expiresAt: z.iso.datetime() }).strict().optional(),
   chainId,
@@ -34,7 +35,7 @@ export const operationInput = z.object({
   amountAtomic: positiveAtomic,
   maxFeeAtomic: atomic,
   reason: z.string().trim().max(500).default(''),
-}).strict().refine(input => input.action === 'paid_fetch' ? (!!input.payment && !input.mpp && input.maxFeeAtomic === '0') || (!!input.mpp && !input.payment && BigInt(input.maxFeeAtomic) > 0n) : !input.payment && !input.mpp && BigInt(input.maxFeeAtomic) > 0n, 'Invalid payment action or fee cap')
+}).strict().refine(input => input.action.startsWith('uniswap_') ? !!input.swap && !input.payment && !input.mpp && BigInt(input.maxFeeAtomic) > 0n : !input.swap).refine(input => input.action === 'paid_fetch' ? (!!input.payment && !input.mpp && input.maxFeeAtomic === '0') || (!!input.mpp && !input.payment && BigInt(input.maxFeeAtomic) > 0n) : !input.payment && !input.mpp && BigInt(input.maxFeeAtomic) > 0n, 'Invalid payment action or fee cap')
 export type OperationInput = z.input<typeof operationInput>
 
 export const walletPolicy = z.object({
@@ -92,6 +93,6 @@ export type Operation = OperationInput & {
   approvalUrl: string | null
   transactionHash: string | null
   error: string | null
-  receipt: { transactionHash: string; chainId: string; blockNumber: string; feeAtomic: string; success: boolean; feePayment?: { asset: string; amountAtomic: string; decimals: number } } | null
+  receipt: { transactionHash: string; chainId: string; blockNumber: string; feeAtomic: string; success: boolean; swap?: { inputAtomic: string; outputAtomic: string; tokenOut: 'ETH' | 'USDC' }; feePayment?: { asset: string; amountAtomic: string; decimals: number } } | null
 }
 export const terminalStatuses = new Set<OperationStatus>(['confirmed', 'failed', 'denied', 'expired', 'rejected'])

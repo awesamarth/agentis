@@ -1,5 +1,7 @@
 import type { Operation, OperationInput, WalletPolicy, AuthorizationRequest, UsdLimits, GrantInput, FetchRequest, PluginId } from '@agentis-hq/core/operations'
 
+import type { SwapRequest, SwapQuote, SwapPlan, DcaInput, DcaSchedule, RebalancePreview } from './uniswap'
+
 export type AgentisAgent = { id: string; name: string; plugins: PluginId[]; limits: UsdLimits; mode: 'ask' | 'automatic' | 'paused'; allowedRecipients: string[]; networks: string[]; defaultNetwork: string }
 export type AgentSettings = Pick<AgentisAgent, 'name' | 'limits' | 'mode' | 'allowedRecipients'> & { plugins?: AgentisAgent['plugins']; selection: { networks: string[]; defaultNetwork: string }; enableExecution?: boolean }
 export type AgentisWallet = { id: string; agentId: string | null; agentName: string | null; agentPlugins: AgentisAgent['plugins'] | null; serverAuthorized: boolean; address: string; chainId: string; policy: WalletPolicy; policyVersion: number; enabled: boolean }
@@ -72,6 +74,25 @@ export class AgentisClient {
     pause: (id: string) => this.request<AgentisAgent>(`/agents/${encodeURIComponent(id)}/pause`, 'POST'),
     create: (input: AgentSettings & { id: string }) => this.request<AgentisAgent>('/agents', 'POST', input),
     update: (id: string, input: AgentSettings) => this.request<AgentisAgent>(`/agents/${encodeURIComponent(id)}`, 'PATCH', input),
+  }
+  uniswap = {
+    fetch: (input: FetchRequest, options: { idempotencyKey: string }) => this.request<{ funding: SwapPlan | null; payment: Operation | null }>('/plugins/uniswap/fetch', 'POST', input, { 'Idempotency-Key': options.idempotencyKey }, AbortSignal.timeout(60_000)),
+    quote: (input: SwapRequest) => this.request<SwapQuote>('/plugins/uniswap/quote', 'POST', input, {}, AbortSignal.timeout(60_000)),
+    swap: (input: SwapRequest, options: { idempotencyKey: string }) => this.request<SwapPlan>('/plugins/uniswap/swaps', 'POST', input, { 'Idempotency-Key': options.idempotencyKey }, AbortSignal.timeout(60_000)),
+    get: (id: string) => this.request<SwapPlan>(`/plugins/uniswap/swaps/${encodeURIComponent(id)}`),
+    target: (walletId: string) => this.request<{ ethPercent: number }>(`/plugins/uniswap/rebalance-target?walletId=${encodeURIComponent(walletId)}`),
+    saveTarget: (walletId: string, ethPercent: number) => this.request<{ ethPercent: number }>('/plugins/uniswap/rebalance-target', 'POST', { walletId, ethPercent }),
+    executeRebalance: (walletId: string, ethPercent: number, options: { idempotencyKey: string }) => this.request<SwapPlan | null>('/plugins/uniswap/rebalance/execute', 'POST', { walletId, ethPercent }, { 'Idempotency-Key': options.idempotencyKey }, AbortSignal.timeout(60_000)),
+    rebalance: (walletId: string, ethPercent: number) => this.request<RebalancePreview>('/plugins/uniswap/rebalance', 'POST', { walletId, ethPercent }, {}, AbortSignal.timeout(60_000)),
+    dca: {
+      requestSetup: (input: { action: 'create' | 'edit' | 'active' | 'paused' | 'cancelled'; scheduleId?: string; input?: DcaInput }) => this.request<{ id: string; approvalUrl: string }>('/plugins/uniswap/dca-requests', 'POST', input),
+      setup: (id: string) => this.request<{ id: string; walletId: string; action: string; input: DcaInput | null; currentSchedule: DcaSchedule | null; completed: boolean; expiresAt: string }>(`/plugins/uniswap/dca-requests/${encodeURIComponent(id)}`),
+      completeSetup: (id: string, approve: boolean) => this.request<{ completed: boolean; approved: boolean }>(`/plugins/uniswap/dca-requests/${encodeURIComponent(id)}`, 'POST', { approve, confirm: true }),
+      list: (walletId: string) => this.request<DcaSchedule[]>(`/plugins/uniswap/dca?walletId=${encodeURIComponent(walletId)}`),
+      create: (input: DcaInput & { id: string }) => this.request<DcaSchedule>('/plugins/uniswap/dca', 'POST', input),
+      update: (id: string, input: DcaInput) => this.request<DcaSchedule>(`/plugins/uniswap/dca/${encodeURIComponent(id)}`, 'PUT', input),
+      status: (id: string, status: DcaSchedule['status']) => this.request<DcaSchedule>(`/plugins/uniswap/dca/${encodeURIComponent(id)}`, 'PATCH', { status, confirm: true }),
+    },
   }
   history = () => this.request<Operation[]>('/history')
   wallets = {
