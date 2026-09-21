@@ -2,18 +2,16 @@
 import { useState } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { AgentisClient, type Operation } from '@agentis-hq/sdk'
+import { type Operation } from '@agentis-hq/sdk'
+import { useAgentisClient } from '@/lib/agentis'
 import { formatUnits } from 'viem'
 import { ArrowUpRight, LoaderCircle } from 'lucide-react'
 
 export default function Operations({ id, agentId }: { id?: string; agentId?: string }) {
-  const { ready, authenticated, getAccessToken, user, login } = usePrivy()
+  const { ready, authenticated, user, login } = usePrivy()
   const queries = useQueryClient()
   const [visibleCount, setVisibleCount] = useState(10)
-  const client = new AgentisClient({
-    baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001',
-    token: async () => { const token = await getAccessToken(); if (!token) throw new Error('Sign in first'); return token },
-  })
+  const client = useAgentisClient('Sign in first')
   const networks = useQuery({ queryKey: ['onboarding', user?.id], enabled: ready && authenticated, queryFn: () => client.onboarding.get() })
   const key = ['operations', user?.id, id, agentId]
   const query = useQuery({ queryKey: key, enabled: ready && authenticated, queryFn: async () => id ? [await client.operations.get(id)] : client.operations.list(agentId), refetchInterval: 5000 })

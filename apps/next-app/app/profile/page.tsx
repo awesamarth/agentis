@@ -4,18 +4,18 @@ import { usePrivy } from '@privy-io/react-auth'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AgentisClient } from '@agentis-hq/sdk'
+import { useAgentisClient } from '@/lib/agentis'
 import { Copy, Check } from 'lucide-react'
 import Navbar from '@/components/Navbar'
 import ProfileAnalytics, { profileMoney } from '@/components/ProfileAnalytics'
 const heading = 'mb-4 font-mono text-[0.6rem] uppercase tracking-widest text-ink-muted'
 
 export default function ProfilePage() {
-  const { ready, authenticated, user, getAccessToken } = usePrivy()
+  const { ready, authenticated, user } = usePrivy()
   const router = useRouter()
   const [copyStatus, setCopyStatus] = useState('')
   useEffect(() => { if (ready && !authenticated) router.replace('/dashboard') }, [ready, authenticated, router])
-  const client = new AgentisClient({ baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001', token: async () => { const token = await getAccessToken(); if (!token) throw new Error('Sign in first'); return token } })
+  const client = useAgentisClient('Sign in first')
   const summary = useQuery({ queryKey: ['profile', user?.id], enabled: ready && authenticated, queryFn: () => client.profile.get(), refetchInterval: 60_000 })
   const data = summary.data
   const identity = user?.google?.email ?? user?.github?.email ?? user?.email?.address ?? user?.wallet?.address ?? 'Your account'

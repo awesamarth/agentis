@@ -12,11 +12,6 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
-    "./server": {
-      "types": "./dist/server/index.d.ts",
-      "import": "./dist/server/index.js",
-      "require": "./dist/server/index.cjs"
-    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -29,25 +24,9 @@
     "dev": "tsup --watch"
   },
   "dependencies": {
-    "@agentis-hq/core": "^0.3.0"
-  },
-  "peerDependencies": {
-    "@solana/mpp": "^0.5.2",
-    "@x402/core": "~2.10.0",
-    "@x402/svm": "~2.10.0",
-    "mppx": "^0.5.17"
-  },
-  "peerDependenciesMeta": {
-    "@solana/mpp": { "optional": true },
-    "@x402/core": { "optional": true },
-    "@x402/svm": { "optional": true },
-    "mppx": { "optional": true }
+    "@agentis-hq/core": "workspace:*"
   },
   "devDependencies": {
-    "@solana/mpp": "^0.5.2",
-    "@x402/core": "~2.10.0",
-    "@x402/svm": "~2.10.0",
-    "mppx": "^0.5.17",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0"
   }

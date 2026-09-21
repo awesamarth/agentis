@@ -1,8 +1,8 @@
 import { encodeFunctionData, erc20Abi, getAddress, parseAbi, parseUnits, type Address, type Hex } from 'viem'
 import { z } from 'zod'
 import type { OperationInput } from '@agentis-hq/core/operations'
-import { evmClient } from './networks'
-import { fail } from '../errors'
+import { evmClient } from '../../modules/networks'
+import { fail } from '../../errors'
 
 // Official Base Sepolia deployments, not user-supplied routers or calldata.
 // https://docs.uniswap.org/contracts/v3/reference/deployments/base-deployments

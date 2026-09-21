@@ -12,6 +12,6 @@ bun run index.ts
 bun run worker
 ```
 
-`DATABASE_URL` is required; no JSON fallback or automatic startup migrations. Execution defaults disabled. Only explicit local Anvil mode executes; Privy is read-only auth/wallet verification for now.
+`DATABASE_URL` is required; there is no JSON fallback or automatic startup migration. Execution defaults disabled. Configure explicit local Anvil mode for disposable local tests or Privy mode for hosted testnet execution.
 
 See `../../docs/architecture.md` for API, approval security, limitations and local setup.

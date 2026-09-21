@@ -1,15 +1,15 @@
 import { and, desc, eq, inArray, lte, sql } from 'drizzle-orm'
 import { erc20Abi, formatUnits, type Address } from 'viem'
 import { z } from 'zod'
-import type { OperationService, Principal } from '../operations'
-import { hash } from '../operations'
+import type { OperationService, Principal } from '../../operations'
+import { hash } from '../../operations'
 import { fetchRequest, type FetchRequest } from '@agentis-hq/core/operations'
-import { discoverX402 } from './x402'
-import { agents, wallets, uniswapTargets, operations as operationRows, uniswapPlans as plans, uniswapSchedules as schedules, uniswapSetupRequests as setupRequests } from '../db/schema'
-import { fail } from '../errors'
-import { evmClient } from './networks'
-import { quoteUsd } from './usd-budget'
-import { quoteSwap, swapRequest, swapInput, uniswap, tokenUnits, type SwapRequest } from './uniswap'
+import { discoverX402 } from '../../modules/x402'
+import { agents, wallets, uniswapTargets, operations as operationRows, uniswapPlans as plans, uniswapSchedules as schedules, uniswapSetupRequests as setupRequests } from '../../db/schema'
+import { fail } from '../../errors'
+import { evmClient } from '../../modules/networks'
+import { quoteUsd } from '../../modules/usd-budget'
+import { quoteSwap, swapRequest, swapInput, uniswap, tokenUnits, type SwapRequest } from './swap'
 
 type Tx = Parameters<Parameters<OperationService['db']['transaction']>[0]>[0]
 type Plan = typeof plans.$inferSelect

@@ -2,7 +2,7 @@
 
 import { usePrivy } from '@privy-io/react-auth'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AgentisClient } from '@agentis-hq/sdk'
+import { useAgentisClient } from '@/lib/agentis'
 import { useRef, useState } from 'react'
 import Dropdown from './Dropdown'
 import MultiSelect from './MultiSelect'
@@ -11,7 +11,7 @@ const accessSource = (name: string) => /^(CLI|MCP|SDK)\s*·/i.exec(name)?.[1].to
 const dialogButton = 'px-4 py-2.5 font-mono text-xs uppercase tracking-widest disabled:opacity-40'
 
 export default function WalletAccess({ agentId }: { agentId: string }) {
-  const { ready, authenticated, getAccessToken, user } = usePrivy()
+  const { ready, authenticated, user } = usePrivy()
   const cache = useQueryClient()
   const [chainIds, setChainIds] = useState<string[]>([])
   const [scope, setScope] = useState('all')
@@ -19,7 +19,7 @@ export default function WalletAccess({ agentId }: { agentId: string }) {
   const [message, setMessage] = useState('')
   const revokeDialog = useRef<HTMLDialogElement>(null)
   const [revokeTarget, setRevokeTarget] = useState<{ id: string; source?: string; networks: string; ownerId: string; agentId: string } | null>(null)
-  const client = new AgentisClient({ baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001', token: async () => { const token = await getAccessToken(); if (!token) throw new Error('Sign in first'); return token } })
+  const client = useAgentisClient('Sign in first')
   const enabled = ready && authenticated
   const wallets = useQuery({ queryKey: ['wallets', user?.id], enabled, queryFn: () => client.wallets.list() })
   const agents = useQuery({ queryKey: ['agents', user?.id], enabled, queryFn: () => client.agents.list() })

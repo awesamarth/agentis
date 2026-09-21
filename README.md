@@ -162,11 +162,9 @@ The following links pin the implementation revision so line references remain st
 
 | Integration point | Relevant code |
 | --- | --- |
-| Deployed addresses and ABIs | [`uniswap.ts`, lines 7–29](https://github.com/awesamarth/agentis/blob/3ea00397df8a80a83b5433b96bd1c2cd35378814/apps/backend/src/modules/uniswap.ts#L7-L29) |
-| Pool discovery, quotes and slippage bounds | [`quoteSwap`, lines 37–61](https://github.com/awesamarth/agentis/blob/3ea00397df8a80a83b5433b96bd1c2cd35378814/apps/backend/src/modules/uniswap.ts#L37-L61) |
-| Exact allowance, router calls, unwrap/refund and pool checks | [`uniswapCall` / `validateSwapPool`, lines 66–88](https://github.com/awesamarth/agentis/blob/3ea00397df8a80a83b5433b96bd1c2cd35378814/apps/backend/src/modules/uniswap.ts#L66-L88) |
-| Persisted execution and x402 shortfall funding | [`uniswap-service.ts`, lines 64–118](https://github.com/awesamarth/agentis/blob/3ea00397df8a80a83b5433b96bd1c2cd35378814/apps/backend/src/modules/uniswap-service.ts#L64-L118) |
-| DCA/gas-refill worker | [`UniswapService.tick`, line 256 onward](https://github.com/awesamarth/agentis/blob/3ea00397df8a80a83b5433b96bd1c2cd35378814/apps/backend/src/modules/uniswap-service.ts#L256) |
+| Deployed addresses, quotes, bounds and calldata | [`plugins/uniswap/swap.ts`](apps/backend/src/plugins/uniswap/swap.ts) |
+| Persisted execution and x402 shortfall funding | [`plugins/uniswap/service.ts`](apps/backend/src/plugins/uniswap/service.ts) |
+| DCA, rebalancing and gas-refill worker | [`UniswapService`](apps/backend/src/plugins/uniswap/service.ts) |
 | On-chain allowance/swap receipt verification | [`privy-executor.ts`, lines 140–160](https://github.com/awesamarth/agentis/blob/3ea00397df8a80a83b5433b96bd1c2cd35378814/apps/backend/src/providers/privy-executor.ts#L140-L160) |
 
 **Live proof:** an owner-approved Privy transaction swapped **0.000001 ETH → 0.00326 USDC** on Base Sepolia. [View transaction](https://sepolia.basescan.org/tx/0x8c740f96a453072a4e31273858874cacc05377d649d190f0e5af7ecfe4012f99).

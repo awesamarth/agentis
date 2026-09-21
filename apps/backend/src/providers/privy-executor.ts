@@ -14,7 +14,7 @@ import { prepareTempoTransfer, verifyTempoTransfer, roundedTempoFee, tempoFeeSca
 import { TxEnvelopeTempo } from 'ox/tempo'
 import { prepareSolanaTransfer, verifySolanaTransfer, broadcastSolanaTransfer, solanaReceipt, solanaDevnet, solanaUsdc } from '../modules/solana'
 
-import { uniswapCall, validateSwapPool, uniswap, poolSwapAbi } from '../modules/uniswap'
+import { uniswapCall, validateSwapPool, uniswap, poolSwapAbi } from '../plugins/uniswap/swap'
 
 export function transferCall(input: OperationInput) {
   if (input.identity) return identityCall(input)

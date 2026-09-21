@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { usePrivy, useWallets } from '@privy-io/react-auth'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AgentisClient, AgentisApiError, type AgentisAgent, type IdentityStep } from '@agentis-hq/sdk'
+import { AgentisApiError, type AgentisAgent, type IdentityStep } from '@agentis-hq/sdk'
+import { useAgentisClient } from '@/lib/agentis'
 import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, type Address, type Hex } from 'viem'
 import { sepolia } from 'viem/chains'
 import Dropdown from './Dropdown'
@@ -12,8 +13,8 @@ const button = 'border border-beige-darker px-4 py-2.5 text-base font-medium hov
 const field = 'mt-1 w-full border border-beige-darker bg-beige p-3 text-base'
 const chain = createPublicClient({ chain: sepolia, transport: http('https://ethereum-sepolia-rpc.publicnode.com', { timeout: 15000, retryCount: 0 }) })
 export default function IdentityControls({ agent, initialParent = '', initialLabel = '', initialOperation = '', showDescription = true }: { agent: AgentisAgent; initialParent?: string; initialLabel?: string; initialOperation?: string; showDescription?: boolean }) {
-  const { user, getAccessToken, connectWallet } = usePrivy(), { wallets: connected } = useWallets(), cache = useQueryClient()
-  const client = new AgentisClient({ baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001', token: async () => { const token = await getAccessToken(); if (!token) throw Error('Sign in again'); return token } })
+  const { user, connectWallet } = usePrivy(), { wallets: connected } = useWallets(), cache = useQueryClient()
+  const client = useAgentisClient()
   const wallets = useQuery({ queryKey: ['wallets', user?.id], queryFn: () => client.wallets.list() })
   const wallet = wallets.data?.find(w => w.agentId === agent.id && w.enabled && w.chainId === 'eip155:11155111')
   const identity = useQuery({ queryKey: ['identity', user?.id, agent.id, wallet?.id], enabled: !!wallet, retry: false, queryFn: () => client.identity.show(wallet!.id) })

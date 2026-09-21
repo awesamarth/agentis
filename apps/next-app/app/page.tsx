@@ -17,13 +17,13 @@ const productSections = [
   {
     kicker: 'agent wallets',
     title: 'Every agent starts with a money account.',
-    body: 'Keep the agent’s delegated wallet access separate from the human who owns it. Privy wallet linking is available; hosted execution is undergoing verification.',
+    body: 'Keep the agent’s delegated wallet access separate from the human who owns it. Hosted wallets use scoped credentials and owner-controlled rules.',
     items: ['user-owned wallets', 'scoped executor grants', 'dashboard and CLI control'],
   },
   {
     kicker: 'payments',
     title: 'Agents can pay for work without leaving policy behind.',
-    body: 'The rewrite routes financial operations through one authorization and receipt lifecycle. Local Anvil transfers work; x402 and MPP plugins are being migrated.',
+    body: 'Transfers and paid API requests share one authorization, execution, reconciliation and receipt lifecycle across supported testnets.',
     items: ['explicit operation state', 'approval requests', 'stable retry keys'],
   },
   {
@@ -33,16 +33,16 @@ const productSections = [
     items: ['budget reservations', 'pause and revoke', 'owner-only approvals'],
   },
   {
-    kicker: 'privacy',
-    title: 'Privacy belongs in an optional capability.',
-    body: 'Umbra will return as a plugin behind the same execution boundary—not a separate signing path. It is unavailable in the current rewrite preview.',
-    items: ['optional plugin', 'explicit permissions', 'migration pending'],
+    kicker: 'swaps',
+    title: 'Acquire the token an agent needs.',
+    body: 'The Uniswap plugin supports bounded Base Sepolia swaps, manual rebalancing, DCA, gas refill and optional x402 shortfall funding.',
+    items: ['direct V3 swaps', 'owner-confirmed schedules', 'shared budgets'],
   },
   {
-    kicker: 'yield',
-    title: 'Financial integrations extend the core.',
-    body: 'Jupiter treasury capabilities and secondary Link payments are planned plugins. No mainnet execution is enabled in this preview.',
-    items: ['Jupiter plugin', 'Link secondary', 'migration pending'],
+    kicker: 'identity',
+    title: 'Give every agent a portable on-chain identity.',
+    body: 'The ENS plugin publishes network-specific payment addresses and narrowly delegated service records. ERC-8004 registration stays inside the same plugin.',
+    items: ['ENSv2 subnames', 'payment records', 'ERC-8004'],
   },
   {
     kicker: 'interfaces',
@@ -263,7 +263,7 @@ export default function LandingPage() {
               Dashboard for humans. SDK and MCP for agents. CLI for both.
             </h2>
             <p className="mt-7 max-w-2xl font-sans text-lg font-light leading-relaxed text-beige/70">
-              One SDK for operation requests, approval links and receipts. The current foundation executes locally; hosted signing and financial plugins are being verified.
+              One SDK for operation requests, approval links and receipts. Hosted and local testnet execution use the same explicit payment and reconciliation model.
             </p>
             <Link
               href="https://docs.agentis.systems"
@@ -289,7 +289,7 @@ export default function LandingPage() {
 
       <footer className="flex flex-col gap-3 border-t border-beige-darker px-6 py-6 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-ink-muted sm:flex-row sm:items-center sm:justify-between sm:px-12">
         <span>agentis.systems</span>
-        <span>ETHOnline rewrite · 2026</span>
+        <span>Testnet financial infrastructure · 2026</span>
       </footer>
     </main>
   )

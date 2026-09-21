@@ -2,7 +2,8 @@
 import { usePrivy } from '@privy-io/react-auth'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { AgentisClient, type AgentisAgent } from '@agentis-hq/sdk'
+import { type AgentisAgent } from '@agentis-hq/sdk'
+import { useAgentisClient } from '@/lib/agentis'
 import { formatUnits } from 'viem'
 import AgentBalance from './AgentBalance'
 import { Copy, Check, Settings } from 'lucide-react'
@@ -16,8 +17,8 @@ const defaults = { perTransaction: '10', hourly: '25', daily: '50', total: '100'
 const button = 'border border-beige-darker px-5 py-3 font-mono text-xs uppercase tracking-widest disabled:opacity-40 hover:border-ink'
 const field = 'mt-2 w-full border border-beige-darker bg-[#faf7f1] p-3 text-sm'
 export default function Onboarding({ agentId, createOnly = false }: { agentId?: string; createOnly?: boolean } = {}) {
-  const { authenticated, user, getAccessToken } = usePrivy()
-  return authenticated && user ? <Setup key={user.id} ownerId={user.id} getAccessToken={getAccessToken} agentId={agentId} createOnly={createOnly} /> : null
+  const { authenticated, user } = usePrivy()
+  return authenticated && user ? <Setup key={user.id} ownerId={user.id} agentId={agentId} createOnly={createOnly} /> : null
 }
 export function WalletAddress({ address }: { address: string }) {
   const [status, setStatus] = useState('')
@@ -27,7 +28,7 @@ export function WalletAddress({ address }: { address: string }) {
   }
   return <div className="mt-1"><div className="flex items-center gap-1"><p className="min-w-0 break-all font-mono text-xs">{address}</p><button type="button" onClick={copy} onBlur={() => setStatus('')} aria-label="Copy wallet address" title={status === 'Copied' ? 'Copied' : 'Copy address'} className="shrink-0 rounded p-0.5 text-ink-muted hover:bg-beige-dark hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2">{status === 'Copied' ? <Check size={12} aria-hidden="true" /> : <Copy size={12} aria-hidden="true" />}</button></div><p role="status" className={status === 'Copied' ? 'sr-only' : 'text-xs text-ink-muted'}>{status}</p></div>
 }
-function Setup({ ownerId, getAccessToken, agentId, createOnly }: { ownerId: string; getAccessToken: () => Promise<string | null>; agentId?: string; createOnly: boolean }) {
+function Setup({ ownerId, agentId, createOnly }: { ownerId: string; agentId?: string; createOnly: boolean }) {
   const cache = useQueryClient()
   const dialog = useRef<HTMLDialogElement>(null)
   const opened = useRef(false)
@@ -45,7 +46,7 @@ function Setup({ ownerId, getAccessToken, agentId, createOnly }: { ownerId: stri
   const [recipients, setRecipients] = useState('')
   const [formError, setFormError] = useState('')
   const [finished, setFinished] = useState(false)
-  const client = new AgentisClient({ baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001', token: async () => { const token = await getAccessToken(); if (!token) throw new Error('Sign in again'); return token } })
+  const client = useAgentisClient()
   const query = useQuery({ queryKey: ['onboarding', ownerId], queryFn: () => client.onboarding.get() })
   const agents = useQuery({ queryKey: ['agents', ownerId], queryFn: () => client.agents.list() })
   const wallets = useQuery({ queryKey: ['wallets', ownerId], queryFn: () => client.wallets.list() })

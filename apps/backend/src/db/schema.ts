@@ -122,7 +122,7 @@ export const uniswapTargets = pgTable('uniswap_targets', { walletId: uuid().prim
 export const uniswapPlans = pgTable('uniswap_plans', {
   id: uuid().primaryKey().defaultRandom(), ownerId: text().notNull(), agentId: uuid().notNull().references(() => agents.id), walletId: uuid().notNull().references(() => wallets.id), grantId: uuid().references(() => grants.id),
   principalKey: text().notNull(), idempotencyKey: text().notNull(), requestHash: text().notNull(),
-  request: jsonb().$type<import('../modules/uniswap').SwapRequest>().notNull(), quote: jsonb().$type<import('../modules/uniswap').SwapQuote>().notNull(),
+  request: jsonb().$type<import('../plugins/uniswap/swap').SwapRequest>().notNull(), quote: jsonb().$type<import('../plugins/uniswap/swap').SwapQuote>().notNull(),
   approvalId: uuid().references(() => operations.id), swapId: uuid().references(() => operations.id), paymentId: uuid().references(() => operations.id), fundingRequest: jsonb().$type<import('@agentis-hq/core/operations').FetchRequest>(),
   scheduleId: uuid(), scheduleVersion: integer(),
   status: text().$type<'pending' | 'complete' | 'failed' | 'cancelled'>().notNull().default('pending'), error: text(),
@@ -130,7 +130,7 @@ export const uniswapPlans = pgTable('uniswap_plans', {
 }, table => [uniqueIndex('uniswap_plan_key').on(table.principalKey, table.idempotencyKey)])
 export const uniswapSchedules = pgTable('uniswap_schedules', {
   id: uuid().primaryKey().defaultRandom(), ownerId: text().notNull(), agentId: uuid().notNull().references(() => agents.id), walletId: uuid().notNull().references(() => wallets.id),
-  request: jsonb().$type<import('../modules/uniswap').SwapRequest>().notNull(), intervalMinutes: integer().notNull(),
+  request: jsonb().$type<import('../plugins/uniswap/swap').SwapRequest>().notNull(), intervalMinutes: integer().notNull(),
   kind: text().$type<'dca' | 'gas_refill'>().notNull().default('dca'), minimumGasAtomic: text(),
   status: text().$type<'active' | 'paused' | 'cancelled'>().notNull().default('active'), version: integer().notNull().default(1),
   nextRunAt: timestamp({ withTimezone: true, mode: 'date' }).notNull(), activePlanId: uuid().references(() => uniswapPlans.id),
@@ -139,7 +139,7 @@ export const uniswapSchedules = pgTable('uniswap_schedules', {
 
 export const uniswapSetupRequests = pgTable('uniswap_setup_requests', {
   id: uuid().primaryKey().defaultRandom(), ownerId: text().notNull(), walletId: uuid().notNull().references(() => wallets.id), grantId: uuid().references(() => grants.id),
-  action: text().$type<'create' | 'edit' | 'active' | 'paused' | 'cancelled'>().notNull(), scheduleId: uuid().references(() => uniswapSchedules.id), scheduleVersion: integer(), input: jsonb().$type<import('./../modules/uniswap-service').ScheduleInput>(),
+  action: text().$type<'create' | 'edit' | 'active' | 'paused' | 'cancelled'>().notNull(), scheduleId: uuid().references(() => uniswapSchedules.id), scheduleVersion: integer(), input: jsonb().$type<import('../plugins/uniswap/service').ScheduleInput>(),
   completed: boolean().notNull().default(false), expiresAt: timestamp({ withTimezone: true, mode: 'date' }).notNull(),
 })
 export type WalletRow = typeof wallets.$inferSelect

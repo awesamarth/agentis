@@ -1,16 +1,12 @@
 ---
 title: Agentis
-description: SDK-first financial execution for agents
+description: Wallets, payments and spending controls for AI agents
 ---
 
-Agentis connects an agent's financial request to the user's permissions, approval and receipt.
+Agentis gives each agent independent wallets, USD limits, approval rules and optional integrations. Dashboard, SDK, CLI and remote MCP all use the same backend authorization and receipt pipeline.
 
-## Rewrite status
+Hosted wallets use Privy and scoped executor grants. Agents cannot change policy, approve themselves or export hosted keys. Local-custody CLI wallets are also available for users who want keys to remain on their machine.
 
-This checkout is a foundation preview, not a production release. Base is the product's target default network. Only local Anvil native transfers execute today; live Privy execution and financial plugins are disabled pending verification.
+Supported testnets include Base Sepolia, Ethereum Sepolia, Arc, Tempo and Solana Devnet. Agentis supports direct transfers, x402/MPP paid GET requests, Uniswap swaps and ENS identity. Mainnet execution is not enabled.
 
-The user owns financial authority. Agents receive wallet-scoped, expiring executor grants and cannot change policy or approve themselves. Every hosted action follows the same backend operation pipeline.
-
-Guest Solana devnet wallets remain available for quick browser tryout. Their keys are stored in localStorage; do not fund those addresses on mainnet.
-
-See the repository's `README.md`, `docs/architecture.md`, and living `AGENTS.md` for setup, evidence and remaining work. Published npm packages and deployments still represent the old prototype.
+See the repository [README](https://github.com/awesamarth/agentis#readme) for current setup, supported assets and verification boundaries.

@@ -2,7 +2,7 @@
 
 import { usePrivy } from '@privy-io/react-auth'
 import { useQuery } from '@tanstack/react-query'
-import { AgentisClient } from '@agentis-hq/sdk'
+import { useAgentisClient } from '@/lib/agentis'
 import { formatUnits } from 'viem'
 
 function dollars(micros: string | null) {
@@ -14,15 +14,12 @@ function dollars(micros: string | null) {
 }
 
 export default function AgentBalance({ agentId, breakdown = false }: { agentId: string; breakdown?: boolean }) {
-  const { user, authenticated, getAccessToken } = usePrivy()
+  const { user, authenticated } = usePrivy()
+  const client = useAgentisClient('Sign in first')
   const query = useQuery({
     queryKey: ['agent-balance', user?.id, agentId], enabled: authenticated && !!user?.id,
     staleTime: 30_000, refetchInterval: 60_000, retry: false,
-    queryFn: () => new AgentisClient({ baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001', token: async () => {
-      const token = await getAccessToken()
-      if (!token) throw new Error('Sign in first')
-      return token
-    } }).agents.balance(agentId),
+    queryFn: () => client.agents.balance(agentId),
   })
   const balance = query.isError ? undefined : query.data
   const total = <>

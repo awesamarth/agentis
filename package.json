@@ -14,11 +14,6 @@
     "check:packages": "bun run build:packages && bun run --filter @agentis-hq/cli check && bun run --filter @agentis-hq/mcp check",
     "check": "bun run check:packages && bun run --filter backend check && bun run --filter next-app check"
   },
-  "dependencies": {
-    "@solana-program/compute-budget": "^0.15.0",
-    "@solana/mpp": "^0.5.2",
-    "mppx": "^0.5.17"
-  },
   "devDependencies": {
     "pptxgenjs": "^4.0.1"
   }

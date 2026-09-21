@@ -3,19 +3,19 @@ import { usePrivy } from '@privy-io/react-auth'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AgentisClient } from '@agentis-hq/sdk'
+import { useAgentisClient } from '@/lib/agentis'
 import { parseAmount } from './amount-input'
 import Dropdown from './Dropdown'
 
 export default function TransferRequest() {
-  const { ready, authenticated, user, getAccessToken } = usePrivy()
+  const { ready, authenticated, user } = usePrivy()
   const router = useRouter()
   const cache = useQueryClient()
   const [chainId, setChainId] = useState('')
   const [walletId, setWalletId] = useState('')
   const [assetId, setAssetId] = useState('')
   const attempt = useRef<{ body: string; key: string } | null>(null)
-  const client = new AgentisClient({ baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001', token: async () => { const token = await getAccessToken(); if (!token) throw new Error('Sign in first'); return token } })
+  const client = useAgentisClient('Sign in first')
   const wallets = useQuery({ queryKey: ['wallets', user?.id], enabled: ready && authenticated, queryFn: () => client.wallets.list() })
   const networks = useQuery({ queryKey: ['onboarding', user?.id], enabled: ready && authenticated, queryFn: () => client.onboarding.get() })
   const agents = useQuery({ queryKey: ['agents', user?.id], enabled: ready && authenticated, queryFn: () => client.agents.list() })

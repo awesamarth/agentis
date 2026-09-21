@@ -4,7 +4,7 @@ import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { usePrivy } from '@privy-io/react-auth'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { AgentisClient } from '@agentis-hq/sdk'
+import { useAgentisClient } from '@/lib/agentis'
 import Navbar from '@/components/Navbar'
 import Onboarding from '@/components/Onboarding'
 
@@ -14,16 +14,16 @@ export default function CliAuth() {
 }
 function Connection() {
   const params = useSearchParams()
-  const { ready, authenticated, user, login, getAccessToken } = usePrivy()
+  const { ready, authenticated, user, login } = usePrivy()
   return <><Navbar showCrumb="CLI login" /><main className="mx-auto max-w-3xl space-y-6 px-6 py-12">
     <header><h1 className="font-serif text-3xl font-bold">Connect your CLI.</h1><p className="mt-3 text-sm text-ink-muted">Choose the agents and network wallets this CLI may use. Your account login and owner permissions stay in the browser.</p></header>
-    {!ready || (authenticated && !user) ? <p role="status">Loading…</p> : !authenticated ? <button className={button} onClick={login}>Sign in to choose wallets</button> : <Selection key={`${user?.id}:${params.get('request')}`} requestId={params.get('request') ?? ''} ownerId={user!.id} getAccessToken={getAccessToken} />}
+    {!ready || (authenticated && !user) ? <p role="status">Loading…</p> : !authenticated ? <button className={button} onClick={login}>Sign in to choose wallets</button> : <Selection key={`${user?.id}:${params.get('request')}`} requestId={params.get('request') ?? ''} ownerId={user!.id} />}
   </main></>
 }
-function Selection({ requestId, ownerId, getAccessToken }: { requestId: string; ownerId: string; getAccessToken: () => Promise<string | null> }) {
+function Selection({ requestId, ownerId }: { requestId: string; ownerId: string }) {
   const [selected, setSelected] = useState<Record<string, string[]>>({})
   const [confirmed, setConfirmed] = useState(false)
-  const client = new AgentisClient({ baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001', token: async () => { const token = await getAccessToken(); if (!token) throw Error('Sign in again'); return token } })
+  const client = useAgentisClient()
   const valid = /^[0-9a-f-]{36}$/i.test(requestId)
   const session = useQuery({ queryKey: ['cli-login', ownerId, requestId], queryFn: () => client.cliLogin.get(requestId), enabled: valid, retry: false })
   const agents = useQuery({ queryKey: ['agents', ownerId], queryFn: () => client.agents.list(), enabled: valid })

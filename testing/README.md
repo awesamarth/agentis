@@ -1,19 +1,12 @@
-# SDK Testing
+# Focused integration checks
 
-Two apps for end-to-end SDK testing.
+This directory contains standalone checks and local protocol fixtures. There is no root automated test suite.
 
-## Setup
+Current checks cover hosted/local wallet behavior, CLI consent, scoped reads, remote MCP OAuth, Uniswap planning/execution, x402 settlement and provider probes. Several scripts require private environment variables, a dedicated local Postgres instance or funded testnet wallets; inspect a script before running it.
 
-1. Start the Agentis backend: `cd apps/backend && bun dev`
-2. Start the x402 test server: `cd sdk-testing/x402-server && bun dev`
-3. Paste your agent API key into `sdk-testing/agent-app/.env`
-4. Run the agent: `cd sdk-testing/agent-app && bun start`
+Local seller fixtures:
 
-## What it tests
+- `x402-server/`: x402 fixture.
+- `mpp-server/`: Solana MPP fixture.
 
-- `GET /free` — no payment, SDK passes through
-- `GET /paid-data` — costs 0.001 SOL, SDK handles 402 → sign → retry automatically
-- `GET /premium-data` — costs 0.005 SOL, same flow
-- Policy fetch at the end
-
-Make sure the agent wallet has enough devnet SOL (airdrop if needed).
+Use `bun run check` from the repository root for package builds and TypeScript checks. Run live scripts only with explicit approval and testnet funds. Never point them at mainnet or a stale production database.

@@ -1,19 +1,24 @@
 ---
 title: CLI
-description: Request operations and inspect results
+description: Operate hosted and local agent wallets
 ---
 
-Build this checkout before using the new CLI. Set `AGENTIS_API_URL` and `AGENTIS_TOKEN` in a private environment. Agents use scoped executor grants, not owner credentials.
+Install the CLI with Bun, then authorize selected hosted agents and networks in the browser:
 
 ```sh
-agentis capabilities
-agentis operations create --file request.json --key task-1
-agentis operations get <id>
-agentis operations wait <id>
-agentis wallet list --local
-agentis wallet create --local --name demo
+bun add -g @agentis-hq/cli@latest
+agentis login
+agentis wallet list
+agentis wallet balance
 ```
 
-Reuse an idempotency key for retries of the same request. Approval URLs are for the human. Unknown status is not permission to pay again.
+Hosted commands cover balances, policy/history reads, transfers, paid fetches, Uniswap and ENS. Ask mode returns a dashboard approval URL; automatic mode executes only within the agent's rules.
 
-Local wallet files use filesystem permissions and standard Ed25519 derivation. Legacy hosted commands and local sends are unavailable until migrated. Use `--help` from this checkout, not the previously published CLI.
+Local custody supports wallet creation, balances, policies, transfers and x402/MPP paid fetches:
+
+```sh
+agentis wallet create --local --name local-agent --chains base,arc,tempo,solana,sepolia
+agentis policy show --local --wallet local-agent
+```
+
+Local wallet files are plaintext, owner-permission-protected files. Reuse an unchanged request key after uncertainty. An unknown submission is not permission to pay again. Run `agentis --help` for exact flags.

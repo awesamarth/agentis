@@ -1,25 +1,23 @@
 ---
 title: SDK
-description: A thin financial-operation client
+description: A thin client for the Agentis API
 ---
 
 ```ts
 import { AgentisClient } from '@agentis-hq/sdk'
+
 const client = new AgentisClient({
-  baseUrl: 'http://localhost:3001',
+  baseUrl: 'https://api.agentis.systems',
   token: process.env.AGENTIS_TOKEN!,
 })
-const result = await client.operations.create({
+
+const operation = await client.fetch({
   walletId: process.env.AGENTIS_WALLET_ID!,
-  action: 'transfer', chainId: 'eip155:31337', asset: 'native',
-  to: '0x0000000000000000000000000000000000001234',
-  amountAtomic: '1000', maxFeeAtomic: '1000000000000000',
-  reason: 'Local integration test',
-}, { idempotencyKey: 'task-1' })
+  url: 'https://seller.example/paid-data',
+  maxAmountAtomic: '10000',
+}, { idempotencyKey: 'research-task-1' })
 ```
 
-The result contains status, immutable operation binding, optional approval URL, and eventual transaction receipt. Pending approval is a result, not an exception. `operations.wait` returns for approval-required, unknown and terminal states.
+The SDK wraps hosted wallets, balances, policy/history reads, operations, paid fetch, grants, consent flows, Uniswap and ENS. Pending approval is a normal result with an approval URL. `operations.wait()` returns on approval-required, unknown or terminal states and never approves or resends.
 
-Owner clients use `wallets.link/list/setPolicy`, `grants.create/revoke`, and `operations.approve/reject`. Keep owner authentication out of the agent runtime. Token may be an async getter for fresh owner JWTs.
-
-No chain libraries are required by the SDK's main entry. Current execution is local Anvil only; paid fetch and other financial plugins are not enabled yet.
+Use scoped executor grants in agent runtimes. Keep owner tokens out of browser bundles and unattended agents. The SDK performs no local signing or policy bypass.

@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { usePrivy } from '@privy-io/react-auth'
 import { useQuery } from '@tanstack/react-query'
-import { AgentisClient } from '@agentis-hq/sdk'
+import { useAgentisClient } from '@/lib/agentis'
 import Navbar from '@/components/Navbar'
 import GuestWallets from '@/components/GuestWallets'
 import WalletAccess from '@/components/WalletAccess'
@@ -24,8 +24,8 @@ export default function AgentPage() {
 }
 
 function HostedAgent({ id }: { id: string }) {
-  const { user, getAccessToken } = usePrivy()
-  const client = new AgentisClient({ baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001', token: async () => { const token = await getAccessToken(); if (!token) throw new Error('Sign in first'); return token } })
+  const { user } = usePrivy()
+  const client = useAgentisClient('Sign in first')
   const agents = useQuery({ queryKey: ['agents', user?.id], queryFn: () => client.agents.list() })
   const wallets = useQuery({ queryKey: ['wallets', user?.id], queryFn: () => client.wallets.list() })
   const networks = useQuery({ queryKey: ['onboarding', user?.id], queryFn: () => client.onboarding.get() })

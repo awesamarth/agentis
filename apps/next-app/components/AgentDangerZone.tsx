@@ -1,14 +1,14 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { usePrivy } from '@privy-io/react-auth'
 import { useQueryClient } from '@tanstack/react-query'
-import { AgentisClient, type AgentisAgent, type AgentisWallet } from '@agentis-hq/sdk'
+import { type AgentisAgent, type AgentisWallet } from '@agentis-hq/sdk'
+import { useAgentisClient } from '@/lib/agentis'
 import Dropdown from './Dropdown'
 
 export default function AgentDangerZone({ agent, wallets, networks }: { agent: AgentisAgent; wallets: AgentisWallet[]; networks: { chainId: string; name: string }[] }) {
-  const { getAccessToken } = usePrivy()
   const cache = useQueryClient()
+  const client = useAgentisClient('Sign in again to continue')
   const dialog = useRef<HTMLDialogElement>(null)
   const [action, setAction] = useState<'pause' | 'export'>('pause')
   const [walletId, setWalletId] = useState('')
@@ -31,7 +31,6 @@ export default function AgentDangerZone({ agent, wallets, networks }: { agent: A
   async function submit() {
     if (!confirmed || busy || (action === 'export' && !selected)) return
     setBusy(true); setError('')
-    const client = new AgentisClient({ baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001', token: async () => { const token = await getAccessToken(); if (!token) throw new Error('Sign in again to continue'); return token } })
     try {
       if (action === 'pause') {
         await client.agents.pause(agent.id)

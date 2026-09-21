@@ -2,15 +2,16 @@
 import { useRef, useState } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AgentisClient, type DcaSchedule, type SwapPlan, type SwapQuote, type SwapRequest } from '@agentis-hq/sdk'
+import { type DcaSchedule, type SwapPlan, type SwapQuote, type SwapRequest } from '@agentis-hq/sdk'
+import { useAgentisClient } from '@/lib/agentis'
 import { formatUnits } from 'viem'
 import Dropdown from './Dropdown'
 
 const field = 'mt-1 w-full border border-beige-darker bg-beige p-2 text-sm'
 const button = 'border border-beige-darker px-3 py-2 text-xs disabled:opacity-40 hover:border-ink'
 export default function UniswapControls({ agentId }: { agentId: string }) {
-  const { user, getAccessToken } = usePrivy(), cache = useQueryClient()
-  const client = new AgentisClient({ baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001', token: async () => { const token = await getAccessToken(); if (!token) throw Error('Sign in again'); return token } })
+  const { user } = usePrivy(), cache = useQueryClient()
+  const client = useAgentisClient()
   const wallets = useQuery({ queryKey: ['wallets', user?.id], queryFn: () => client.wallets.list() })
   const wallet = wallets.data?.find(w => w.agentId === agentId && w.enabled && w.chainId === 'eip155:84532')
   const [tab, setTab] = useState<'swap' | 'rebalance' | 'dca' | 'gas'>('swap')

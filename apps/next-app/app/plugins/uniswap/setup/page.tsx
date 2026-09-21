@@ -3,14 +3,14 @@ import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { usePrivy } from '@privy-io/react-auth'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { AgentisClient } from '@agentis-hq/sdk'
+import { useAgentisClient } from '@/lib/agentis'
 import Navbar from '@/components/Navbar'
 import { UniswapLogo } from '@/components/PluginPicker'
 
 function Review() {
   const id = useSearchParams().get('request') ?? ''
-  const { ready, authenticated, login, getAccessToken, user } = usePrivy()
-  const client = new AgentisClient({ baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001', token: async () => { const token = await getAccessToken(); if (!token) throw Error('Sign in first'); return token } })
+  const { ready, authenticated, login, user } = usePrivy()
+  const client = useAgentisClient('Sign in first')
   const request = useQuery({ queryKey: ['uniswap-setup', user?.id, id], enabled: authenticated && !!id, queryFn: () => client.uniswap.dca.setup(id) })
   const wallets = useQuery({ queryKey: ['wallets', user?.id], enabled: authenticated, queryFn: () => client.wallets.list() })
   const decision = useMutation({ mutationFn: (approve: boolean) => client.uniswap.dca.completeSetup(id, approve) })

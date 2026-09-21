@@ -21,8 +21,6 @@
     "crypto-payments",
     "x402",
     "mpp",
-    "jupiter",
-    "umbra",
     "mcp"
   ],
   "exports": {
@@ -41,7 +39,7 @@
   },
   "dependencies": {
     "@agentis-hq/core": "workspace:*",
-    "@agentis-hq/sdk": "^0.3.0",
+    "@agentis-hq/sdk": "workspace:*",
     "@clack/prompts": "^1.8.0",
     "@scure/bip39": "^2.2.0",
     "@solana-program/compute-budget": "0.11.0",

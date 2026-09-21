@@ -2,7 +2,7 @@
 
 Thin TypeScript HTTP client. Use `new AgentisClient({baseUrl, token})`; token can be an async getter for a fresh Privy JWT. Agents receive only scoped `agt_exec_` grants.
 
-Install with `bun add @agentis-hq/sdk@0.3.0` (or `npm install @agentis-hq/sdk@0.3.0`).
+Install with `bun add @agentis-hq/sdk@0.3.0`.
 
 ```ts
 import { AgentisClient } from '@agentis-hq/sdk'
@@ -23,6 +23,6 @@ Owner-only `agents.pause(id)` stops new payments and invalidates unsubmitted app
 
 For `grants.create`, supply `agentId` and `agentName`. Keys have no expiry by default and remain valid until revoked. An optional future `expiresAt` may be supplied, with no 30-day cap; existing explicit expiries remain unchanged. Omit `chainIds` for all enabled networks, including future additions; supply a non-empty, unique `chainIds` array to restrict the key to selected enabled networks. Restricted keys do not automatically include newly added networks. Legacy `walletId` scope remains supported instead of `agentId`, without `chainIds`; existing keys keep their scope. Agent keys can call `wallets.list()` to discover only their enabled wallets; neither scope permits settings changes, creating keys or self-approval.
 
-No local policy bypass, signing, USD guessing or automatic payment retries. Hosted Privy execution, x402/MPP paid fetch, Uniswap and ENS methods use the common backend. Mainnet is unsupported. SDK main entry has no mandatory chain library; retained `/server` paywall helpers are separate seller-side fixtures, not the removed Agentis facilitator product. Only `/server` consumers need its optional peers: `@solana/mpp`, `@x402/core`, `@x402/svm` and `mppx` (use the compatible ranges in package.json).
+No local policy bypass, signing, USD guessing or automatic payment retries. Hosted Privy execution, x402/MPP paid fetch, Uniswap and ENS methods use the common backend. Mainnet is unsupported. The SDK is a transport client and has no mandatory chain or seller-paywall dependencies.
 
 Build locally with `bun run build:packages` at repo root. Version 0.3.0 exposes the V2 API. See the [project README](https://github.com/awesamarth/agentis#readme) for networks, plugins and examples.

@@ -3,11 +3,11 @@ import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { usePrivy } from '@privy-io/react-auth'
 import { useQuery } from '@tanstack/react-query'
-import { AgentisClient } from '@agentis-hq/sdk'
+import { useAgentisClient } from '@/lib/agentis'
 import IdentityControls from '@/components/IdentityControls'
 function Setup() {
-  const search = useSearchParams(), { ready, authenticated, user, login, getAccessToken } = usePrivy()
-  const client = new AgentisClient({ baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001', token: async () => { const token = await getAccessToken(); if (!token) throw Error('Sign in again'); return token } })
+  const search = useSearchParams(), { ready, authenticated, user, login } = usePrivy()
+  const client = useAgentisClient()
   const agents = useQuery({ queryKey: ['agents', user?.id], enabled: ready && authenticated, queryFn: () => client.agents.list() })
   const agent = agents.data?.find(agent => agent.id === search.get('agent'))
   if (!ready) return <p>Loading…</p>

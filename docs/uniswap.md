@@ -20,8 +20,8 @@ bun packages/cli/src/index.ts dca create --agent research-agent --from USDC --to
 
 ## Implementation and contracts
 
-- [`modules/uniswap.ts`](../apps/backend/src/modules/uniswap.ts): four V3 fee-tier quotes, exact-input/output bounds, fixed router calldata, exact token allowance and pool validation.
-- [`modules/uniswap-service.ts`](../apps/backend/src/modules/uniswap-service.ts): persisted plans, allowance → swap → optional payment, owner-confirmed schedules, saved allocation targets and worker scheduling.
+- [`plugins/uniswap/swap.ts`](../apps/backend/src/plugins/uniswap/swap.ts): four V3 fee-tier quotes, exact-input/output bounds, fixed router calldata, exact token allowance and pool validation.
+- [`plugins/uniswap/service.ts`](../apps/backend/src/plugins/uniswap/service.ts): persisted plans, allowance → swap → optional payment, owner-confirmed schedules, saved allocation targets and worker scheduling.
 - [`operations.ts`](../apps/backend/src/operations.ts): common reservations, hash-bound approvals, plugin/schedule revalidation and actual-input USD settlement.
 - [`privy-executor.ts`](../apps/backend/src/providers/privy-executor.ts): existing Privy signer, signed-transaction matching, V3 swap/approval receipt checks.
 

@@ -5,7 +5,7 @@ description: Remote agent tools with scoped browser authorization
 
 Agentis now implements remote Streamable HTTP MCP. Connect the MCP URL in your client, sign in through the browser, and explicitly choose agents and networks. No local MCP process or manually copied token is required.
 
-The local development endpoint is `http://localhost:3001/mcp`. Cloud-hosted clients require a deployed HTTPS endpoint; the new implementation has not yet been publicly deployed.
+The production endpoint is `https://api.agentis.systems/mcp`; local development uses `http://localhost:3001/mcp`.
 
 ## Tools
 
@@ -30,4 +30,4 @@ There are no approval, policy-edit, key-export or local-wallet tools. New networ
 
 OAuth uses S256 PKCE, expiring single-use codes, resource-bound access tokens and rotating refresh tokens. Owner credentials stay in the browser. Backend authorization is rechecked for every tool operation.
 
-The native MCP SDK/OAuth flow passed isolated local checks. Actual browser/client consent and paid execution through the user's MCP app remain manual verification steps.
+The native MCP SDK/OAuth flow passed isolated local checks. Actual external-client browser consent and paid execution remain manual verification steps.

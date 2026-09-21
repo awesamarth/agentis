@@ -13,7 +13,7 @@ import { AgentisClient } from '../packages/sdk/src/client'
 import { createApp } from '../apps/backend/src/app'
 import { OperationService, hash } from '../apps/backend/src/operations'
 import * as tables from '../apps/backend/src/db/schema'
-import { uniswap, uniswapCall } from '../apps/backend/src/modules/uniswap'
+import { uniswap, uniswapCall } from '../apps/backend/src/plugins/uniswap/swap'
 import type { Executor } from '../apps/backend/src/providers/types'
 import type { OperationInput } from '@agentis-hq/core/operations'
 const url = process.env.DATABASE_URL!, location = new URL(url)

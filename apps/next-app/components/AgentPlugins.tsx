@@ -2,17 +2,18 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { usePrivy } from '@privy-io/react-auth'
-import { AgentisClient, type AgentisAgent } from '@agentis-hq/sdk'
+import { type AgentisAgent } from '@agentis-hq/sdk'
+import { useAgentisClient } from '@/lib/agentis'
 import UniswapControls from './UniswapControls'
 import IdentityControls, { ensDescription } from './IdentityControls'
 import PluginPicker, { UniswapLogo, EnsLogo, uniswapDescription } from './PluginPicker'
 
 export default function AgentPlugins({ agent }: { agent: AgentisAgent }) {
-  const { user, getAccessToken } = usePrivy()
+  const { user } = usePrivy()
   const cache = useQueryClient()
   const dialog = useRef<HTMLDialogElement>(null)
   const [selected, setSelected] = useState(agent.plugins)
-  const client = new AgentisClient({ baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001', token: async () => { const token = await getAccessToken(); if (!token) throw new Error('Sign in again'); return token } })
+  const client = useAgentisClient()
   const save = useMutation({ mutationFn: () => client.agents.setPlugins(agent.id, selected), onSuccess: async () => {
     await Promise.all([cache.invalidateQueries({ queryKey: ['agents', user?.id] }), cache.invalidateQueries({ queryKey: ['wallets', user?.id] })])
     dialog.current?.close()

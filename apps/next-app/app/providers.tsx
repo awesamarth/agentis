@@ -17,7 +17,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           accentColor: '#c8a96e',
           logo: undefined,
           walletChainType: 'ethereum-and-solana',
-          walletList: ['detected_solana_wallets', 'phantom', 'solflare', 'backpack', 'wallet_connect'],
+          walletList: ['detected_ethereum_wallets', 'detected_solana_wallets', 'phantom', 'solflare', 'backpack', 'wallet_connect'],
         },
         externalWallets: {
           solana: {
