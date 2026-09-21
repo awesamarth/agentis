@@ -32,7 +32,8 @@ export function onboardingRoutes(service: OperationService, identity: Identity) 
       const [currentAgent] = await tx.select().from(agents).where(and(eq(agents.id, input.id), eq(agents.ownerId, ownerId))).for('update')
       if (!creating && !currentAgent) fail(404, 'not_found', 'Agent not found')
       const values = { id: input.id, ownerId, plugins: input.plugins ?? currentAgent?.plugins ?? [], name: input.name, mode: input.mode, allowedRecipients: input.allowedRecipients, networks: input.selection.networks, defaultNetwork: input.selection.defaultNetwork, limits: Object.fromEntries(Object.entries(input.limits).map(([key, value]) => [key, value === null ? null : parseUnits(value, 6).toString()])) as UsdLimits }
-      if (currentAgent?.plugins.includes('uniswap') && !values.plugins.includes('uniswap')) await service.uniswap.disable(tx, input.id)
+      const removedPlugins = currentAgent?.plugins.filter(plugin => !values.plugins.includes(plugin)) ?? []
+      if (removedPlugins.length) await service.plugins.disable(tx, input.id, removedPlugins)
       if (creating && currentAgent) {
         if (!isDeepStrictEqual(currentAgent, values)) fail(409, 'agent_exists', 'Agent already exists; edit its settings instead')
         return view(currentAgent)
@@ -88,10 +89,12 @@ export function onboardingRoutes(service: OperationService, identity: Identity) 
     const ownerId = c.get('principal').ownerId
     return c.json(await service.db.transaction(async tx => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`owner:${ownerId}`}, 0))`)
-      const [agent] = await tx.update(agents).set({ plugins }).where(and(eq(agents.id, id), eq(agents.ownerId, ownerId))).returning()
-      if (!agent) fail(404, 'not_found', 'Agent not found')
-      if (!plugins.includes('uniswap')) await service.uniswap.disable(tx, id)
-      return view(agent)
+      const [current] = await tx.select().from(agents).where(and(eq(agents.id, id), eq(agents.ownerId, ownerId))).for('update')
+      if (!current) fail(404, 'not_found', 'Agent not found')
+      const removed = current.plugins.filter(plugin => !plugins.includes(plugin))
+      if (removed.length) await service.plugins.disable(tx, id, removed)
+      const [agent] = await tx.update(agents).set({ plugins }).where(eq(agents.id, id)).returning()
+      return view(agent!)
     }))
   })
   app.post('/agents/:id/pause', async c => {

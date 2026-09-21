@@ -45,7 +45,7 @@ Agentis provides independent agent wallets, shared USD budgets, approvals and re
 
 ### Plugins
 
-Plugins are per-agent and live under `apps/backend/src/plugins/`.
+Plugins are per-agent and live under `apps/backend/src/plugins/`. `plugins/registry.ts` is the single backend registration point for metadata, routes, policy reasons, disable hooks and worker ticks; shared IDs come from `packages/core/src/operations.ts`. Dashboard metadata/rendering is centralized in `components/plugins/registry.tsx`.
 
 - `plugins/uniswap/`: Base Sepolia V3 quote/swap, exact allowance, manual rebalance targets, DCA, gas refill and optional Base x402 USDC shortfall funding.
 - `plugins/ens/`: ENSv2 subname setup, explicit multichain payment records, narrow endpoint/description delegation and internal ERC-8004 registration. ERC-8004 is never a separate plugin.

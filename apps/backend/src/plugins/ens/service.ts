@@ -15,6 +15,7 @@ export type IdentityStep = { complete: boolean; label: string; owner: string; tr
 const setupSchema = z.object({ walletId: z.string().uuid(), parent: z.string().max(255), label: z.string().max(63), description: z.string().trim().max(500).default('') }).strict()
 export class EnsService {
   constructor(private service: OperationService) {}
+  get dashboardUrl() { return this.service.dashboardUrl }
   async wallet(principal: Principal, walletId: string) {
     await this.service.policyView(principal, walletId)
     const [wallet] = await this.service.db.select().from(wallets).where(and(eq(wallets.id, walletId), eq(wallets.ownerId, principal.ownerId)))
@@ -108,7 +109,7 @@ export class EnsService {
     const registered = kind === 'document' ? await this.registered(row) : null
     const input: OperationInput = { walletId: wallet.id, action: 'identity_write', chainId: wallet.chainId, asset: 'native', to: wallet.address, amountAtomic: '0', maxFeeAtomic: kind === 'record' ? '500000000000000' : '1000000000000000', reason: kind === 'record' ? `Update ${key} on ${row.name}` : `ERC-8004 ${kind} for ${row.name}`, identity: { id: row.id, kind, name: row.name, resolver: row.resolver, ...(key ? { key } : {}), ...(registered ? { agentId: registered.agentId } : {}), value: kind === 'record' ? value ?? '' : registrationUri(row.name, row.description, getAddress(wallet.address), registered?.agentId) } }
     identityCall(input)
-    return this.service.createIdentity(principal, input, idempotencyKey)
+    return this.service.createPluginOperation(principal, input, idempotencyKey)
   }
   async retry(principal: Principal, walletId: string, operationId: string) {
     if (principal.kind !== 'owner') fail(403, 'owner_required', 'Only the owner can retry identity preparation')
@@ -127,7 +128,8 @@ export class EnsService {
     return this.tx(`${grant ? 'Delegate' : 'Revoke'} ${key} only on ${row.name}`, parent.owner, getAddress(row.resolver), encodeFunctionData({ abi: resolverAbi, functionName: 'authorizeTextRoles', args: [dnsName(row.name), recordKeys[key], getAddress(wallet.address), grant] }))
   }
   async reason(tx: Parameters<Parameters<OperationService['db']['transaction']>[0]>[0], wallet: WalletRow, input: OperationInput) {
-    const terms = input.identity!
+    if (!input.identity) return null
+    const terms = input.identity
     const [row] = await tx.select().from(agentIdentities).where(eq(agentIdentities.id, terms.id))
     const [agent] = wallet.agentId ? await tx.select().from(agents).where(eq(agents.id, wallet.agentId)) : []
     if (!row?.verified || row.walletId !== wallet.id || row.ownerId !== wallet.ownerId || row.agentId !== wallet.agentId || wallet.chainId !== 'eip155:11155111') return 'Identity is not configured for this wallet'

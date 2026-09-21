@@ -1,9 +1,10 @@
+import { isDeepStrictEqual } from 'node:util'
 import { and, desc, eq, inArray, lte, sql } from 'drizzle-orm'
 import { erc20Abi, formatUnits, type Address } from 'viem'
 import { z } from 'zod'
 import type { OperationService, Principal } from '../../operations'
 import { hash } from '../../operations'
-import { fetchRequest, type FetchRequest } from '@agentis-hq/core/operations'
+import { fetchRequest, operationInput, type FetchRequest, type OperationInput } from '@agentis-hq/core/operations'
 import { discoverX402 } from '../../modules/x402'
 import { agents, wallets, uniswapTargets, operations as operationRows, uniswapPlans as plans, uniswapSchedules as schedules, uniswapSetupRequests as setupRequests } from '../../db/schema'
 import { fail } from '../../errors'
@@ -27,6 +28,19 @@ export class UniswapService {
     if (!wallet || !agent || wallet.chainId !== uniswap.chainId) fail(400, 'unsupported_network', 'Select a Base Sepolia wallet')
     if (requirePlugin && !agent.plugins.includes('uniswap')) fail(403, 'plugin_disabled', 'Enable Uniswap for this agent in the dashboard')
     return { wallet, agent }
+  }
+  async reason(tx: Tx, wallet: typeof wallets.$inferSelect, input: OperationInput) {
+    if (!input.swap) return null
+    const [agent] = wallet.agentId ? await tx.select().from(agents).where(eq(agents.id, wallet.agentId)) : []
+    if (!agent?.plugins.includes('uniswap')) return 'Uniswap is disabled for this agent'
+    const [plan] = await tx.select().from(plans).where(eq(plans.id, input.swap.planId))
+    if (!plan || plan.walletId !== wallet.id || plan.ownerId !== wallet.ownerId || plan.status !== 'pending' || plan.expiresAt.getTime() <= Date.now()) return 'Swap plan is inactive or expired'
+    if (!isDeepStrictEqual(input, operationInput.parse(swapInput(plan.id, wallet.id, wallet.address, plan.request, plan.quote, input.action === 'uniswap_approval')))) return 'Swap terms differ from the stored plan'
+    if (plan.scheduleId) {
+      const [schedule] = await tx.select().from(schedules).where(eq(schedules.id, plan.scheduleId))
+      if (!schedule || schedule.status !== 'active' || schedule.version !== plan.scheduleVersion) return 'Schedule changed or paused'
+    }
+    return null
   }
   async quote(principal: Principal, raw: unknown) {
     const request = swapRequest.parse(raw)
@@ -91,7 +105,7 @@ export class UniswapService {
         approval = allowance < BigInt(plan.quote.maximumInputAtomic)
         if (approval && plan.approvalId) { await update({ status: 'failed', error: 'Allowance changed after approval; review a new swap' }); return }
       }
-      const operation = await this.service.createUniswap(principal, swapInput(plan.id, wallet.id, wallet.address, plan.request, plan.quote, approval), `uniswap:${plan.id}:${approval ? 'approval' : 'swap'}`)
+      const operation = await this.service.createPluginOperation(principal, swapInput(plan.id, wallet.id, wallet.address, plan.request, plan.quote, approval), `uniswap:${plan.id}:${approval ? 'approval' : 'swap'}`)
       await update(approval ? { approvalId: operation.id } : { swapId: operation.id })
     } catch (error) { await update({ error: error instanceof Error && 'code' in error ? error.message : 'Uniswap preparation unavailable; existing operations will not be resent' }) }
   }

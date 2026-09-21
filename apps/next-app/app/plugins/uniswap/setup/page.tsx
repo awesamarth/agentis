@@ -5,7 +5,7 @@ import { usePrivy } from '@privy-io/react-auth'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useAgentisClient } from '@/lib/agentis'
 import Navbar from '@/components/Navbar'
-import { UniswapLogo } from '@/components/PluginPicker'
+import { UniswapLogo } from '@/components/plugins/registry'
 
 function Review() {
   const id = useSearchParams().get('request') ?? ''

@@ -1,6 +1,4 @@
 import { Hono } from 'hono'
-import { resolveRecipient } from './plugins/ens/resolution'
-import { ensRoutes } from './plugins/ens/routes'
 import { AgentisClient } from '@agentis-hq/sdk'
 import { createAgentisMcpServer, WebStandardStreamableHTTPServerTransport } from '@agentis-hq/mcp'
 import { remoteOAuth } from './modules/oauth'
@@ -76,7 +74,7 @@ export function createApp(service: OperationService, identity: Identity, origins
   })
   const cliLogin = cliLoginRoutes(service)
   app.route('/v1/cli/logins', cliLogin.publicRoutes)
-  app.get('/v1/ens/resolve', async c => c.json(await resolveRecipient(z.string().min(1).max(255).parse(c.req.query('name')), z.string().max(128).parse(c.req.query('chainId')))))
+  for (const route of service.plugins.publicRoutes()) app.route(route.path, route.app)
   app.use('/v1/*', async (c, next) => {
     const delegated = c.get('delegated')
     if (delegated?.kind === 'agent') {
@@ -164,7 +162,7 @@ export function createApp(service: OperationService, identity: Identity, origins
     return c.json(await agentBalance(enabled))
   })
   app.route('/v1', onboardingRoutes(service, identity))
-  app.get('/v1/capabilities', c => c.json({ defaultChain: defaultProductChain, networks: Object.fromEntries(supportedNetworks.map(network => [network.chainId, { name: network.name, testnet: network.testnet, execution: service.executor?.id === 'privy' }])), core: { transfers: !!service.executor, x402: service.executor?.id === 'privy', mpp: service.executor?.id === 'privy' }, paidFetch: { methods: ['GET'], x402Networks: service.executor?.id === 'privy' ? ['eip155:84532', 'eip155:5042002', 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'] : [], mppNetworks: service.executor?.id === 'privy' ? ['eip155:42431'] : [] }, plugins: service.config, pluginCatalog: [{ id: 'uniswap', scope: 'agent', networks: ['eip155:84532'], features: ['swap', 'rebalance', 'dca', 'gas_refill', 'x402_shortfall_funding'] }], executor: service.executor?.id ?? null, approvalSecurity: service.executor?.id === 'anvil' ? 'local-demo-app-authorization' : service.executor?.id === 'privy' ? 'backend-policy-and-owner-approval' : 'live-execution-unavailable' }))
+  app.get('/v1/capabilities', c => c.json({ defaultChain: defaultProductChain, networks: Object.fromEntries(supportedNetworks.map(network => [network.chainId, { name: network.name, testnet: network.testnet, execution: service.executor?.id === 'privy' }])), core: { transfers: !!service.executor, x402: service.executor?.id === 'privy', mpp: service.executor?.id === 'privy' }, paidFetch: { methods: ['GET'], x402Networks: service.executor?.id === 'privy' ? ['eip155:84532', 'eip155:5042002', 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'] : [], mppNetworks: service.executor?.id === 'privy' ? ['eip155:42431'] : [] }, plugins: service.config, pluginCatalog: service.plugins.catalog, executor: service.executor?.id ?? null, approvalSecurity: service.executor?.id === 'anvil' ? 'local-demo-app-authorization' : service.executor?.id === 'privy' ? 'backend-policy-and-owner-approval' : 'live-execution-unavailable' }))
   app.get('/v1/wallets', async c => {
     const principal = c.get('principal')
     let scope = eq(wallets.ownerId, principal.ownerId)
@@ -212,37 +210,7 @@ export function createApp(service: OperationService, identity: Identity, origins
   })
   app.post('/v1/grants', async c => c.json(await service.createGrant(c.get('principal'), grantInput.parse(await c.req.json())), 201))
   app.delete('/v1/grants/:id', async c => { await service.revoke(c.get('principal'), id.parse(c.req.param('id'))); return c.body(null, 204) })
-  app.route('/v1/plugins/ens', ensRoutes(service))
-  app.post('/v1/plugins/uniswap/dca-requests', async c => c.json(await service.uniswap.requestSetup(c.get('principal'), await c.req.json()), 201))
-  app.get('/v1/plugins/uniswap/dca-requests/:id', async c => c.json(await service.uniswap.setup(c.get('principal'), id.parse(c.req.param('id')))))
-  app.post('/v1/plugins/uniswap/dca-requests/:id', async c => {
-    const input = z.object({ approve: z.boolean(), confirm: z.literal(true) }).strict().parse(await c.req.json())
-    return c.json(await service.uniswap.completeSetup(c.get('principal'), id.parse(c.req.param('id')), input.approve))
-  })
-  app.post('/v1/plugins/uniswap/fetch', async c => c.json(await service.uniswap.fundFetch(c.get('principal'), await c.req.json(), c.req.header('Idempotency-Key') ?? ''), 202))
-  app.post('/v1/plugins/uniswap/quote', async c => c.json(await service.uniswap.quote(c.get('principal'), await c.req.json())))
-  app.post('/v1/plugins/uniswap/swaps', async c => c.json(await service.uniswap.create(c.get('principal'), await c.req.json(), c.req.header('Idempotency-Key') ?? ''), 202))
-  app.get('/v1/plugins/uniswap/swaps/:id', async c => c.json(await service.uniswap.get(c.get('principal'), id.parse(c.req.param('id')))))
-  app.get('/v1/plugins/uniswap/rebalance-target', async c => c.json(await service.uniswap.target(c.get('principal'), id.parse(c.req.query('walletId')))))
-  app.post('/v1/plugins/uniswap/rebalance-target', async c => {
-    const input = z.object({ walletId: id, ethPercent: z.number().int().min(0).max(100) }).strict().parse(await c.req.json())
-    return c.json(await service.uniswap.saveTarget(c.get('principal'), input.walletId, input.ethPercent))
-  })
-  app.post('/v1/plugins/uniswap/rebalance/execute', async c => {
-    const input = z.object({ walletId: id, ethPercent: z.number().int().min(0).max(100) }).strict().parse(await c.req.json())
-    return c.json(await service.uniswap.executeRebalance(c.get('principal'), input.walletId, input.ethPercent, c.req.header('Idempotency-Key') ?? ''), 202)
-  })
-  app.post('/v1/plugins/uniswap/rebalance', async c => {
-    const input = z.object({ walletId: id, ethPercent: z.number().int().min(0).max(100) }).strict().parse(await c.req.json())
-    return c.json(await service.uniswap.rebalance(c.get('principal'), input.walletId, input.ethPercent))
-  })
-  app.get('/v1/plugins/uniswap/dca', async c => c.json(await service.uniswap.listSchedules(c.get('principal'), id.parse(c.req.query('walletId')))))
-  app.post('/v1/plugins/uniswap/dca', async c => c.json(await service.uniswap.saveSchedule(c.get('principal'), await c.req.json()), 201))
-  app.put('/v1/plugins/uniswap/dca/:id', async c => c.json(await service.uniswap.saveSchedule(c.get('principal'), await c.req.json(), id.parse(c.req.param('id')))))
-  app.patch('/v1/plugins/uniswap/dca/:id', async c => {
-    const input = z.object({ status: z.enum(['active', 'paused', 'cancelled']), confirm: z.literal(true) }).strict().parse(await c.req.json())
-    return c.json(await service.uniswap.scheduleStatus(c.get('principal'), id.parse(c.req.param('id')), input.status))
-  })
+  for (const route of service.plugins.authenticatedRoutes()) app.route(route.path, route.app)
   app.post('/v1/fetch', async c => c.json(await service.fetch(c.get('principal'), await c.req.json(), c.req.header('Idempotency-Key') ?? ''), 202))
   app.get('/v1/wallets/:id/policy', async c => c.json(await service.policyView(c.get('principal'), id.parse(c.req.param('id')))))
   app.get('/v1/history', async c => c.json(await service.history(c.get('principal'))))

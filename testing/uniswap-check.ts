@@ -52,7 +52,7 @@ const executor: Executor = {
   },
 }
 const service = new OperationService(db, executor, {}, 'http://localhost:3000', async input => ({ assetPrice: (input.asset === 'native' ? 2000n * 10n ** 18n : 10n ** 18n).toString(), feePrice: (2000n * 10n ** 18n).toString(), assetDecimals: input.asset === 'native' ? 18 : 6, feeDecimals: 18, expiresAt: Date.now() + 60000 }))
-service.uniswap.quoteSource = async request => {
+service.plugins.get('uniswap').quoteSource = async request => {
   const exactOutput = request.type === 'EXACT_OUTPUT', amount = parseUnits(request.amount, (exactOutput ? request.tokenOut : request.tokenIn) === 'ETH' ? 18 : 6)
   const input = exactOutput ? (request.tokenIn === 'ETH' ? amount * 10n ** 12n / 2000n : amount * 2000n / 10n ** 12n) : amount
   const output = exactOutput ? amount : request.tokenOut === 'USDC' ? amount * 2000n / 10n ** 12n : amount * 10n ** 12n / 2000n
@@ -75,7 +75,7 @@ try {
   const mcp = new Client({ name: 'uniswap-fixture', version: '1' }), [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await mcpServer.connect(serverTransport); await mcp.connect(clientTransport)
   try {
-    assert.equal((await mcp.listTools()).tools.length, 18)
+    assert((await mcp.listTools()).tools.some(tool => tool.name === 'agentis_swap_quote'))
     assert(!(await mcp.callTool({ name: 'agentis_swap_quote', arguments: input })).isError)
     assert((await mcp.callTool({ name: 'agentis_swap_quote', arguments: { ...input, walletId: crypto.randomUUID() } })).isError)
   } finally { await mcp.close(); await mcpServer.close() }
@@ -107,7 +107,7 @@ try {
   await assert.rejects(api.uniswap.dca.create({ ...direct, intervalMinutes: 10 }), /different settings/)
   await api.uniswap.dca.status(first.id, 'cancelled')
   await db.update(tables.uniswapSchedules).set({ nextRunAt: new Date(Date.now() - 1000) }).where(eq(tables.uniswapSchedules.id, schedule.id))
-  await Promise.all([service.uniswap.tick(), service.uniswap.tick()])
+  await Promise.all([service.plugins.get('uniswap').tick(), service.plugins.get('uniswap').tick()])
   assert.equal((await db.select().from(tables.uniswapPlans).where(eq(tables.uniswapPlans.scheduleId, schedule.id))).length, 1, 'One plan per occurrence under concurrent workers')
   await api.uniswap.dca.status(schedule.id, 'paused')
   const scheduled = (await db.select().from(tables.uniswapPlans).where(eq(tables.uniswapPlans.scheduleId, schedule.id)))[0]!

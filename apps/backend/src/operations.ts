@@ -1,13 +1,10 @@
-import { isDeepStrictEqual } from 'node:util'
-import { EnsService } from './plugins/ens/service'
 import { resolveRecipient } from './plugins/ens/resolution'
-import { swapInput } from './plugins/uniswap/swap'
-import { UniswapService } from './plugins/uniswap/service'
+import { PluginRegistry } from './plugins/registry'
 import { createHash, randomBytes } from 'node:crypto'
 import { and, desc, eq, getTableColumns, inArray, lt, sql } from 'drizzle-orm'
 import { operationInput, walletPolicy, grantInput, type GrantInput, type Operation, type OperationInput } from '@agentis-hq/core/operations'
 import type { Database } from './db'
-import { grants, operations, wallets, onboarding, agents, uniswapPlans, uniswapSchedules, type OperationRow, type WalletRow } from './db/schema'
+import { grants, operations, wallets, onboarding, agents, type OperationRow, type WalletRow } from './db/schema'
 import { fail } from './errors'
 import type { PluginConfig } from './plugins'
 import { buildTransfer } from './modules/transfers'
@@ -27,7 +24,7 @@ const { httpResponse: _httpResponse, ...operationSummaryColumns } = getTableColu
 const lifetimeMs = 10 * 60_000
 const assetKey = (asset: string) => asset.startsWith('erc20:') ? asset.toLowerCase() : asset
 
-type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0]
+export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0]
 const grantAllowsWallet = (grant: typeof grants.$inferSelect, wallet: WalletRow) =>
   grant.ownerId === wallet.ownerId && !grant.revokedAt && (grant.expiresAt === null || grant.expiresAt.getTime() > Date.now()) &&
   (grant.walletId !== null ? grant.walletId === wallet.id : grant.agentId !== null && grant.agentId === wallet.agentId) &&
@@ -35,8 +32,7 @@ const grantAllowsWallet = (grant: typeof grants.$inferSelect, wallet: WalletRow)
 
 export class OperationService {
   constructor(readonly db: Database, readonly executor: Executor | null, readonly config: PluginConfig, readonly dashboardUrl: string, readonly priceQuote: typeof quoteUsd = quoteUsd) {}
-  readonly uniswap = new UniswapService(this)
-  readonly ens = new EnsService(this)
+  readonly plugins = new PluginRegistry(this)
 
   view(row: Omit<OperationRow, 'httpResponse'> & { httpResponse?: OperationRow['httpResponse'] }): Operation {
     return {
@@ -107,30 +103,9 @@ export class OperationService {
     return null
   }
 
-  private async pluginReason(tx: Transaction, wallet: WalletRow, input: OperationInput) {
-    if (input.identity) return this.ens.reason(tx, wallet, input)
-    if (!input.swap) return null
-    const [agent] = wallet.agentId ? await tx.select().from(agents).where(eq(agents.id, wallet.agentId)) : []
-    if (!agent?.plugins.includes('uniswap')) return 'Uniswap is disabled for this agent'
-    const [plan] = await tx.select().from(uniswapPlans).where(eq(uniswapPlans.id, input.swap.planId))
-    if (!plan || plan.walletId !== wallet.id || plan.ownerId !== wallet.ownerId || plan.status !== 'pending' || plan.expiresAt.getTime() <= Date.now()) return 'Swap plan is inactive or expired'
-    if (!isDeepStrictEqual(input, operationInput.parse(swapInput(plan.id, wallet.id, wallet.address, plan.request, plan.quote, input.action === 'uniswap_approval')))) return 'Swap terms differ from the stored plan'
-    if (plan.scheduleId) {
-      const [schedule] = await tx.select().from(uniswapSchedules).where(eq(uniswapSchedules.id, plan.scheduleId))
-      if (!schedule || schedule.status !== 'active' || schedule.version !== plan.scheduleVersion) return 'Schedule changed or paused'
-    }
-    return null
-  }
-
-  async createUniswap(principal: Principal, raw: OperationInput, idempotencyKey: string) {
+  async createPluginOperation(principal: Principal, raw: OperationInput, idempotencyKey: string) {
     const input = operationInput.parse(raw)
-    if (!input.swap || !input.action.startsWith('uniswap_')) fail(400, 'invalid_plugin_operation', 'Expected a Uniswap operation')
-    return this.createInput(principal, input, idempotencyKey)
-  }
-
-  async createIdentity(principal: Principal, raw: OperationInput, idempotencyKey: string) {
-    const input = operationInput.parse(raw)
-    if (!input.identity || input.action !== 'identity_write') fail(400, 'invalid_plugin_operation', 'Expected an identity operation')
+    if (!input.swap && !input.identity) fail(400, 'invalid_plugin_operation', 'Expected a plugin operation')
     return this.createInput(principal, input, idempotencyKey)
   }
 
@@ -184,7 +159,7 @@ export class OperationService {
       if (wallet.provider === 'privy' && !wallet.serverAuthorized) fail(409, 'wallet_setup_required', 'Open this agent’s rules and save once to enable hosted execution')
       this.executor.validate(wallet, input)
       await this.expire(tx, wallet.id)
-      let reason = this.policyReason(wallet, input) ?? await this.pluginReason(tx, wallet, input)
+      let reason = this.policyReason(wallet, input) ?? await this.plugins.reason(tx, wallet, input)
       // ponytail: O(n) wallet history under lock; use SQL ledger aggregates when volume warrants it.
       const rows = await tx.select(operationSummaryColumns).from(operations).where(eq(operations.walletId, wallet.id))
       let daily = 0n, lifetime = 0n, tokenDaily = 0n, tokenLifetime = 0n
@@ -282,7 +257,7 @@ export class OperationService {
       await this.expire(tx, wallet.id)
       const rows = await tx.select(operationSummaryColumns).from(operations).where(eq(operations.walletId, wallet.id))
       const row = rows.find(row => row.id === id)
-      if (!row || row.status !== 'pending_approval' || row.policyVersion !== wallet.policyVersion || this.policyReason(wallet, row.input) || await this.pluginReason(tx, wallet, row.input)) fail(409, 'not_pending', 'Operation cannot be authorized')
+      if (!row || row.status !== 'pending_approval' || row.policyVersion !== wallet.policyVersion || this.policyReason(wallet, row.input) || await this.plugins.reason(tx, wallet, row.input)) fail(409, 'not_pending', 'Operation cannot be authorized')
       if (rows.some(other => other.id !== id && (reserved as readonly string[]).includes(other.status) && (other.authorizationRequest || (uncertain as readonly string[]).includes(other.status)))) fail(409, 'wallet_busy', 'Resolve the earlier authorized operation first')
       if (row.authorizationRequest) return row.authorizationRequest
       const request = await this.executor!.authorization!(wallet, row.input, row.id, row.expiresAt)
@@ -303,7 +278,7 @@ export class OperationService {
       if (row.expiresAt.getTime() <= Date.now()) fail(409, 'approval_expired', 'Approval has expired')
       if (approve) {
         if (wallet.provider === 'privy' && !wallet.serverAuthorized) fail(409, 'wallet_setup_required', 'Save this agent’s rules to enable hosted execution first')
-        if (row.policyVersion !== wallet.policyVersion || this.policyReason(wallet, row.input) || await this.pluginReason(tx, wallet, row.input)) fail(409, 'policy_changed', 'Policy changed; create a new operation')
+        if (row.policyVersion !== wallet.policyVersion || this.policyReason(wallet, row.input) || await this.plugins.reason(tx, wallet, row.input)) fail(409, 'policy_changed', 'Policy changed; create a new operation')
         if (row.grantId) await this.checkGrant(tx, row.grantId, wallet)
         if (this.executor?.authorization && (!row.authorizationRequest || !signature)) fail(400, 'signature_required', 'Sign the concrete Privy request to authorize execution')
       }
@@ -363,7 +338,7 @@ export class OperationService {
   // row locks; an unresolved submission blocks that wallet's nonce lane.
   async tick() {
     if (!this.executor) return
-    await this.uniswap.tick()
+    await this.plugins.tick()
     const executor = this.executor
     const walletRows = await this.db.select().from(wallets).where(eq(wallets.provider, executor.id))
     for (const candidate of walletRows) {
@@ -395,7 +370,7 @@ export class OperationService {
         }
         const row = rows.find(row => row.status === 'queued')
         if (!row) return null
-        let reason = row.policyVersion !== wallet.policyVersion ? 'Policy changed' : this.policyReason(wallet, row.input) ?? await this.pluginReason(tx, wallet, row.input)
+        let reason = row.policyVersion !== wallet.policyVersion ? 'Policy changed' : this.policyReason(wallet, row.input) ?? await this.plugins.reason(tx, wallet, row.input)
         if (wallet.provider === 'privy' && !wallet.serverAuthorized) reason = 'Wallet setup required; save this agent’s rules first'
         if (row.grantId) {
           const [grant] = await tx.select().from(grants).where(eq(grants.id, row.grantId))

@@ -13,7 +13,7 @@ export const agents = pgTable('agents', {
   allowedRecipients: jsonb().$type<string[]>().notNull(),
   networks: jsonb().$type<string[]>().notNull(),
   defaultNetwork: text().notNull(),
-}, table => [check('agents_plugins_valid', sql`${table.plugins} IN ('[]'::jsonb, '["uniswap"]'::jsonb, '["ens"]'::jsonb, '["uniswap","ens"]'::jsonb, '["ens","uniswap"]'::jsonb)`)])
+})
 
 export const wallets = pgTable('wallets', {
   id: uuid().primaryKey().defaultRandom(),
