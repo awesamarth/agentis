@@ -55,7 +55,7 @@ function Setup({ ownerId, agentId, createOnly }: { ownerId: string; agentId?: st
   const save = useMutation({ mutationFn: () => {
     const input = { plugins, name: name.trim(), selection: { networks: selected, defaultNetwork }, limits: Object.fromEntries(Object.entries(limits).map(([key, value]) => [key, value.trim() ? formatUnits(parseAmount(value.trim(), 6), 6) : null])) as AgentisAgent['limits'], mode, allowedRecipients: recipients.trim() ? recipients.trim().split(/[\s,]+/) : [] }
     return editing ? client.agents.update(editing, { ...input, enableExecution: name.trim() === agents.data?.find(agent => agent.id === editing)?.name && JSON.stringify(plugins) === JSON.stringify(agents.data?.find(agent => agent.id === editing)?.plugins) }) : client.agents.create({ ...input, id: requestId.current })
-  }, onSuccess: async () => { setFinished(true); await Promise.all(['agents', 'wallets', 'onboarding', 'operations', 'profile', 'agent-balance'].map(key => cache.invalidateQueries({ queryKey: [key] }))) } })
+  }, onSuccess: async () => { setFinished(true); await Promise.all(['agents', 'wallets', 'onboarding', 'operations', 'profile', 'agent-balances'].map(key => cache.invalidateQueries({ queryKey: [key] }))) } })
   function open(agent?: AgentisAgent) {
     requestId.current = agent?.id ?? crypto.randomUUID()
     setEditing(agent?.id ?? null); setName(agent?.name ?? ''); setPlugins(agent?.plugins ?? [])

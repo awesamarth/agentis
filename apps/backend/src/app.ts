@@ -8,7 +8,7 @@ import { z } from 'zod'
 import { and, eq, inArray } from 'drizzle-orm'
 import { approvalInput, grantInput, walletPolicy } from '@agentis-hq/core/operations'
 import { agents, grants, wallets } from './db/schema'
-import { agentBalance } from './modules/balances'
+import { agentBalance, agentBalances } from './modules/balances'
 import { ApiError, fail } from './errors'
 import { hash, OperationService, type Principal } from './operations'
 import { defaultProductChain, supportedNetworks } from './modules/networks'
@@ -144,6 +144,15 @@ export function createApp(service: OperationService, identity: Identity, origins
     const input = z.object({ requestId: id, confirm: z.literal(true) }).strict().parse(await c.req.json())
     if (!identity.exportTestWallet) fail(503, 'provider_unavailable', 'Privy test unavailable')
     return c.json(await identity.exportTestWallet(c.get('principal').ownerId, input.requestId, c.req.header('authorization')!.slice(7), 'server'))
+  })
+  app.get('/v1/agents/balances', async c => {
+    const principal = c.get('principal')
+    if (principal.kind !== 'owner') fail(403, 'owner_required', 'Only the owner can list all agent balances')
+    const [ownedAgents, enabled] = await Promise.all([
+      service.db.select({ id: agents.id }).from(agents).where(eq(agents.ownerId, principal.ownerId)),
+      service.db.select().from(wallets).where(and(eq(wallets.ownerId, principal.ownerId), eq(wallets.enabled, true))),
+    ])
+    return c.json(await agentBalances(ownedAgents.map(agent => ({ id: agent.id, wallets: enabled.filter(wallet => wallet.agentId === agent.id) }))))
   })
   app.get('/v1/agents/:id/balance', async c => {
     const principal = c.get('principal')

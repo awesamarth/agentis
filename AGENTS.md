@@ -58,7 +58,7 @@ All plugin execution still goes through Agentis policy, approval, signing and re
 - CLI supports browser login, hosted/local wallet views, balances, sends, policy/history, paid fetch, operations, Uniswap and ENS.
 - SDK is a thin backend client for hosted operations, administration, consent, Uniswap and ENS. Old seller-side `@agentis-hq/sdk/server` helpers were removed.
 - Remote MCP is mounted at `/mcp` with OAuth + PKCE, explicit agent/network consent and live grant checks. It exposes no approval, policy-edit or key-export tools.
-- Dashboard supports onboarding, balances, rules, approvals, access keys, plugins, activity and profile analytics.
+- Dashboard supports onboarding, balances, rules, approvals, access keys, plugins, activity and profile analytics. Owner balance cards share one backend request; balance display uses Alchemy Portfolio batching for Base/Arc/Ethereum Sepolia, direct RPC reads for Tempo/Solana, short in-memory caching and explicit partial results. Display estimates never authorize spending.
 
 ## Verified vs pending
 
@@ -71,7 +71,8 @@ Still pending:
 - Additional live scheduled/funding Uniswap execution.
 - Automatic release for provably unused expired Tempo/Solana payments and stronger unknown-submission recovery.
 - Rate limits, pagination, webhooks and operator recovery tooling.
-- Onramp provider selection/implementation; confirm real India availability and human KYC flow first.
+- Owner-deferred fiat funding: treat onramp/offramp as owner-only core wallet flows, not plugins. Privy + Meld/Onramp Money is the leading India/INR onramp candidate, but requires Meld KYB, a Privy React SDK upgrade and live regional verification; real providers fund mainnets, so do not silently target testnet wallet counterparts. Offramp remains later because Privy/Bridge does not document INR payout rails.
+- Owner-tracked product TODOs, not approved implementation yet: Monid plugin (inspect its exact x402/MPP contracts first); possible Meta Muse integration (official material establishes Link’s wallet for agents is built into Muse, but not a public Muse connector platform); and a product/architecture decision between AgentCard and Link agent payments. Determine each option’s exact custody, approval, credential-handling, availability and integration contracts before deciding whether it is a core payment rail or an optional plugin. Link Financial Insights is a separate optional data integration, not part of payment core, and remains deferred.
 
 Do not pursue Privy user-JWT exchange, existing-wallet migration, Umbra or hosted bot work unless explicitly reopened.
 

@@ -33,18 +33,6 @@ const productSections = [
     items: ['budget reservations', 'pause and revoke', 'owner-only approvals'],
   },
   {
-    kicker: 'swaps',
-    title: 'Acquire the token an agent needs.',
-    body: 'The Uniswap plugin supports bounded Base Sepolia swaps, manual rebalancing, DCA, gas refill and optional x402 shortfall funding.',
-    items: ['direct V3 swaps', 'owner-confirmed schedules', 'shared budgets'],
-  },
-  {
-    kicker: 'identity',
-    title: 'Give every agent a portable on-chain identity.',
-    body: 'The ENS plugin publishes network-specific payment addresses and narrowly delegated service records. ERC-8004 registration stays inside the same plugin.',
-    items: ['ENSv2 subnames', 'payment records', 'ERC-8004'],
-  },
-  {
     kicker: 'interfaces',
     title: 'Use the same wallet from dashboard, CLI, SDK, and MCP.',
     body: 'Humans can operate through the dashboard. Agents can call through the SDK or MCP server, while the CLI works for both scripts and manual operations.',

@@ -6,6 +6,7 @@ import { paymentHttp } from './payment-http'
 
 const priceSchema = z.object({ price: z.number().positive().finite(), timestamp: z.number().int().positive(), confidence: z.number().min(0.95).max(1) })
 const cache = new Map<string, { value: string; expiresAt: number }>()
+let refreshing: Promise<void> | null = null
 const ceil = (value: bigint, divisor: bigint) => (value + divisor - 1n) / divisor
 // USD prices use 18 decimal places; ledger dollars use 6. Never round spending down.
 export function usdCost(input: OperationInput, quote: UsdQuote, fee = input.maxFeeAtomic, success = true) {
@@ -24,12 +25,17 @@ export async function quoteUsd(input: Pick<OperationInput, 'chainId' | 'asset'>)
   const asset = network?.assets.find(asset => input.asset.startsWith('erc20:') ? asset.id.toLowerCase() === input.asset.toLowerCase() : asset.id === input.asset)
   if (!network || !asset) throw new Error('Asset has no configured USD price source')
   const ids = [...new Set([asset.priceId, network.priceId])]
-  const missing = ids.filter(id => id !== 'test-usd' && (!cache.has(id) || cache.get(id)!.expiresAt <= Date.now()))
-  if (missing.length) {
-    const response = await paymentHttp({ url: `https://coins.llama.fi/prices/current/${missing.map(encodeURIComponent).join(',')}`, method: 'GET', headers: { accept: 'application/json' } })
-    if (response.status !== 200) throw new Error('USD price service unavailable')
-    const data = z.object({ coins: z.record(z.string(), z.unknown()) }).parse(JSON.parse(Buffer.from(response.bodyBase64, 'base64').toString('utf8')))
-    for (const id of missing) cache.set(id, parsePrice(data.coins[id]))
+  while (ids.some(id => id !== 'test-usd' && (!cache.has(id) || cache.get(id)!.expiresAt <= Date.now()))) {
+    if (!refreshing) {
+      const missing = ids.filter(id => id !== 'test-usd' && (!cache.has(id) || cache.get(id)!.expiresAt <= Date.now()))
+      refreshing = (async () => {
+        const response = await paymentHttp({ url: `https://coins.llama.fi/prices/current/${missing.map(encodeURIComponent).join(',')}`, method: 'GET', headers: { accept: 'application/json' } })
+        if (response.status !== 200) throw new Error('USD price service unavailable')
+        const data = z.object({ coins: z.record(z.string(), z.unknown()) }).parse(JSON.parse(Buffer.from(response.bodyBase64, 'base64').toString('utf8')))
+        for (const id of missing) cache.set(id, parsePrice(data.coins[id]))
+      })().finally(() => { refreshing = null })
+    }
+    await refreshing
   }
   const get = (id: string) => {
     // Explicit test-token reference only. Never assume that a mainnet stablecoin equals $1.

@@ -17,9 +17,9 @@ export const supportedNetworks = [
   { key: 'sepolia', name: 'Ethereum Sepolia', chainId: 'eip155:11155111', chainType: 'ethereum', testnet: true, currency: 'ETH', decimals: 18, priceId: 'coingecko:ethereum', assets: [{ id: 'native', symbol: 'ETH', decimals: 18, priceId: 'coingecko:ethereum' }, { id: `erc20:${sepoliaUsdc}`, symbol: 'USDC', decimals: 6, priceId: 'coingecko:usd-coin' }], explorer: sepolia.blockExplorers.default.url },
 ] as const
 
-export function evmClient(chainId: string) {
+export function evmClient(chainId: string, retryCount = 0) {
   const chain = evmChains.find(chain => `eip155:${chain.id}` === chainId)
   if (!chain) throw new Error('Only configured testnets are permitted')
   const envKey = chain.id === sepolia.id ? 'SEPOLIA_RPC_URL' : chain.id === baseSepolia.id ? 'BASE_SEPOLIA_RPC_URL' : chain.id === arcTestnet.id ? 'ARC_TESTNET_RPC_URL' : 'TEMPO_TESTNET_RPC_URL'
-  return createPublicClient({ chain: chain as Chain, transport: http(process.env[envKey] ?? chain.rpcUrls.default.http[0], { timeout: 15_000, retryCount: 0 }) })
+  return createPublicClient({ chain: chain as Chain, transport: http(process.env[envKey] ?? chain.rpcUrls.default.http[0], { timeout: 15_000, retryCount }) })
 }

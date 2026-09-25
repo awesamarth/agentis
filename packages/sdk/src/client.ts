@@ -70,6 +70,7 @@ export class AgentisClient {
   }
   agents = {
     list: () => this.request<AgentisAgent[]>('/agents'),
+    balances: () => this.request<Record<string, AgentBalance>>('/agents/balances', 'GET', undefined, {}, AbortSignal.timeout(60_000)),
     balance: (id: string) => this.request<AgentBalance>(`/agents/${encodeURIComponent(id)}/balance`, 'GET', undefined, {}, AbortSignal.timeout(60_000)),
     setPlugins: (id: string, plugins: AgentisAgent['plugins']) => this.request<AgentisAgent>(`/agents/${encodeURIComponent(id)}/plugins`, 'PATCH', { plugins }),
     pause: (id: string) => this.request<AgentisAgent>(`/agents/${encodeURIComponent(id)}/pause`, 'POST'),

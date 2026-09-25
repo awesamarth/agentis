@@ -17,11 +17,11 @@ export default function AgentBalance({ agentId, breakdown = false }: { agentId: 
   const { user, authenticated } = usePrivy()
   const client = useAgentisClient('Sign in first')
   const query = useQuery({
-    queryKey: ['agent-balance', user?.id, agentId], enabled: authenticated && !!user?.id,
+    queryKey: ['agent-balances', user?.id], enabled: authenticated && !!user?.id,
     staleTime: 30_000, refetchInterval: 60_000, retry: false,
-    queryFn: () => client.agents.balance(agentId),
+    queryFn: () => client.agents.balances(),
   })
-  const balance = query.isError ? undefined : query.data
+  const balance = query.isError ? undefined : query.data?.[agentId]
   const total = <>
     <span className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">Balance in USD</span>
     <span className="mt-1 block font-serif text-3xl">{query.isPending ? 'Loading…' : balance ? dollars(balance.usdMicros) : 'Unavailable'}{balance && !balance.complete && balance.usdMicros !== null && <span className="ml-2 font-sans text-xs text-ink-muted">Partial</span>}</span>
