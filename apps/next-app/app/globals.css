@@ -28,6 +28,30 @@ body[data-scroll-locked]:has([data-agentis-dropdown]) {
   margin-right: 0 !important;
 }
 
+/* Match the agent setup modal's internal scrollbar to its warm palette. */
+.onboarding-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #b5a995 transparent;
+}
+
+.onboarding-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.onboarding-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.onboarding-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid #f5f0e8;
+  border-radius: 999px;
+  background: #b5a995;
+}
+
+.onboarding-scroll::-webkit-scrollbar-thumb:hover {
+  background: #6b6459;
+}
+
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
