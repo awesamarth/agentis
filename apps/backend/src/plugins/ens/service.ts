@@ -8,7 +8,8 @@ import { hash, type OperationService, type Principal } from '../../operations'
 import type { OperationInput } from '@agentis-hq/core/operations'
 import { ens, ensClient, normalizedName, parentState, registryAbi, factoryAbi, resolverAbi, labelId, allRoles, coinType, dnsName, recordKeys, canWriteText } from './contracts'
 import { associationKey, registration, registrationUri } from './erc8004'
-import { identityCall } from './execution'
+import { identityCall, estimateIdentityFeeCap } from './execution'
+import { safeErrorDetails } from '../../modules/error-diagnostics'
 
 type Identity = typeof agentIdentities.$inferSelect
 export type IdentityStep = { complete: boolean; label: string; owner: string; transaction?: { to: string; data: string; value: string; chainId: '0xaa36a7' }; operation?: import('@agentis-hq/core/operations').Operation }
@@ -107,16 +108,30 @@ export class EnsService {
     const { row, wallet } = await this.row(principal, walletId)
     if (wallet.id !== row.walletId) fail(403, 'wrong_identity_wallet', 'Use this agent’s Ethereum Sepolia identity wallet')
     const registered = kind === 'document' ? await this.registered(row) : null
-    const input: OperationInput = { walletId: wallet.id, action: 'identity_write', chainId: wallet.chainId, asset: 'native', to: wallet.address, amountAtomic: '0', maxFeeAtomic: kind === 'record' ? '500000000000000' : '1000000000000000', reason: kind === 'record' ? `Update ${key} on ${row.name}` : `ERC-8004 ${kind} for ${row.name}`, identity: { id: row.id, kind, name: row.name, resolver: row.resolver, ...(key ? { key } : {}), ...(registered ? { agentId: registered.agentId } : {}), value: kind === 'record' ? value ?? '' : registrationUri(row.name, row.description, getAddress(wallet.address), registered?.agentId) } }
+    const input: OperationInput = { walletId: wallet.id, action: 'identity_write', chainId: wallet.chainId, asset: 'native', to: wallet.address, amountAtomic: '0', maxFeeAtomic: '0', reason: kind === 'record' ? `Update ${key} on ${row.name}` : `ERC-8004 ${kind} for ${row.name}`, identity: { id: row.id, kind, name: row.name, resolver: row.resolver, ...(key ? { key } : {}), ...(registered ? { agentId: registered.agentId } : {}), value: kind === 'record' ? value ?? '' : registrationUri(row.name, row.description, getAddress(wallet.address), registered?.agentId) } }
     identityCall(input)
-    return this.service.createPluginOperation(principal, input, idempotencyKey)
+    const semanticHash = (terms: OperationInput) => hash(JSON.stringify({ ...terms, maxFeeAtomic: 'auto' }))
+    const requestHash = semanticHash(input)
+    const principalKey = principal.kind === 'owner' ? `owner:${principal.ownerId}` : `grant:${principal.grantId}`
+    const [existing] = await this.service.db.select().from(operations).where(and(eq(operations.principalKey, principalKey), eq(operations.idempotencyKey, idempotencyKey)))
+    if (existing) {
+      if (semanticHash(existing.input) !== requestHash) fail(409, 'idempotency_conflict', 'Idempotency key already used for a different identity request')
+      return this.service.get(principal, existing.id)
+    }
+    try { input.maxFeeAtomic = await estimateIdentityFeeCap(input, getAddress(wallet.address)) }
+    catch (error) {
+      console.error('Identity fee estimation failed', { walletId, kind, causes: safeErrorDetails(error) })
+      fail(503, 'identity_fee_unavailable', 'Could not estimate this identity transaction’s network fee. No payment was created.')
+    }
+    return this.service.createPluginOperation(principal, input, idempotencyKey, requestHash)
   }
   async retry(principal: Principal, walletId: string, operationId: string) {
     if (principal.kind !== 'owner') fail(403, 'owner_required', 'Only the owner can retry identity preparation')
     const { row, wallet } = await this.row(principal, walletId)
     const previous = await this.service.get(principal, operationId)
     const [stored] = await this.service.db.select().from(operations).where(eq(operations.id, operationId))
-    if (!stored || previous.walletId !== wallet.id || previous.identity?.id !== row.id || previous.status !== 'failed' || stored.transactionHash || stored.signedTransaction || previous.error !== 'Preparation failed before submission') fail(409, 'cannot_retry', 'Only an identity preparation failure without submission can be retried')
+    const retryable = (previous.status === 'failed' && ['Preparation failed before submission', 'Estimated network fee exceeds this operation’s maximum fee. No transaction was submitted.'].includes(previous.error ?? '')) || (previous.status === 'denied' && previous.error === 'ENS identity ownership or binding changed')
+    if (!stored || previous.walletId !== wallet.id || previous.identity?.id !== row.id || !retryable || stored.transactionHash || stored.signedTransaction) fail(409, 'cannot_retry', 'Only an identity preparation failure or binding denial without submission can be retried')
     const operation = await this.write(principal, walletId, previous.identity.kind, previous.identity.key, previous.identity.value, `identity-retry-${operationId}`)
     if (previous.identity.kind === 'register') await this.service.db.update(agentIdentities).set({ registrationOperationId: operation.id }).where(and(eq(agentIdentities.id, row.id), eq(agentIdentities.registrationOperationId, operationId)))
     return { complete: false, owner: row.parentOwner, label: 'Review replacement identity operation', operation }
@@ -140,7 +155,7 @@ export class EnsService {
     const client = ensClient(), node = namehash(row.name), resolver = getAddress(row.resolver)
     const [child, actualResolver, id, owner] = await Promise.all([
       client.readContract({ address: getAddress(row.registry!), abi: registryAbi, functionName: 'getState', args: [labelId(row.name.split('.')[0]!)] }),
-      client.getEnsResolver({ name: row.name }),
+      client.readContract({ address: getAddress(row.registry!), abi: registryAbi, functionName: 'getResolver', args: [row.name.split('.')[0]!] }),
       client.readContract({ address: resolver, abi: resolverAbi, functionName: 'text', args: [node, 'org.agentis.id'] }),
       client.readContract({ address: resolver, abi: resolverAbi, functionName: 'text', args: [node, 'org.agentis.owner'] }),
     ])
@@ -161,7 +176,7 @@ export class EnsService {
     ])
     const parent = await parentState(row.parent)
     const [currentResolver, binding, ownerBinding, child] = await Promise.all([
-      client.getEnsResolver({ name: row.name }),
+      row.registry ? client.readContract({ address: getAddress(row.registry), abi: registryAbi, functionName: 'getResolver', args: [row.name.split('.')[0]!] }) : null,
       client.readContract({ address: resolver, abi: resolverAbi, functionName: 'text', args: [node, 'org.agentis.id'] }),
       client.readContract({ address: resolver, abi: resolverAbi, functionName: 'text', args: [node, 'org.agentis.owner'] }),
       row.registry ? client.readContract({ address: getAddress(row.registry), abi: registryAbi, functionName: 'getState', args: [labelId(row.name.split('.')[0]!)] }) : null,

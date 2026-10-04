@@ -71,6 +71,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
       } else {
         const tx = await signer.prepareTransactionRequest({ account: wallet.address as Address, ...call, type: 'eip1559' })
         if (tx.gas * tx.maxFeePerGas > BigInt(input.maxFeeAtomic)) fail(409, 'fee_cap_exceeded', 'Estimated network fee exceeds the requested cap')
+        if (await client.getBalance({ address: wallet.address as Address }) < call.value + tx.gas * tx.maxFeePerGas) fail(409, 'insufficient_gas_balance', 'Wallet balance cannot cover the transfer and maximum network fee. Fund the wallet before retrying.')
         transaction = { type: 2, chain_id: client.chain.id, to: call.to, value: toHex(call.value), data: call.data, nonce: tx.nonce, gas_limit: toHex(tx.gas), max_fee_per_gas: toHex(tx.maxFeePerGas), max_priority_fee_per_gas: toHex(tx.maxPriorityFeePerGas) }
       }
       return {

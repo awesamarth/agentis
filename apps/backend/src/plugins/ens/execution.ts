@@ -1,4 +1,4 @@
-import { encodeFunctionData, getAddress, namehash, parseEventLogs, type Address, type TransactionReceipt } from 'viem'
+import { createWalletClient, http, encodeFunctionData, getAddress, namehash, parseEventLogs, type Address, type TransactionReceipt } from 'viem'
 import type { OperationInput } from '@agentis-hq/core/operations'
 import { identityRegistry, identityRegistryAbi, registrationCall } from './erc8004'
 import { ens, ensClient, parentState, resolverAbi, canWriteText, textCall, recordKeys } from './contracts'
@@ -14,6 +14,21 @@ export function identityCall(input: OperationInput) {
   if (!terms.key || terms.value.length > 2048) throw Error('Invalid delegated record')
   if (terms.key === 'endpoint' && terms.value && (!terms.value.startsWith('https://') || new URL(terms.value).username || new URL(terms.value).password)) throw Error('Endpoint must be HTTPS without credentials')
   return { to: getAddress(terms.resolver), value: 0n, data: textCall(terms.name, terms.key, terms.value) }
+}
+// Ceil a 25% headroom allowance over the prepared EIP-1559 maximum.
+// This is a sizing margin, not permission to exceed owner USD limits.
+export const identityFeeCap = (estimatedMaximum: bigint) => {
+  if (estimatedMaximum <= 0n) throw Error('Invalid identity fee estimate')
+  return (estimatedMaximum * 125n + 99n) / 100n
+}
+export async function estimateIdentityFeeCap(input: OperationInput, sender: Address) {
+  await validateIdentityChain(input, sender)
+  const client = ensClient()
+  if (await client.getChainId() !== ens.chainId) throw Error('Identity fee RPC network mismatch')
+  const estimator = createWalletClient({ chain: client.chain, transport: http(client.transport.url, { timeout: 15000, retryCount: 0 }) })
+  // No signing or submission: prepare the exact calldata from the agent address.
+  const transaction = await estimator.prepareTransactionRequest({ account: sender, ...identityCall(input), type: 'eip1559' })
+  return identityFeeCap(transaction.gas * transaction.maxFeePerGas).toString()
 }
 export async function validateIdentityChain(input: OperationInput, sender: Address) {
   identityCall(input)

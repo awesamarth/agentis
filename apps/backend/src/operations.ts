@@ -5,7 +5,8 @@ import { and, desc, eq, getTableColumns, inArray, lt, sql } from 'drizzle-orm'
 import { operationInput, walletPolicy, grantInput, type GrantInput, type Operation, type OperationInput } from '@agentis-hq/core/operations'
 import type { Database } from './db'
 import { grants, operations, wallets, onboarding, agents, type OperationRow, type WalletRow } from './db/schema'
-import { fail } from './errors'
+import { ApiError, fail } from './errors'
+import { safeErrorDetails } from './modules/error-diagnostics'
 import type { PluginConfig } from './plugins'
 import { buildTransfer } from './modules/transfers'
 import { quoteUsd, usdCost } from './modules/usd-budget'
@@ -103,10 +104,10 @@ export class OperationService {
     return null
   }
 
-  async createPluginOperation(principal: Principal, raw: OperationInput, idempotencyKey: string) {
+  async createPluginOperation(principal: Principal, raw: OperationInput, idempotencyKey: string, requestHash?: string) {
     const input = operationInput.parse(raw)
     if (!input.swap && !input.identity) fail(400, 'invalid_plugin_operation', 'Expected a plugin operation')
-    return this.createInput(principal, input, idempotencyKey)
+    return this.createInput(principal, input, idempotencyKey, requestHash)
   }
 
   async create(principal: Principal, raw: unknown, idempotencyKey: string): Promise<Operation> {
@@ -352,7 +353,8 @@ export class OperationService {
         if (pending) {
           if (!pending.transactionHash && pending.input.action !== 'paid_fetch') return null
           let receipt
-          try { receipt = await executor.receipt(pending.transactionHash, pending.input, pending.signedTransaction) } catch {
+          try { receipt = await executor.receipt(pending.transactionHash, pending.input, pending.signedTransaction) } catch (error) {
+            if (pending.error !== 'Settlement lookup unavailable; reservation retained, no automatic resend') console.error('Operation settlement lookup failed', { operationId: pending.id, chainId: pending.input.chainId, causes: safeErrorDetails(error) })
             await tx.update(operations).set({ status: 'unknown', error: 'Settlement lookup unavailable; reservation retained, no automatic resend' }).where(eq(operations.id, pending.id))
             return null
           }
@@ -383,25 +385,32 @@ export class OperationService {
           await tx.update(operations).set({ status: 'denied', error: reason }).where(eq(operations.id, row.id))
           return null
         }
+        let preparationStage = 'usd_quote'
         try {
           const executionQuote = row.usdQuote ? await this.priceQuote(row.input) : null
           if (executionQuote && (executionQuote.expiresAt <= Date.now() || usdCost(row.input, executionQuote) > BigInt(row.usdReservedMicros!))) {
             await tx.update(operations).set({ status: 'denied', authorizationSignature: null, error: 'USD price changed beyond the reviewed amount. Request a new payment for approval.' }).where(eq(operations.id, row.id))
             return null
           }
+          preparationStage = 'budget_check'
           const budgetReason = executionQuote ? await this.usdBudgetReason(tx, wallet, usdCost(row.input, executionQuote), row.id) : null
           if (budgetReason) {
             await tx.update(operations).set({ status: 'denied', error: budgetReason, authorizationSignature: null }).where(eq(operations.id, row.id))
             return null
           }
+          preparationStage = 'executor_prepare'
           const signed = await executor.prepare(wallet, row.input, row.authorizationRequest && row.authorizationSignature ? { request: row.authorizationRequest, signature: row.authorizationSignature } : undefined, { id: row.id, expiresAt: row.expiresAt })
+          preparationStage = 'post_prepare_validation'
           // Network preparation may outlast authorization: check again before persisting.
           if (row.expiresAt.getTime() <= Date.now() || (executionQuote && executionQuote.expiresAt <= Date.now())) throw new Error('Authorization or USD quote expired while preparing')
           if (row.grantId) await this.checkGrant(tx, row.grantId, wallet)
+          preparationStage = 'persist_signed_proof'
           const [updated] = await tx.update(operations).set({ ...signed, usdQuote: executionQuote, status: 'submitting' }).where(eq(operations.id, row.id)).returning()
           return updated!
-        } catch {
-          await tx.update(operations).set({ status: 'failed', error: 'Preparation failed before submission' }).where(eq(operations.id, row.id))
+        } catch (error) {
+          console.error('Operation preparation failed before submission', { operationId: row.id, chainId: row.input.chainId, action: row.input.action, stage: preparationStage, causes: safeErrorDetails(error) })
+          const publicError = error instanceof ApiError && error.code === 'fee_cap_exceeded' ? 'Estimated network fee exceeds this operation’s maximum fee. No transaction was submitted.' : error instanceof ApiError && error.code === 'insufficient_gas_balance' ? 'Wallet has insufficient funds for the maximum network fee. Fund the wallet before retrying. No transaction was submitted.' : 'Preparation failed before submission'
+          await tx.update(operations).set({ status: 'failed', error: publicError }).where(eq(operations.id, row.id))
           return null
         }
       })
@@ -411,7 +420,8 @@ export class OperationService {
             await this.db.update(operations).set({ transactionHash }).where(and(eq(operations.id, prepared.id), inArray(operations.status, ['submitting', 'unknown'])))
           })
           await this.db.update(operations).set({ status: 'submitted', error: null, ...(httpResponse ? { httpResponse } : {}) }).where(and(eq(operations.id, prepared.id), inArray(operations.status, ['submitting', 'unknown'])))
-        } catch {
+        } catch (error) {
+          console.error('Operation submission failed; reconciliation required', { operationId: prepared.id, chainId: prepared.input.chainId, action: prepared.input.action, causes: safeErrorDetails(error) })
           await this.db.update(operations).set({ status: 'unknown', error: 'Submission outcome unknown; reconcile before retrying' }).where(and(eq(operations.id, prepared.id), inArray(operations.status, ['submitting', 'unknown'])))
         }
       }

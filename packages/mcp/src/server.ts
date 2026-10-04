@@ -6,6 +6,7 @@ export { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 export type Delegation = { agentId: string; name: string; plugins?: string[]; client: AgentisClient }
 export type Network = { chainId: string; name: string; decimals: number; currency: string; assets: readonly { id: string; symbol: string; decimals: number }[] }
 const decimal = z.string().regex(/^\d+(\.\d+)?$/).max(80)
+class WalletScopeError extends Error {}
 function atomic(value: string, decimals: number) {
   const [whole, fraction = ''] = value.split('.')
   if (fraction.length > decimals) throw Error('Too many decimal places')
@@ -18,7 +19,7 @@ export function createAgentisMcpServer(options: { delegations: Delegation[]; net
   const server = new McpServer({ name: 'agentis', version: '0.3.0' })
   const result = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] })
   async function run(fn: () => Promise<unknown>) {
-    try { return result(await fn()) } catch (error) { return { ...result({ error: error instanceof AgentisApiError ? error.message : 'Request failed. Check the selected wallet, amounts and permissions. Keep the same payment key after uncertainty.' }), isError: true } }
+    try { return result(await fn()) } catch (error) { return { ...result({ error: error instanceof WalletScopeError ? 'Wallet unavailable for this connection. Select a wallet from agentis_list_wallets or reconnect with the required network consent. No payment was requested.' : error instanceof AgentisApiError ? error.message : 'Request failed. Check the selected wallet, amounts and permissions. Keep the same payment key after uncertainty.' }), isError: true } }
   }
   function agent(id?: string) {
     const choices = id ? delegations.filter(item => item.agentId === id) : delegations
@@ -30,7 +31,7 @@ export function createAgentisMcpServer(options: { delegations: Delegation[]; net
       const wallet = (await delegation.client.wallets.list()).find(wallet => wallet.id === walletId && wallet.enabled)
       if (wallet) return { ...delegation, wallet }
     }
-    throw Error('Wallet outside delegated scope')
+    throw new WalletScopeError('Wallet outside delegated scope')
   }
   async function getOperation(id: string) {
     for (const delegation of delegations) {

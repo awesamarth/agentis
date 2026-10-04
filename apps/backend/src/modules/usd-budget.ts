@@ -29,10 +29,22 @@ export async function quoteUsd(input: Pick<OperationInput, 'chainId' | 'asset'>)
     if (!refreshing) {
       const missing = ids.filter(id => id !== 'test-usd' && (!cache.has(id) || cache.get(id)!.expiresAt <= Date.now()))
       refreshing = (async () => {
-        const response = await paymentHttp({ url: `https://coins.llama.fi/prices/current/${missing.map(encodeURIComponent).join(',')}`, method: 'GET', headers: { accept: 'application/json' } })
-        if (response.status !== 200) throw new Error('USD price service unavailable')
-        const data = z.object({ coins: z.record(z.string(), z.unknown()) }).parse(JSON.parse(Buffer.from(response.bodyBase64, 'base64').toString('utf8')))
-        for (const id of missing) cache.set(id, parsePrice(data.coins[id]))
+        const url = `https://coins.llama.fi/prices/current/${missing.map(encodeURIComponent).join(',')}`
+        for (let attempt = 0; attempt < 2; attempt++) {
+          // A CDN can serve an old quote repeatedly. Retry once with a bounded
+          // refresh key; never accept stale prices or silently assume $1.
+          const refreshUrl = attempt ? `${url}?_refresh=${Math.floor(Date.now() / 30_000)}` : url
+          const response = await paymentHttp({ url: refreshUrl, method: 'GET', headers: { accept: 'application/json' } })
+          if (response.status !== 200) throw new Error('USD price service unavailable')
+          const data = z.object({ coins: z.record(z.string(), z.unknown()) }).parse(JSON.parse(Buffer.from(response.bodyBase64, 'base64').toString('utf8')))
+          try {
+            const prices = missing.map(id => [id, parsePrice(data.coins[id])] as const)
+            for (const [id, price] of prices) cache.set(id, price)
+            break
+          } catch (error) {
+            if (attempt || !(error instanceof Error) || error.message !== 'Price is stale or future-dated') throw error
+          }
+        }
       })().finally(() => { refreshing = null })
     }
     await refreshing

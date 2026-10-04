@@ -5,7 +5,7 @@ Current snapshot, not a diary. Keep implemented, verified and pending work disti
 ## Working agreement
 
 - Follow the owner's next small request; no unsolicited rewrites or speculative compatibility layers.
-- Batch meaningful changes into local commits. Never push, publish or deploy unless explicitly asked.
+- Never push, publish or deploy unless explicitly asked.
 - Do not use subagents or run browser checks unless the owner lifts the restriction.
 - Prefer Bun 1.3.14 and installed libraries/exact local types. Validate proportionately with targeted builds/typechecks.
 - Preserve unrelated dirty files and private local data. Never print secrets, keys, tokens or credential-bearing URLs.
@@ -62,17 +62,17 @@ All plugin execution still goes through Agentis policy, approval, signing and re
 
 ## Verified vs pending
 
-Verified with real testnet activity: hosted/local transfers, Base/Arc/Solana x402, Tempo MPP, production Arc send, one Base Sepolia Uniswap swap, ENS namespace/records/delegation and ERC-8004 registration. Focused fake-signer and local checks cover authorization, budgets, scheduling and MCP OAuth.
+Verified with real testnet activity: hosted/local transfers, Base/Arc/Solana x402, Tempo MPP, production Arc send, one Base Sepolia Uniswap swap, ENS namespace/records/delegation and ERC-8004 registration. Owner considers ENS identity setup done; do not keep it as the next polishing task. Separate agent-signed record-update and payment-to-name live checks remain pending below. Owner verified production ChatGPT web MCP connection/payment, revocation and non-consented wallet rejection. Focused fake-signer and local checks cover authorization, budgets, scheduling and MCP OAuth.
 
 Still pending:
 
-- Actual external MCP client + Privy browser-consent/payment flow.
 - ENS agent-signed record update and payment-to-name live verification.
 - Additional live scheduled/funding Uniswap execution.
 - Automatic release for provably unused expired Tempo/Solana payments and stronger unknown-submission recovery.
 - Rate limits, pagination, webhooks and operator recovery tooling.
 - Owner-deferred fiat funding: treat onramp/offramp as owner-only core wallet flows, not plugins. Privy + Meld/Onramp Money is the leading India/INR onramp candidate, but requires Meld KYB, a Privy React SDK upgrade and live regional verification; real providers fund mainnets, so do not silently target testnet wallet counterparts. Offramp remains later because Privy/Bridge does not document INR payout rails.
 - Owner-tracked product TODOs, not approved implementation yet: Monid plugin (inspect its exact x402/MPP contracts first); possible Meta Muse integration (official material establishes Link’s wallet for agents is built into Muse, but not a public Muse connector platform); and a product/architecture decision between AgentCard and Link agent payments. Determine each option’s exact custody, approval, credential-handling, availability and integration contracts before deciding whether it is a core payment rail or an optional plugin. Link Financial Insights is a separate optional data integration, not part of payment core, and remains deferred.
+- Owner-tracked paid API/data-product candidates, exploratory only: (1) an agent-commerce capability detector and searchable index for MCP, OpenAPI, `llms.txt`, UCP, x402, MPP, authentication, networks/assets and live endpoint status; (2) a country-specific live-sports viewing availability database with official broadcaster/streaming links, language, price and replay information; and (3) a game-availability database covering storefronts, regional pricing, platforms, subscription catalogs, cloud gaming, cross-play/cross-save and delistings, potentially paired with a consumer discovery/backlog product. Prefer a useful public website plus developer API and optional MPP/x402 access; research data acquisition, legality, freshness, demand and maintenance cost before choosing one.
 
 Do not pursue Privy user-JWT exchange, existing-wallet migration, Umbra or hosted bot work unless explicitly reopened.
 

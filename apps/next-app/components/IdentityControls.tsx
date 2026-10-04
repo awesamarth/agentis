@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { usePrivy, useWallets } from '@privy-io/react-auth'
+import { useConnectWallet, usePrivy, useWallets } from '@privy-io/react-auth'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AgentisApiError, type AgentisAgent, type IdentityStep } from '@agentis-hq/sdk'
 import { useAgentisClient } from '@/lib/agentis'
@@ -13,7 +13,7 @@ const button = 'border border-beige-darker px-4 py-2.5 text-base font-medium hov
 const field = 'mt-1 w-full border border-beige-darker bg-beige p-3 text-base'
 const chain = createPublicClient({ chain: sepolia, transport: http('https://ethereum-sepolia-rpc.publicnode.com', { timeout: 15000, retryCount: 0 }) })
 export default function IdentityControls({ agent, initialParent = '', initialLabel = '', initialOperation = '', showDescription = true }: { agent: AgentisAgent; initialParent?: string; initialLabel?: string; initialOperation?: string; showDescription?: boolean }) {
-  const { user, connectWallet } = usePrivy(), { wallets: connected } = useWallets(), cache = useQueryClient()
+  const { user } = usePrivy(), { wallets: connected } = useWallets(), cache = useQueryClient()
   const client = useAgentisClient()
   const wallets = useQuery({ queryKey: ['wallets', user?.id], queryFn: () => client.wallets.list() })
   const wallet = wallets.data?.find(w => w.agentId === agent.id && w.enabled && w.chainId === 'eip155:11155111')
@@ -22,6 +22,27 @@ export default function IdentityControls({ agent, initialParent = '', initialLab
   const [record, setRecord] = useState<'endpoint' | 'description'>('endpoint'), [value, setValue] = useState(''), [notice, setNotice] = useState('')
   const [selectedStep, setStep] = useState<IdentityStep | null>(null), [setupFlow, setSetupFlow] = useState(true)
   const dialog = useRef<HTMLDialogElement>(null), requestKey = useRef('')
+  const [connectingOwner, setConnectingOwner] = useState(false)
+  const [connectionError, setConnectionError] = useState('')
+  const { connectWallet } = useConnectWallet({
+    onSuccess: ({ wallet: connectedWallet }) => {
+      setConnectingOwner(false)
+      setConnectionError(connectedWallet.address.toLowerCase() === step?.owner.toLowerCase() ? '' : `Connected ${connectedWallet.address}. Switch to the name owner wallet ${step?.owner} to continue.`)
+      dialog.current?.showModal()
+    },
+    onError: () => {
+      setConnectingOwner(false)
+      setConnectionError('Wallet connection did not complete. Unlock your wallet extension and try connecting again.')
+      dialog.current?.showModal()
+    },
+  })
+  function connectOwnerWallet() {
+    setConnectionError('')
+    setConnectingOwner(true)
+    // Release the browser top layer while Privy and the extension connect.
+    dialog.current?.close()
+    connectWallet()
+  }
   const requestedOperation = useQuery({ queryKey: ['identity-review', user?.id, wallet?.id, initialOperation], enabled: !!wallet && !!initialOperation, retry: false, queryFn: async () => { const operation = await client.operations.get(initialOperation); if (operation.walletId !== wallet!.id || !operation.identity) throw Error('Operation does not belong to this identity wallet'); return operation } })
   const step = selectedStep ?? (requestedOperation.data ? { complete: false, owner: identity.data?.owner ?? '', label: 'Review identity operation', operation: requestedOperation.data } : null)
   useEffect(() => { if (requestedOperation.data && !dialog.current?.open) dialog.current?.showModal() }, [requestedOperation.data])
@@ -52,7 +73,7 @@ export default function IdentityControls({ agent, initialParent = '', initialLab
       if (receipt.status !== 'success') throw Error('Namespace transaction reverted. Refresh the setup before retrying.')
     } else if (step.operation) {
       let operation = await client.operations.get(step.operation.id)
-      if (operation.status === 'failed' && operation.error === 'Preparation failed before submission' && !operation.transactionHash) { present(await client.identity.retry(wallet!.id, operation.id)); return }
+      if (((operation.status === 'failed' && ['Preparation failed before submission', 'Estimated network fee exceeds this operation’s maximum fee. No transaction was submitted.'].includes(operation.error ?? '')) || (operation.status === 'denied' && operation.error === 'ENS identity ownership or binding changed')) && !operation.transactionHash) { present(await client.identity.retry(wallet!.id, operation.id)); return }
       if (operation.status === 'pending_approval') operation = await client.operations.approve(operation.id, operation.operationHash)
       if (['failed', 'denied', 'expired', 'rejected'].includes(operation.status)) throw Error(operation.error ?? `Operation ${operation.status}`)
       for (let i = 0; i < 25 && operation.status !== 'confirmed'; i++) { await new Promise(resolve => setTimeout(resolve, 2000)); operation = await client.operations.get(operation.id); if (['failed', 'denied', 'expired', 'rejected'].includes(operation.status)) throw Error(operation.error ?? operation.status) }
@@ -61,23 +82,27 @@ export default function IdentityControls({ agent, initialParent = '', initialLab
     await refresh()
     if (setupFlow) present(await client.identity.next(wallet!.id)); else { dialog.current?.close(); setNotice('Identity change confirmed.') }
   } })
+  const retryableStep = (step?.operation?.status === 'failed' && ['Preparation failed before submission', 'Estimated network fee exceeds this operation’s maximum fee. No transaction was submitted.'].includes(step.operation.error ?? '')) || (step?.operation?.status === 'denied' && step.operation.error === 'ENS identity ownership or binding changed')
+  const ownerConnected = !!step?.owner && connected.some(w => w.address.toLowerCase() === step.owner.toLowerCase())
   const busy = enable.isPending || setup.isPending || resume.isPending || delegate.isPending || update.isPending || submit.isPending
   const identityMissing = identity.error instanceof AgentisApiError && identity.error.code === 'identity_missing'
   const error = enable.error ?? setup.error ?? resume.error ?? delegate.error ?? update.error
   return <div className="space-y-4">
     {showDescription && <p className="text-base leading-relaxed text-ink-muted">{ensDescription}</p>}
     {(!wallet || !agent.plugins.includes('ens')) ? <><p className="text-base leading-relaxed text-ink-muted">Setup adds Ethereum Sepolia and the ENS plugin to this agent, preserving its existing wallets and limits. Changing networks invalidates its unsubmitted payment approvals.</p><button className={`${button} bg-black text-beige`} disabled={busy} onClick={() => enable.mutate()}>Enable ENS + Sepolia</button></> : <>
-      {identity.isPending ? <p role="status" className="text-base">Loading identity…</p> : identity.error && !identityMissing ? <div className="space-y-3"><p role="alert" className="text-base text-red-700">Could not load identity: {identity.error.message}</p><button className={button} disabled={identity.isFetching} onClick={() => identity.refetch()}>Retry loading identity</button></div> : identity.data ? <div className="space-y-2 border border-beige-darker p-4 text-base"><p className="font-serif text-xl font-bold">{identity.data.name}</p><p className="break-all text-sm">Sepolia gas wallet: {identity.data.wallet}</p><p className="text-base leading-relaxed text-ink-muted">Fund this wallet with Sepolia ETH before approving identity writes.</p>{identity.data.registration && <p>ERC-8004 #{identity.data.registration.agentId} · ENS association {identity.data.associated ? 'present' : 'pending'}</p>}<p>{identity.data.description}</p><p className="break-all">{identity.data.endpoint}</p><button className={button} disabled={busy} onClick={() => { submit.reset(); resume.mutate() }}>Continue / check setup</button></div> : <fieldset className="space-y-3" disabled={busy}><label className="block text-base">Your ENSv2 parent name<input className={field} placeholder="yourname.eth" value={parent} onChange={e => setParent(e.target.value)} /></label><label className="block text-base">Agent subname<input className={field} value={label} onChange={e => setLabel(e.target.value)} /></label><label className="block text-base">Description<input className={field} value={description} onChange={e => setDescription(e.target.value)} /></label><p className="text-base leading-relaxed text-ink-muted">You keep namespace ownership. Setup publishes this agent’s wallet addresses and delegates only its endpoint and description records to its Sepolia wallet. ERC-8004 registration uses the agent’s normal gas budgets and approval mode.</p><button className={`${button} bg-black text-beige`} onClick={() => setup.mutate()}>Review identity setup</button></fieldset>}
+      {identity.isPending ? <p role="status" className="text-base">Loading identity…</p> : identity.error && !identityMissing ? <div className="space-y-3"><p role="alert" className="text-base text-red-700">Could not load identity: {identity.error.message}</p><button className={button} disabled={identity.isFetching} onClick={() => identity.refetch()}>Retry loading identity</button></div> : identity.data ? <div className="space-y-2 border border-beige-darker p-4 text-base"><p className="font-serif text-xl font-bold">{identity.data.name}</p><p className="break-all text-sm">Sepolia gas wallet: {identity.data.wallet}</p><p className="text-base leading-relaxed text-ink-muted">Fund this wallet with Sepolia ETH before approving identity writes.</p>{identity.data.registration && <p>ERC-8004 #{identity.data.registration.agentId} · ENS association {identity.data.associated ? 'present' : 'pending'}</p>}<p>{identity.data.description}</p><p className="break-all">{identity.data.endpoint}</p><button className={button} disabled={busy} onClick={() => { submit.reset(); resume.mutate() }}>Continue / check setup</button></div> : <fieldset className="space-y-3" disabled={busy}><label className="block text-base">Your ENSv2 parent name<input className={field} placeholder="yourname.eth" value={parent} onChange={e => setParent(e.target.value)} /></label><label className="block text-base">Agent subname<input className={field} value={label} onChange={e => setLabel(e.target.value)} /></label><label className="block text-base">Description<input className={field} value={description} onChange={e => setDescription(e.target.value)} /></label><p className="text-base leading-relaxed text-ink-muted">Give your agent a name people can pay instead of a wallet address. You stay in control of the name and its payment addresses. Your agent can update only its description and service link.</p><button className={`${button} bg-black text-beige`} onClick={() => setup.mutate()}>Review identity setup</button></fieldset>}
       {identity.data?.verified && <fieldset className="space-y-3" disabled={busy}><Dropdown label="Delegated record" value={record} options={[{ value: 'endpoint', label: 'Service endpoint' }, { value: 'description', label: 'Description' }]} onChange={v => { setRecord(v as typeof record); requestKey.current = '' }} /><p className="text-base">Permission: {identity.data.delegation[record] ? 'Delegated' : 'Not delegated'}</p><input aria-label="Record value" className={field} value={value} onChange={e => { setValue(e.target.value); requestKey.current = '' }} placeholder={record === 'endpoint' ? 'https://your-service.example/mcp' : 'Agent description'} /><div className="flex flex-wrap gap-2"><button className={button} onClick={() => update.mutate()}>Request record update</button><button className={button} onClick={() => delegate.mutate(true)}>Delegate record</button><button className={button} onClick={() => delegate.mutate(false)}>Revoke record</button></div></fieldset>}
     </>}
+    {connectingOwner && <div className="space-y-2"><p role="status" className="text-base">Finish connecting in your wallet extension. Selecting a wallet alone does not confirm the connection.</p><button className={button} onClick={() => { setConnectingOwner(false); dialog.current?.showModal() }}>Back to identity setup</button></div>}
     {notice && <p role="status" className="text-base">{notice}</p>}{error && <p role="alert" className="text-base text-red-700">{error.message}</p>}
     <dialog ref={dialog} aria-labelledby={`identity-title-${agent.id}`} onCancel={event => { if (submit.isPending) event.preventDefault() }} className="fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%_-_2rem)] max-w-lg overflow-y-auto border border-beige-darker bg-beige p-6 text-ink shadow-xl backdrop:bg-black/50">
       <h2 id={`identity-title-${agent.id}`} className="font-serif text-2xl font-bold">{step?.label}</h2><p className="mt-3 text-base leading-relaxed">Ethereum Sepolia only. {step?.transaction ? 'Sign with the namespace owner wallet; the agent receives no namespace ownership or address-editing permission.' : 'This agent operation uses its existing approval mode and USD fee budget.'}</p>
       {step?.transaction && <p className="mt-3 break-all font-mono text-sm">Owner: {step.owner}<br />Contract: {step.transaction.to}</p>}
       {step?.operation && <a className="mt-3 block text-base underline" href={`/operations/${step.operation.id}`}>View operation · {step.operation.status}</a>}
-      {step?.operation && <p className="mt-3 text-base">Maximum gas budget: {formatEther(BigInt(step.operation.maxFeeAtomic))} Sepolia ETH. {step.operation.status === 'failed' ? 'No transaction was submitted. Retry creates a replacement for you to review before approval.' : ''}</p>}
+      {step?.operation && <p className="mt-3 text-base">Maximum gas budget: {formatEther(BigInt(step.operation.maxFeeAtomic))} Sepolia ETH. {retryableStep ? 'No transaction was submitted. Retry creates a replacement for you to review before approval.' : ''}</p>}
+      {connectionError && <p role="alert" className="mt-4 text-base text-red-700">{connectionError}</p>}
       {submit.error && <p role="alert" className="mt-4 text-base text-red-700">{submit.error.message}</p>}
-      <div className="mt-6 flex flex-wrap justify-end gap-3"><button className={button} disabled={submit.isPending} onClick={() => dialog.current?.close()}>Close</button>{step?.transaction && <button className={button} disabled={submit.isPending} onClick={() => connectWallet()}>Connect owner wallet</button>}<button className={`${button} bg-black text-beige`} disabled={submit.isPending} onClick={() => submit.mutate()}>{submit.isPending ? 'Confirming…' : step?.transaction ? 'Sign this step' : step?.operation?.status === 'failed' ? 'Retry preparation' : 'Approve / check status'}</button></div>
+      <div className="mt-6 flex flex-wrap justify-end gap-3"><button className={button} disabled={submit.isPending} onClick={() => dialog.current?.close()}>Close</button>{step?.transaction && !ownerConnected ? <button className={`${button} bg-black text-beige`} disabled={submit.isPending} onClick={connectOwnerWallet}>Connect owner wallet</button> : <button className={`${button} bg-black text-beige`} disabled={submit.isPending} onClick={() => submit.mutate()}>{submit.isPending ? 'Confirming…' : step?.transaction ? 'Sign this step' : retryableStep ? 'Retry setup step' : 'Approve / check status'}</button>}</div>
     </dialog>
   </div>
 }
