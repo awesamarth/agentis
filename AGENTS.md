@@ -93,14 +93,14 @@ Do not pursue Privy user-JWT exchange, existing-wallet migration, Umbra or hoste
 - `packages/sdk`: HTTP client.
 - `packages/cli`: hosted and local CLI.
 - `packages/mcp`: remote MCP tools.
-- `testing/`: standalone focused checks and protocol fixtures; no root automated test suite.
+- `testing/`: focused checks and protocol fixtures. `bun run check:offline` runs the explicit offline regression suite; database-backed and live-provider checks remain separate.
 
 ## Local runtime and validation
 
 - Dashboard `3000`, API `3001`, Postgres `127.0.0.1:55432` under Compose project `agentis-rewrite`.
 - Start backend processes from `apps/backend` so its private environment loads.
 - Core/SDK/MCP exports resolve to `dist`; run `bun run build:packages` after contract changes.
-- Standard validation: `bun run check`; use narrower package checks for small changes.
+- Standard validation: `bun run check` for builds/types and `bun run check:offline` for curated regressions. Offline checks use disposable wallet fixtures and mocked/loopback HTTP, not private credentials or funded wallets. Use narrower checks for small changes; never blindly execute all testing scripts.
 - Do not restart execution against a stale local database snapshot.
 - No browser verification unless explicitly authorized.
 

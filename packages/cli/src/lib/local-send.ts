@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { createPublicClient, createWalletClient, encodeFunctionData, erc20Abi, getAddress, http, keccak256, parseUnits, type Hex, type Chain } from 'viem'
+import { createPublicClient, createWalletClient, encodeFunctionData, erc20Abi, http, keccak256, type Hex, type Chain } from 'viem'
 import { mnemonicToAccount } from 'viem/accounts'
 import { TxEnvelopeTempo } from 'ox/tempo'
 import { tempo as tempoChain } from 'viem/chains'
@@ -9,44 +9,20 @@ import { estimateL1Fee } from 'viem/op-stack'
 import { Connection, PublicKey } from '@solana/web3.js'
 import { getBase58Decoder } from '@solana/kit'
 import { buildSolanaTransfer } from '@agentis-hq/core/solana-transfer'
-import { localNetworks, parseChains, type LocalChain } from './local-networks'
+import { localNetworks, type LocalChain } from './local-networks'
+import { transferTerms, type TransferInput } from './transfer-terms'
 import { deriveSolanaKey, loadLocalWallet, localWalletDirectory, privatePath } from './local-wallet'
 import { reserveLocal, signWithPolicy, settleLocal, releaseUnissued, LocalPolicyError } from './local-policy'
 
-export type LocalSendInput = { wallet: string; chain: string; to: string; amount: string; asset?: string; maxFee?: string; key: string }
 type RecordData = { key?: string; createdAt?: string; request: string; wallet: string; chain: LocalChain; to: string; asset: string; amount: string; maxFee: string; status: string; hash?: string; signed?: string; feeAtomic?: string; failure?: { stage: string; code: string } }
 const tempoFee = (amount: bigint) => ((amount + 999_999_999_999n) / 1_000_000_000_000n) * 1_000_000_000_000n
-export function exactAmount(value: string, decimals: number) {
-  if (!/^\d+(\.\d+)?$/.test(value) || (value.split('.')[1]?.length ?? 0) > decimals) throw Error(`Use a positive decimal amount with at most ${decimals} decimal places`)
-  const amount = parseUnits(value, decimals)
-  if (amount <= 0n) throw Error('Amount must be positive')
-  return amount
-}
-export function transferTerms(input: LocalSendInput, allowEns = false) {
-  if (!input.key?.trim() || input.key.length > 200) throw Error('--key is required (1–200 characters); reuse it to check an uncertain send, never choose a new key blindly')
-  const chains = parseChains(input.chain)
-  if (chains.length !== 1) throw Error('Choose exactly one --chain for a send')
-  const chain = chains[0]!
-  const network = localNetworks[chain]!
-  const assets = network.assets
-  const symbol = Object.keys(assets).find(key => key.toLowerCase() === (input.asset ?? network.defaultAsset).toLowerCase())
-  if (!symbol) throw Error(`Supported assets on ${chain}: ${Object.keys(assets).join(', ')}`)
-  const asset = assets[symbol]!
-  const amountAtomic = exactAmount(input.amount, asset.decimals)
-  const maxFee = input.maxFee ?? network.defaultFee
-  // EVM gas (including Tempo) is denominated in 18-decimal protocol units.
-  const maxFeeAtomic = exactAmount(maxFee, network.decimals)
-  let to: string
-  try { to = allowEns && input.to.includes('.') ? input.to.trim() : network.family === 'solana' ? new PublicKey(input.to).toBase58() : getAddress(input.to) } catch { throw Error('Invalid recipient address for this chain') }
-  return { chain, symbol, asset, amountAtomic, maxFee, maxFeeAtomic, to }
-}
-export function localSendTerms(input: LocalSendInput) {
+export function localSendTerms(input: TransferInput) {
   const terms = transferTerms(input)
   const wallet = loadLocalWallet(input.wallet)
   if (!wallet.chains.includes(terms.chain)) throw Error('That chain is not enabled on this local wallet')
   return { ...terms, wallet }
 }
-export async function sendLocalTransfer(input: LocalSendInput, confirm: () => Promise<void> = async () => {}) {
+export async function sendLocalTransfer(input: TransferInput, confirm: () => Promise<void> = async () => {}) {
   const { chain, wallet, symbol, asset, amountAtomic, maxFee, maxFeeAtomic, to } = localSendTerms(input)
   const network = localNetworks[chain]!
   const directory = join(localWalletDirectory(), 'transactions')
@@ -61,7 +37,7 @@ export async function sendLocalTransfer(input: LocalSendInput, confirm: () => Pr
     const temporary = `${file}.${crypto.randomUUID()}.tmp`
     writeFileSync(temporary, JSON.stringify(record), { flag: 'wx', mode: 0o600 }); renameSync(temporary, file)
   }
-  const transportFor = (network: Exclude<LocalChain, 'solana'>) => http(process.env[localNetworks[network]!.rpcEnv] ?? localNetworks[network]!.rpcUrl, { timeout: 15_000, retryCount: 0 })
+  const transportFor = (network: LocalChain) => http(process.env[localNetworks[network]!.rpcEnv] ?? localNetworks[network]!.rpcUrl, { timeout: 15_000, retryCount: 0 })
   const solana = () => new Connection(process.env[network.rpcEnv] ?? network.rpcUrl, { commitment: 'confirmed', fetch: ((url: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) => fetch(url, { ...options, signal: AbortSignal.timeout(15_000) })) as typeof fetch })
   async function receipt() {
     if (!record.hash) throw Error('This request has no submitted transaction. Inspect its local journal before using a new key.')

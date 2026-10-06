@@ -46,7 +46,6 @@ export const networkCatalog: readonly NetworkDefinition[] = [
 ]
 // Retire with enabled:false instead of deleting historical network identity.
 export const networks: readonly NetworkDefinition[] = networkCatalog.filter(network => network.enabled !== false)
-export const defaultNetwork = networks[0]!
 export const findNetwork = (chainId: string) => networkCatalog.find(network => network.chainId === chainId)
 export function requireNetwork(chainId: string) {
   const network = findNetwork(chainId)
@@ -54,6 +53,9 @@ export function requireNetwork(chainId: string) {
   return network
 }
 export const networkByKey = (key: string) => networkCatalog.find(network => network.key === key)
+// Display ordering or retirement must never silently switch the payment default.
+export const defaultNetwork = requireNetwork(`eip155:${base.id}`)
+if (defaultNetwork.enabled === false) throw Error('The default network must be enabled')
 export const sameEnvironment = (a: string, b: string) => a === b || requireNetwork(a).testnet === requireNetwork(b).testnet
 // JSON-safe public metadata; implementation details and bigint rail scales stay internal.
 export const publicNetworks = networks.map(({ chain, genesisHash, rpcEnv, rpcUrl, x402, feeToken, portfolio, ...network }) => ({ ...network, x402: !!x402, mpp: !!network.mpp }))

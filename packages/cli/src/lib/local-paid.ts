@@ -25,7 +25,7 @@ type PaidRecord = { kind: 'paid-fetch'; createdAt: string; request: string; key:
 const token = (chain: LocalChain) => (localNetworks[chain]!.x402?.token ?? localNetworks[chain]!.feeToken)!
 const family = (chain: LocalChain) => localNetworks[chain]!.family
 const used = parseAbiItem('event AuthorizationUsed(address indexed authorizer, bytes32 indexed nonce)')
-const rpc = (chain: Exclude<LocalChain, 'solana'>) => createPublicClient({ chain: localNetworks[chain].chain as Chain, transport: http(process.env[localNetworks[chain].rpcEnv] ?? localNetworks[chain]!.rpcUrl, { timeout: 15000, retryCount: 0 }) })
+const rpc = (chain: LocalChain) => createPublicClient({ chain: localNetworks[chain].chain as Chain, transport: http(process.env[localNetworks[chain].rpcEnv] ?? localNetworks[chain]!.rpcUrl, { timeout: 15000, retryCount: 0 }) })
 const roundTempo = (fee: bigint) => ((fee + 999_999_999_999n) / 1_000_000_000_000n) * 1_000_000_000_000n
 export async function localPaidFetch(input: LocalFetchInput, confirm: (summary: string) => Promise<void>) {
   const chains = parseChains(input.chain)

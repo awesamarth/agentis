@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { mnemonicToAccount } from 'viem/accounts'
 import { createLocalWallet, deriveLocalAddress, listLocalWallets, loadLocalWallet } from '../packages/cli/src/lib/local-wallet'
-import { exactAmount } from '../packages/cli/src/lib/local-send'
+import { exactAmount } from '../packages/cli/src/lib/transfer-terms'
 import { parseChains } from '../packages/cli/src/lib/local-networks'
 const directory = mkdtempSync(join(tmpdir(), 'agentis-local-check-'))
 try {

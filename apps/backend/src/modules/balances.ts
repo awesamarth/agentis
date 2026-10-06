@@ -22,7 +22,6 @@ type BalanceResult = {
 type PortfolioSnapshot = { balances: Map<string, bigint>; complete: Set<string> }
 const cache = new Map<string, { value: BalanceResult; expiresAt: number }>()
 const pending = new Map<string, Promise<BalanceResult>>()
-const pendingBatches = new Map<string, Promise<Record<string, BalanceResult>>>()
 let portfolioQueue: Promise<void> = Promise.resolve()
 const pairKey = (address: string, network: string) => `${address.toLowerCase()}:${network}`
 const tokenKey = (address: string, network: string, token: string | null) => `${pairKey(address, network)}:${token?.toLowerCase() ?? 'native'}`
@@ -90,7 +89,7 @@ async function readBalance(wallets: WalletRow[], portfolio: PortfolioSnapshot): 
     const portfolioComplete = !!slug && portfolio.complete.has(pairKey(wallet.address, slug))
     const client = network.chainType === 'ethereum' ? evmClient(wallet.chainId, 2) : undefined
     const connection = network.chainType === 'solana' ? solanaConnection(wallet.chainId) : undefined
-    let multicall: { status: string; result?: bigint }[] | null | undefined
+    let multicall: Promise<{ status: string; result?: bigint }[] | null> | undefined
     let solanaRead = Promise.resolve()
     const direct = async (asset: typeof network.assets[number], index: number) => {
       if (connection) {
@@ -109,10 +108,10 @@ async function readBalance(wallets: WalletRow[], portfolio: PortfolioSnapshot): 
       }
       if (!client) throw new Error('Unsupported balance network')
       if (network.chain?.contracts?.multicall3) {
-        multicall ??= await client.multicall({ contracts: network.assets.map(item => item.id === 'native'
+        multicall ??= client.multicall({ contracts: network.assets.map(item => item.id === 'native'
           ? { address: network.chain!.contracts!.multicall3!.address, abi: multicall3Abi, functionName: 'getEthBalance' as const, args: [wallet.address as Address] as const }
           : { address: item.id.slice(6) as Address, abi: erc20Abi, functionName: 'balanceOf' as const, args: [wallet.address as Address] as const }) }).catch(() => null)
-        const balance = multicall?.[index]
+        const balance = (await multicall)?.[index]
         if (balance?.status !== 'success' || typeof balance.result !== 'bigint') throw new Error('Balance read failed')
         return balance.result
       }
@@ -128,15 +127,15 @@ async function readBalance(wallets: WalletRow[], portfolio: PortfolioSnapshot): 
           : await direct(asset, index)
         if (amount < 0n) throw new Error('Invalid balance')
         amountAtomic = amount.toString()
-        if (network.testnet) { /* Token quantities only; skip price requests entirely. */ }
-        else if (amount === 0n) usdMicros = '0'
-        else {
-          try {
+        // Testnet displays need token quantities, not price requests.
+        if (!network.testnet) {
+          if (amount === 0n) usdMicros = '0'
+          else {
             const price = await displayPrice(asset.priceId, { chainId: wallet.chainId, asset: asset.id })
             usdMicros = (amount * price / (10n ** BigInt(asset.decimals) * 1_000_000_000_000n)).toString()
-          } catch { /* Keep the token amount when only its USD price is unavailable. */ }
+          }
         }
-      } catch { /* Missing values remain partial, never zero. */ }
+      } catch { /* Keep known token amounts even when their prices are unavailable. */ }
       return { asset: asset.id, symbol: asset.symbol, decimals: asset.decimals, amountAtomic, usdMicros }
     }))
     const known = tokens.filter(token => token.usdMicros !== null)
@@ -147,42 +146,33 @@ async function readBalance(wallets: WalletRow[], portfolio: PortfolioSnapshot): 
   return { networks, usdMicros: known.length || !mainnets.length ? known.reduce((sum, network) => sum + BigInt(network.usdMicros!), 0n).toString() : null, complete: mainnets.every(network => network.complete), checkedAt: new Date().toISOString() }
 }
 
-async function loadAgentBalances(entries: { id: string; wallets: WalletRow[] }[]) {
-  const results = new Map<string, BalanceResult>(), missing: typeof entries = [], waiting: Promise<void>[] = []
-  for (const entry of entries) {
-    const key = cacheKey(entry.wallets), cached = cache.get(key)
-    if (cached && cached.expiresAt > Date.now()) results.set(entry.id, cached.value)
-    else {
-      const active = pending.get(key)
-      if (active) waiting.push(active.then(value => { results.set(entry.id, value) }))
-      else missing.push(entry)
-    }
-  }
-  if (missing.length) {
-    const portfolio = await portfolioSnapshot(missing.flatMap(entry => entry.wallets))
-    await Promise.all(missing.map(async entry => {
-      const key = cacheKey(entry.wallets)
-      const task = readBalance(entry.wallets, portfolio)
-      pending.set(key, task)
-      try {
-        const value = await task
-        cache.set(key, { value, expiresAt: Date.now() + DISPLAY_CACHE_MS })
-        results.set(entry.id, value)
-      } finally { pending.delete(key) }
-    }))
-  }
-  await Promise.all(waiting)
-  return Object.fromEntries(entries.map(entry => [entry.id, results.get(entry.id)!]))
-}
-
 export async function agentBalances(entries: { id: string; wallets: WalletRow[] }[]) {
-  entries = entries.map(entry => ({ ...entry, wallets: entry.wallets.filter(wallet => wallet.enabled) }))
-  const key = JSON.stringify(entries.map(entry => [entry.id, cacheKey(entry.wallets)]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))))
-  const active = pendingBatches.get(key)
-  if (active) return active
-  const task = loadAgentBalances(entries)
-  pendingBatches.set(key, task)
-  try { return await task } finally { pendingBatches.delete(key) }
+  const now = Date.now()
+  for (const [key, entry] of cache) if (entry.expiresAt <= now) cache.delete(key)
+
+  const missing: WalletRow[][] = []
+  let snapshot: Promise<PortfolioSnapshot> | undefined
+  const results = entries.map(entry => {
+    const wallets = entry.wallets.filter(wallet => wallet.enabled)
+    const key = cacheKey(wallets)
+    const cached = cache.get(key)
+    if (cached) return Promise.resolve([entry.id, cached.value] as const)
+
+    let task = pending.get(key)
+    if (!task) {
+      missing.push(wallets)
+      // Register every wallet-set promise before any I/O. Owner-wide and
+      // single-agent requests then share work, even during Portfolio discovery.
+      snapshot ??= Promise.resolve().then(() => portfolioSnapshot(missing.flat()))
+      task = snapshot.then(portfolio => readBalance(wallets, portfolio)).then(value => {
+        cache.set(key, { value, expiresAt: Date.now() + DISPLAY_CACHE_MS })
+        return value
+      }).finally(() => pending.delete(key))
+      pending.set(key, task)
+    }
+    return task.then(value => [entry.id, value] as const)
+  })
+  return Object.fromEntries(await Promise.all(results))
 }
 
 export async function agentBalance(wallets: WalletRow[]) {
