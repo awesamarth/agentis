@@ -1,13 +1,8 @@
 import { formatUnits } from 'viem'
 
-const chainNames: Record<string, string> = {
-  'eip155:84532': 'Base',
-  'eip155:11155111': 'Ethereum Sepolia',
-  'eip155:5042002': 'Arc',
-  'eip155:42431': 'Tempo',
-  'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1': 'Solana',
-}
-export const namedChain = (id: string) => ({ name: chainNames[id] ?? id, id })
+import { findNetwork } from '@agentis-hq/core/networks'
+
+export const namedChain = (id: string) => ({ name: findNetwork(id)?.name ?? id, id })
 // External names, reasons and response data must not inject terminal controls.
 const text = (value: unknown) => String(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
 const label = (key: string) => key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase())

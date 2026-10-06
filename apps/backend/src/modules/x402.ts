@@ -8,22 +8,20 @@ import { PrivyClient } from '@privy-io/node'
 import type { FetchRequest, OperationInput, Operation, PaidHttpResponse } from '@agentis-hq/core/operations'
 import { x402Payment } from '@agentis-hq/core/operations'
 import type { WalletRow } from '../db/schema'
-import { baseUsdc, sepoliaUsdc, evmClient } from './networks'
+import { evmClient, requireNetwork, defaultProductChain } from './networks'
 import { paymentHttp } from './payment-http'
 import { settlementHeaders, type SavePaymentHash } from './x402-settlement'
 import { fail } from '../errors'
 
-function evmRail(network: string): { network: `eip155:${number}`; chainId: number; token: Hex; asset: string; scale: bigint } {
-  if (network === 'eip155:11155111') return { network, chainId: 11155111, token: sepoliaUsdc as Hex, asset: `erc20:${sepoliaUsdc}`, scale: 1n }
-  if (network === 'eip155:84532') return { network, chainId: 84532, token: baseUsdc as Hex, asset: `erc20:${baseUsdc}`, scale: 1n }
-  // Arc exposes the same USDC balance as native 18-decimal units and ERC-20 6-decimal units.
-  if (network === 'eip155:5042002') return { network, chainId: 5042002, token: '0x3600000000000000000000000000000000000000' as Hex, asset: 'native', scale: 1_000_000_000_000n }
-  throw new Error('Unsupported EVM x402 network')
+function evmRail(network: string) {
+  const config = requireNetwork(network)
+  if (!config.chain || !config.x402?.domainName || !config.x402.domainVersion) throw Error('Unsupported EVM x402 network')
+  return { ...config.x402, token: config.x402.token as Hex, network: network as `eip155:${number}`, chainId: config.chain.id, domainName: config.x402.domainName, domainVersion: config.x402.domainVersion }
 }
 const origins = () => (process.env.AGENTIS_PAID_FETCH_LOCAL_ORIGINS ?? '').split(',').filter(Boolean)
 const usedEvent = parseAbiItem('event AuthorizationUsed(address indexed authorizer, bytes32 indexed nonce)')
 
-export async function discoverX402(input: FetchRequest, network = 'eip155:84532'): Promise<OperationInput> {
+export async function discoverX402(input: FetchRequest, network = defaultProductChain): Promise<OperationInput> {
   const rail = evmRail(network)
   let response
   try { response = await paymentHttp({ url: input.url, method: 'GET', headers: {} }, {}, origins()) }
@@ -32,9 +30,9 @@ export async function discoverX402(input: FetchRequest, network = 'eip155:84532'
   let challenge
   try { challenge = decodePaymentRequiredHeader(response.headers['payment-required']) } catch { fail(400, 'invalid_challenge', 'Invalid x402 challenge') }
   if (challenge.x402Version !== 2 || !Array.isArray(challenge.accepts)) fail(400, 'invalid_challenge', 'Expected x402 v2')
-  const selected = challenge.accepts.find(r => r.network === network && r.scheme === 'exact' && r.asset.toLowerCase() === rail.token && r.extra?.name === 'USDC' && r.extra?.version === '2' && (!r.extra.assetTransferMethod || r.extra.assetTransferMethod === 'eip3009'))
-  if (!selected) fail(400, 'unsupported_payment', 'Expected USDC exact EIP-3009 on the selected Base or Arc testnet wallet' )
-  const payment = x402Payment.parse({ url: input.url, maxAmountAtomic: input.maxAmountAtomic, requirements: { ...selected, extra: { name: 'USDC', version: '2' } } })
+  const selected = challenge.accepts.find(r => r.network === network && r.scheme === 'exact' && r.asset.toLowerCase() === rail.token && r.extra?.name === rail.domainName && r.extra?.version === rail.domainVersion && (!r.extra.assetTransferMethod || r.extra.assetTransferMethod === 'eip3009'))
+  if (!selected) fail(400, 'unsupported_payment', 'Expected a supported USDC payment on the selected wallet network' )
+  const payment = x402Payment.parse({ url: input.url, maxAmountAtomic: input.maxAmountAtomic, requirements: { ...selected, extra: { name: rail.domainName, version: rail.domainVersion } } })
   if (BigInt(payment.requirements.amount) > BigInt(input.maxAmountAtomic)) fail(409, 'price_limit', 'Seller price exceeds your payment ceiling')
   return { walletId: input.walletId, action: 'paid_fetch', chainId: network, asset: rail.asset, to: getAddress(selected.payTo), amountAtomic: (BigInt(selected.amount) * rail.scale).toString(), maxFeeAtomic: '0', reason: input.reason ?? '', payment }
 }
@@ -42,6 +40,7 @@ export async function discoverX402(input: FetchRequest, network = 'eip155:84532'
 export function validateX402(wallet: WalletRow, input: OperationInput) {
   const p = input.payment
   const rail = evmRail(input.chainId), network = rail.network
+  if (!p || !('name' in p.requirements.extra) || p.requirements.extra.name !== rail.domainName || p.requirements.extra.version !== rail.domainVersion) throw Error('Payment authorization domain does not match the network')
   if (input.action !== 'paid_fetch' || wallet.chainId !== network || input.chainId !== network || input.asset.toLowerCase() !== rail.asset || !p || p.requirements.network !== network || p.requirements.scheme !== 'exact' || p.requirements.asset.toLowerCase() !== rail.token || p.requirements.payTo.toLowerCase() !== input.to.toLowerCase() || BigInt(p.requirements.amount) * rail.scale !== BigInt(input.amountAtomic) || BigInt(p.requirements.amount) > BigInt(p.maxAmountAtomic) || input.maxFeeAtomic !== '0') throw new Error('Payment terms do not match the operation')
 }
 
@@ -70,21 +69,21 @@ export function createPrivyX402(privy: PrivyClient, authorizationKey: string, in
           // The SDK chooses the nonce, but cannot ask our signer for arbitrary permissions.
           if (nonce) throw new Error('Only one signature is allowed')
           const d = data.domain, m = data.message
-          if (data.primaryType !== 'TransferWithAuthorization' || JSON.stringify(data.types) !== JSON.stringify(authorizationTypes) || d.name !== 'USDC' || d.version !== '2' || Number(d.chainId) !== rail.chainId || String(d.verifyingContract).toLowerCase() !== rail.token || String(m.from).toLowerCase() !== wallet.address.toLowerCase() || String(m.to).toLowerCase() !== input.to.toLowerCase() || BigInt(String(m.value)) !== BigInt(requirements.amount) || BigInt(String(m.validAfter)) !== 0n || BigInt(String(m.validBefore)) * 1000n > BigInt(execution.expiresAt.getTime()) || BigInt(String(m.validBefore)) <= BigInt(Math.floor(Date.now() / 1000)) || !/^0x[0-9a-fA-F]{64}$/.test(String(m.nonce))) throw new Error('Unexpected typed-data authorization')
+          if (data.primaryType !== 'TransferWithAuthorization' || JSON.stringify(data.types) !== JSON.stringify(authorizationTypes) || d.name !== rail.domainName || d.version !== rail.domainVersion || Number(d.chainId) !== rail.chainId || String(d.verifyingContract).toLowerCase() !== rail.token || String(m.from).toLowerCase() !== wallet.address.toLowerCase() || String(m.to).toLowerCase() !== input.to.toLowerCase() || BigInt(String(m.value)) !== BigInt(requirements.amount) || BigInt(String(m.validAfter)) !== 0n || BigInt(String(m.validBefore)) * 1000n > BigInt(execution.expiresAt.getTime()) || BigInt(String(m.validBefore)) <= BigInt(Math.floor(Date.now() / 1000)) || !/^0x[0-9a-fA-F]{64}$/.test(String(m.nonce))) throw new Error('Unexpected typed-data authorization')
           nonce = m.nonce as Hex
           const message = { from: getAddress(wallet.address), to: getAddress(input.to), value: BigInt(requirements.amount), validAfter: 0n, validBefore: BigInt(String(m.validBefore)), nonce }
           const result = await privy.wallets().ethereum().signTypedData(wallet.providerWalletId, {
-            params: { typed_data: { domain: { name: 'USDC', version: '2', chainId: rail.chainId, verifyingContract: rail.token }, types: { TransferWithAuthorization: [...authorizationTypes.TransferWithAuthorization] }, primary_type: 'TransferWithAuthorization', message: Object.fromEntries(Object.entries(message).map(([key, value]) => [key, typeof value === 'bigint' ? value.toString() : value])) } },
+            params: { typed_data: { domain: { name: rail.domainName, version: rail.domainVersion, chainId: rail.chainId, verifyingContract: rail.token }, types: { TransferWithAuthorization: [...authorizationTypes.TransferWithAuthorization] }, primary_type: 'TransferWithAuthorization', message: Object.fromEntries(Object.entries(message).map(([key, value]) => [key, typeof value === 'bigint' ? value.toString() : value])) } },
             authorization_context: { authorization_private_keys: [authorizationKey] },
             idempotency_key: execution.id, request_expiry: Math.min(execution.expiresAt.getTime(), Date.now() + 60_000),
           })
           const signature = result.signature as Hex
-          if ((await recoverTypedDataAddress({ domain: { name: 'USDC', version: '2', chainId: rail.chainId, verifyingContract: rail.token }, types: authorizationTypes, primaryType: 'TransferWithAuthorization', message, signature })).toLowerCase() !== wallet.address.toLowerCase()) throw new Error('Privy signature does not match the wallet')
+          if ((await recoverTypedDataAddress({ domain: { name: rail.domainName, version: rail.domainVersion, chainId: rail.chainId, verifyingContract: rail.token }, types: authorizationTypes, primaryType: 'TransferWithAuthorization', message, signature })).toLowerCase() !== wallet.address.toLowerCase()) throw new Error('Privy signature does not match the wallet')
           return signature
         },
       }))
       client.setSpendControls({ allowedAssets: [{ network, asset: rail.token, maxAmountPerPayment: requirements.amount }] })
-      const payload = await client.createPaymentPayload({ x402Version: 2, resource: { url: input.payment!.url }, accepts: [requirements] })
+      const payload = await client.createPaymentPayload({ x402Version: 2, resource: { url: input.payment!.url }, accepts: [{ ...requirements, network: requirements.network as `${string}:${string}` }] })
       if (!nonce) throw new Error('Missing payment authorization')
       const signed: SignedPayment = { input, payer: wallet.address as Hex, fromBlock, payload, nonce }
       return { signedTransaction: `x402:${JSON.stringify(signed)}`, transactionHash: null }

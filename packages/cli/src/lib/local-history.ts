@@ -13,9 +13,9 @@ export function localHistory(selector: string, limit = 20) {
     if (record.wallet !== wallet.id) return []
     const chain = record.chain as LocalChain
     if (!Object.hasOwn(localNetworks, chain)) throw Error('Invalid history network')
-    const explorer = chain === 'solana' ? 'https://explorer.solana.com' : localNetworks[chain].chain.blockExplorers.default.url
+    const explorer = localNetworks[chain].explorer
     // Whitelist public fields. Never expose signed bytes, credentials or raw requests.
-    return [{ id: file.slice(0, -5), date: record.createdAt ?? null, chain: localNetworks[chain].name, amount: record.amount || '—', asset: record.asset, status: record.status, to: record.to, url: record.url, key: record.key, transaction: record.hash ? `${explorer}/tx/${encodeURIComponent(record.hash)}${chain === 'solana' ? '?cluster=devnet' : ''}` : undefined, httpStatus: record.httpResponse?.status, failureStage: record.failure?.stage }]
+    return [{ id: file.slice(0, -5), date: record.createdAt ?? null, chain: localNetworks[chain].name, amount: record.amount || '—', asset: record.asset, status: record.status, to: record.to, url: record.url, key: record.key, transaction: record.hash ? `${explorer}/tx/${encodeURIComponent(record.hash)}${localNetworks[chain].family === 'solana' && localNetworks[chain].testnet ? '?cluster=devnet' : ''}` : undefined, httpStatus: record.httpResponse?.status, failureStage: record.failure?.stage }]
   }).sort((a, b) => String(b.date ?? '').localeCompare(String(a.date ?? ''))).slice(0, limit).reverse()
   return { wallet: wallet.name, transactions }
 }

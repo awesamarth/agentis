@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { AgentisClient, AgentisApiError } from '@agentis-hq/sdk'
 import { operationInput } from '@agentis-hq/core/operations'
+import { requireNetwork, findNetwork } from '@agentis-hq/core/networks'
 import { z } from 'zod'
 export { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 export type Delegation = { agentId: string; name: string; plugins?: string[]; client: AgentisClient }
@@ -43,31 +44,31 @@ export function createAgentisMcpServer(options: { delegations: Delegation[]; net
   const payment = { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true }
   const agentId = z.string().uuid().optional()
   const key = z.string().min(1).max(128).describe('Stable unique key for this payment. Reuse unchanged after timeouts; never blindly use a new key.')
-  server.registerTool('agentis_capabilities', { description: 'Inspect supported execution features and token metadata. Hosted/testnet only.', inputSchema: {}, annotations: read }, () => run(async () => ({ ...await delegations[0]!.client.capabilities(), networks })))
+  server.registerTool('agentis_capabilities', { description: 'Inspect supported networks, payment methods and token metadata.', inputSchema: {}, annotations: read }, () => run(async () => ({ ...await delegations[0]!.client.capabilities(), networks })))
   server.registerTool('agentis_list_wallets', { description: 'List connected agents and their authorized enabled wallets. Use walletId for payments and agentId for balance/policy/history.', inputSchema: {}, annotations: read }, () => run(async () => Promise.all(delegations.map(async item => {
     const wallets = (await item.client.wallets.list()).filter(wallet => wallet.enabled)
-    return { name: item.name, agentId: item.agentId, plugins: wallets[0]?.agentPlugins ?? [], wallets: wallets.map(wallet => ({ walletId: wallet.id, chainId: wallet.chainId, address: wallet.address, assets: networks.find(network => network.chainId === wallet.chainId)?.assets })) }
+    return { name: item.name, agentId: item.agentId, plugins: wallets[0]?.agentPlugins ?? [], wallets: wallets.map(wallet => ({ walletId: wallet.id, chainId: wallet.chainId, address: wallet.address, environment: findNetwork(wallet.chainId)?.testnet ? 'testnet' : 'mainnet', assets: networks.find(network => network.chainId === wallet.chainId)?.assets })) }
   }))))
   server.registerTool('agentis_balance', { description: 'Read balances for an agent’s authorized wallets/networks. Missing amounts/prices remain unavailable, not zero.', inputSchema: { agentId }, annotations: read }, ({ agentId }) => run(() => { const item = agent(agentId); return item.client.agents.balance(item.agentId) }))
-  server.registerTool('agentis_policy', { description: 'Read shared agent USD limits, mode and total spent/reserved. Limits include fees and all agent networks/keys. Cannot edit rules.', inputSchema: { agentId }, annotations: read }, ({ agentId }) => run(async () => { const item = agent(agentId); const wallet = (await item.client.wallets.list()).find(wallet => wallet.enabled); if (!wallet) throw Error(); return item.client.wallets.policy(wallet.id) }))
+  server.registerTool('agentis_policy', { description: 'Read agent USD limits and usage. Mainnet and testnets have separate allowances. Cannot edit rules.', inputSchema: { agentId, environment: z.enum(['mainnet', 'testnet']).optional() }, annotations: read }, ({ agentId, environment }) => run(async () => { const item = agent(agentId); const wallets = (await item.client.wallets.list()).filter(wallet => wallet.enabled && (!environment || findNetwork(wallet.chainId)?.testnet === (environment === 'testnet'))); const wallet = wallets.find(wallet => findNetwork(wallet.chainId)?.testnet === false) ?? wallets[0]; if (!wallet) throw Error(); return item.client.wallets.policy(wallet.id) }))
   server.registerTool('agentis_history', { description: 'Read recent payments across issuing keys within authorized wallets/networks. Read-only; does not grant approval or replay permissions.', inputSchema: { agentId, limit: z.number().int().min(1).max(100).default(20) }, annotations: read }, ({ agentId, limit }) => run(async () => (await agent(agentId).client.history()).slice(0, limit)))
   server.registerTool('agentis_send', {
     description: 'Send to an address or an ENS name resolved on Ethereum Sepolia for the selected payment network, using hosted backend policies. Ask mode returns approvalUrl for the human; automatic mode queues execution. Check progress with agentis_get_operation. Never approve your own request.',
-    inputSchema: { walletId: z.string().uuid(), to: z.string().min(1).max(128), amount: decimal.describe('Decimal token units, not atomic units'), asset: z.string().max(20).describe('Supported token symbol, e.g. ETH, USDC, SOL or alphaUSD'), maxFee: decimal.optional().describe('Decimal native/protocol fee units; defaults: Base 0.0001 ETH, Solana 0.005 SOL, Arc/Tempo 0.01 USD'), reason: z.string().max(500).optional(), idempotencyKey: key }, annotations: payment,
+    inputSchema: { walletId: z.string().uuid(), to: z.string().min(1).max(128), amount: decimal.describe('Decimal token units, not atomic units'), asset: z.string().max(20).describe('Supported token symbol, e.g. ETH, USDC, SOL or pathUSD'), maxFee: decimal.optional().describe('Maximum network fee in decimal native/protocol units; defaults come from the selected network'), reason: z.string().max(500).optional(), idempotencyKey: key }, annotations: payment,
   }, ({ walletId, to, amount, asset, maxFee, reason, idempotencyKey }) => run(async () => {
     const item = await forWallet(walletId), network = networks.find(network => network.chainId === item.wallet.chainId)!
     const token = network.assets.find(token => token.symbol.toLowerCase() === asset.toLowerCase())
     if (!token) throw Error('Unsupported asset')
-    const fee = maxFee ?? (['eip155:84532', 'eip155:11155111'].includes(network.chainId) ? '0.0001' : network.chainId.startsWith('solana:') ? '0.005' : '0.01')
+    const fee = maxFee ?? requireNetwork(network.chainId).defaultFee
     return item.client.operations.create({ action: 'transfer', walletId, chainId: network.chainId, asset: token.id, amountAtomic: atomic(amount, token.decimals), maxFeeAtomic: atomic(fee, network.decimals), to, reason }, { idempotencyKey })
   }))
   server.registerTool('agentis_fetch', {
-    description: 'Request a paid GET using x402 (Base/Arc/Solana USDC) or Tempo MPP alphaUSD. Same budgets/approval flow as sends. Pending approval returns a dashboard URL. Read the result with agentis_get_operation; do not blindly pay again after HTTP failure.',
-    inputSchema: { walletId: z.string().uuid(), url: z.string().url().max(4096), swapFunding: z.boolean().default(false).describe('Base Sepolia only: use enabled Uniswap plugin to swap ETH for missing USDC before payment'), maxAmount: decimal.describe('Maximum price in decimal USDC/alphaUSD units'), maxFee: decimal.optional().describe('Tempo only: decimal protocol USD fee budget, defaults to 0.01'), idempotencyKey: key }, annotations: payment,
+    description: 'Request a paid GET using x402 USDC or Tempo MPP. Same budgets/approval flow as sends. Pending approval returns a dashboard URL. Read the result with agentis_get_operation; do not blindly pay again after HTTP failure.',
+    inputSchema: { walletId: z.string().uuid(), url: z.string().url().max(4096), swapFunding: z.boolean().default(false).describe('Base Sepolia only: use enabled Uniswap plugin to swap ETH for missing USDC before payment'), maxAmount: decimal.describe('Maximum price in decimal payment-token units'), maxFee: decimal.optional().describe('Tempo only: decimal protocol USD fee budget, defaults to 0.01'), idempotencyKey: key }, annotations: payment,
   }, ({ walletId, url, maxAmount, maxFee, idempotencyKey, swapFunding }) => run(async () => {
     const item = await forWallet(walletId)
     const fetch = swapFunding ? item.client.uniswap.fetch : item.client.fetch
-    return fetch({ walletId, url, maxAmountAtomic: atomic(maxAmount, 6), ...(item.wallet.chainId === 'eip155:42431' ? { maxFeeAtomic: atomic(maxFee ?? '0.01', 18) } : {}) }, { idempotencyKey })
+    return fetch({ walletId, url, maxAmountAtomic: atomic(maxAmount, 6), ...(requireNetwork(item.wallet.chainId).mpp ? { maxFeeAtomic: atomic(maxFee ?? '0.01', 18) } : {}) }, { idempotencyKey })
   }))
   server.registerTool('agentis_request_operation', { description: 'Advanced raw operation request. Uses the same backend policy and approval pipeline; never self-approve.', inputSchema: { operation: operationInput, idempotencyKey: key }, annotations: payment }, ({ operation, idempotencyKey }) => run(async () => (await forWallet(operation.walletId)).client.operations.create(operation, { idempotencyKey })))
   server.registerTool('agentis_get_operation', { description: 'Read status/receipt/paid response for an operation issued through this connection. Unknown means reconcile, not resend.', inputSchema: { id: z.string().uuid() }, annotations: read }, ({ id }) => run(() => getOperation(id)))

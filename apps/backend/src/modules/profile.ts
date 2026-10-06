@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm'
+import { networkCatalog } from '@agentis-hq/core/networks'
 import type { OperationService } from '../operations'
 
 export async function profileSummary(service: OperationService, ownerId: string) {
@@ -8,6 +9,7 @@ export async function profileSummary(service: OperationService, ownerId: string)
         (o."settledAt" at time zone 'UTC')::date as day, w."agentId" as agent_id
       from operations o join wallets w on w.id = o."walletId"
       where o."ownerId" = ${ownerId} and o."settledAt" is not null
+        and w."chainId" in (${sql.join(networkCatalog.filter(network => !network.testnet).map(network => sql`${network.chainId}`), sql`, `)})
     ), days as (
       select generate_series((now() at time zone 'UTC')::date - 13,
         (now() at time zone 'UTC')::date, interval '1 day')::date as day

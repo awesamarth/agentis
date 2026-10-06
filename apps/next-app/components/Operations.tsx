@@ -6,11 +6,14 @@ import { type Operation } from '@agentis-hq/sdk'
 import { useAgentisClient } from '@/lib/agentis'
 import { formatUnits } from 'viem'
 import { ArrowUpRight, LoaderCircle } from 'lucide-react'
+import Dropdown from './Dropdown'
 
 export default function Operations({ id, agentId }: { id?: string; agentId?: string }) {
   const { ready, authenticated, user, login } = usePrivy()
   const queries = useQueryClient()
   const [visibleCount, setVisibleCount] = useState(10)
+  const [environment, setEnvironment] = useState('all')
+  const [chainId, setChainId] = useState('all')
   const client = useAgentisClient('Sign in first')
   const networks = useQuery({ queryKey: ['onboarding', user?.id], enabled: ready && authenticated, queryFn: () => client.onboarding.get() })
   const key = ['operations', user?.id, id, agentId]
@@ -22,21 +25,29 @@ export default function Operations({ id, agentId }: { id?: string; agentId?: str
   if (!ready) return <p role="status">Loading your payments…</p>
   if (!authenticated) return <button className="border p-3" onClick={login}>Sign in to review payments</button>
   const layout = (compact: string, review: string) => id ? review : compact
+  const matchingEnvironment = (testnet?: boolean) => environment === 'all' || (environment === 'testnet' ? testnet === true : testnet === false)
+  const filtered = query.data?.filter(operation => id || ((chainId === 'all' || operation.chainId === chainId) && matchingEnvironment(networks.data?.networks.find(network => network.chainId === operation.chainId)?.testnet)))
+  const availableNetworks = networks.data?.networks.filter(network => matchingEnvironment(network.testnet)) ?? []
   return <section className="space-y-4">
     <div className="border-b border-beige-darker pb-4"><h2 className="font-serif text-2xl font-bold">{id ? 'Review payment' : agentId ? 'Payment activity' : 'All payments'}</h2><p className="mt-2 text-sm text-ink-muted">{id ? 'Check the amount and recipient before you approve.' : agentId ? 'Requests, approvals and receipts for this agent.' : 'Requests, approvals and receipts across all your agents.'}</p></div>
+    {!id && <div className="flex flex-wrap gap-4">
+      <Dropdown label="Environment" className="min-w-40 text-sm" value={environment} onChange={value => { setEnvironment(value); setChainId('all'); setVisibleCount(10) }} options={[{ value: 'all', label: 'All environments' }, { value: 'mainnet', label: 'Mainnet only' }, { value: 'testnet', label: 'Testnet only' }]} />
+      <Dropdown label="Network" className="min-w-40 text-sm" value={chainId} onChange={value => { setChainId(value); setVisibleCount(10) }} options={[{ value: 'all', label: 'All networks' }, ...availableNetworks.map(network => ({ value: network.chainId, label: `${network.name}${network.testnet ? ' · Testnet' : ' · Mainnet'}` }))]} />
+    </div>}
     {query.isPending && <p>Loading…</p>}
     {query.error && <p role="alert">{query.error.message}</p>}
     {decision.error && <p role="alert">{decision.error.message}</p>}
     {query.data?.length === 0 && <div className="border border-dashed border-beige-darker p-10 text-center"><h3 className="font-serif text-xl font-bold">Your first payment starts here.</h3><p className="mt-2 text-sm text-ink-muted">{agentId ? 'Payments requested by this agent will appear here.' : 'Create a payment above. Requests from your agents will appear here too.'}</p></div>}
-    {query.data?.slice(0, id ? 1 : visibleCount).map(operation => {
+    {!!query.data?.length && filtered?.length === 0 && <p role="status" className="py-6 text-sm text-ink-muted">No payments match these filters.</p>}
+    {filtered?.slice(0, id ? 1 : visibleCount).map(operation => {
       const network = networks.data?.networks.find(network => network.chainId === operation.chainId)
       const asset = network?.assets.find(asset => operation.asset.startsWith('erc20:') ? asset.id.toLowerCase() === operation.asset.toLowerCase() : asset.id === operation.asset)
       const status = { pending_approval: 'Needs approval', queued: 'Approved', submitting: 'Sending', submitted: 'Confirming', unknown: 'Checking payment', confirmed: 'Completed', failed: 'Failed', denied: 'Not allowed', expired: 'Expired', rejected: 'Declined' }[operation.status]
       const approving = decision.isPending && decision.variables?.approve && decision.variables.operation.id === operation.id && operation.status === 'pending_approval'
       const processing = ['queued', 'submitting', 'submitted'].includes(operation.status)
-      const explorer = network && operation.transactionHash ? `${network.explorer}/tx/${encodeURIComponent(operation.transactionHash)}${network.key === 'solana' ? '?cluster=devnet' : ''}` : null
+      const explorer = network && operation.transactionHash ? `${network.explorer}/tx/${encodeURIComponent(operation.transactionHash)}${network.chainId.startsWith('solana:') && network.testnet ? '?cluster=devnet' : ''}` : null
       return <article className={`border border-beige-darker bg-[#faf7f1] ${layout('px-4 py-3', 'p-5 sm:p-7')}`} key={operation.id}>
-        <div className={layout('flex flex-wrap items-center justify-between gap-x-4 gap-y-2', 'flex flex-wrap items-start justify-between gap-4')}><div className={layout('flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1', 'flex min-w-0 flex-col')}><h3 className={`break-all font-serif font-bold ${layout('text-lg', 'order-2 mt-2 text-3xl')}`}>{asset ? `${formatUnits(BigInt(operation.amountAtomic), asset.decimals)} ${asset.symbol}` : `${operation.amountAtomic} atomic units`}</h3><p className="break-all font-mono text-[10px] uppercase tracking-widest text-ink-muted">{network?.name ?? operation.chainId}</p></div><span className={`border ${layout('px-2 py-1', 'px-3 py-2')} font-mono text-[10px] uppercase tracking-widest ${operation.status === 'pending_approval' ? 'border-ink bg-beige-dark' : operation.status === 'rejected' ? 'border-red-300 bg-red-50/40 text-red-700' : 'border-beige-darker text-ink-muted'}`}>{status}</span></div>
+        <div className={layout('flex flex-wrap items-center justify-between gap-x-4 gap-y-2', 'flex flex-wrap items-start justify-between gap-4')}><div className={layout('flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1', 'flex min-w-0 flex-col')}><h3 className={`break-all font-serif font-bold ${layout('text-lg', 'order-2 mt-2 text-3xl')}`}>{asset ? `${formatUnits(BigInt(operation.amountAtomic), asset.decimals)} ${asset.symbol}` : `${operation.amountAtomic} atomic units`}</h3><p className="break-all font-mono text-[10px] uppercase tracking-widest text-ink-muted">{network?.name ?? operation.chainId}{network && <span className="ml-2 inline-block border border-beige-darker px-1.5 py-0.5">{network.testnet ? 'Testnet' : 'Mainnet'}</span>}</p></div><span className={`border ${layout('px-2 py-1', 'px-3 py-2')} font-mono text-[10px] uppercase tracking-widest ${operation.status === 'pending_approval' ? 'border-ink bg-beige-dark' : operation.status === 'rejected' ? 'border-red-300 bg-red-50/40 text-red-700' : 'border-beige-darker text-ink-muted'}`}>{status}</span></div>
         {operation.ens && <p className="mt-3 text-sm"><strong>{operation.ens.name}</strong> · resolved on Ethereum Sepolia. Approval is bound to the recipient address below.</p>}
         {operation.identity && <div className="mt-3 space-y-2 text-sm"><p className="font-medium">{operation.identity.name} · {operation.identity.kind === 'record' ? `Update ${operation.identity.key}` : `ERC-8004 ${operation.identity.kind}`}</p>{operation.identity.kind === 'record' && <p className="break-all">{operation.identity.value || '(clear record)'}</p>}<p className="text-xs text-ink-muted">Identity transaction on Ethereum Sepolia. No token amount is transferred; the agent pays gas under its existing limits.</p></div>}
         {operation.swap && <div className="mt-3 space-y-1 text-sm"><p className="font-medium">{operation.action === 'uniswap_approval' ? 'Uniswap · token allowance (fees only, not a transfer)' : 'Uniswap · maximum swap input shown above'}</p><p className="text-xs text-ink-muted">{operation.action === 'uniswap_approval' ? 'Exact-amount allowance for the vetted Base Sepolia SwapRouter02. The swap is a separate operation.' : `Minimum received: ${formatUnits(BigInt(operation.swap.minimumOutputAtomic), operation.swap.tokenOut === 'ETH' ? 18 : 6)} ${operation.swap.tokenOut}. Output returns to this agent’s wallet.`}</p>{operation.receipt?.swap && <p className="text-xs">Received: {formatUnits(BigInt(operation.receipt.swap.outputAtomic), operation.receipt.swap.tokenOut === 'ETH' ? 18 : 6)} {operation.receipt.swap.tokenOut}</p>}</div>}
@@ -56,6 +67,6 @@ export default function Operations({ id, agentId }: { id?: string; agentId?: str
         </div>
       </article>
     })}
-    {!id && (query.data?.length ?? 0) > visibleCount && <button type="button" className="border border-beige-darker px-4 py-2 font-mono text-xs text-ink hover:bg-beige-dark" onClick={() => setVisibleCount(count => count + 10)}>Show more</button>}
+    {!id && (filtered?.length ?? 0) > visibleCount && <button type="button" className="border border-beige-darker px-4 py-2 font-mono text-xs text-ink hover:bg-beige-dark" onClick={() => setVisibleCount(count => count + 10)}>Show more</button>}
   </section>
 }

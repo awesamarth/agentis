@@ -14,17 +14,17 @@ const ceil = (n: bigint, d: bigint) => (n + d - 1n) / d
 export type SpendTerms = { chain: LocalChain; asset: string; amountAtomic: string; maxFeeAtomic: string }
 const quoteSchema = z.object({ amountPrice: z.string().regex(/^\d+$/), feePrice: z.string().regex(/^\d+$/), amountDecimals: z.number().int(), feeDecimals: z.number().int(), expiresAt: z.number() })
 type Quote = z.infer<typeof quoteSchema>
-const entrySchema = z.object({ key: z.string(), terms: z.object({ chain: z.enum(['base', 'arc', 'tempo', 'solana', 'sepolia']), asset: z.string(), amountAtomic: z.string().regex(/^\d+$/), maxFeeAtomic: z.string().regex(/^\d+$/) }), createdAt: z.number(), signedAt: z.number().optional(), settledAt: z.number().optional(), status: z.enum(['reserved', 'signing', 'confirmed', 'failed', 'released']), reservedUsd: z.string().regex(/^\d+$/), settledUsd: z.string().regex(/^\d+$/).optional(), quote: quoteSchema })
+const entrySchema = z.object({ key: z.string(), terms: z.object({ chain: z.string().refine(chain => Object.hasOwn(localNetworks, chain)), asset: z.string(), amountAtomic: z.string().regex(/^\d+$/), maxFeeAtomic: z.string().regex(/^\d+$/) }), createdAt: z.number(), signedAt: z.number().optional(), settledAt: z.number().optional(), status: z.enum(['reserved', 'signing', 'confirmed', 'failed', 'released']), reservedUsd: z.string().regex(/^\d+$/), settledUsd: z.string().regex(/^\d+$/).optional(), quote: quoteSchema })
 type Entry = z.infer<typeof entrySchema>
 const ledgerSchema = z.object({ version: z.literal(1), startedAt: z.number(), entries: z.array(entrySchema) })
 export const costUsd = (terms: SpendTerms, quote: Quote, fee = terms.maxFeeAtomic, success = true) => (success ? ceil(BigInt(terms.amountAtomic) * BigInt(quote.amountPrice), 10n ** BigInt(quote.amountDecimals) * 1_000_000_000_000n) : 0n) + ceil(BigInt(fee) * BigInt(quote.feePrice), 10n ** BigInt(quote.feeDecimals) * 1_000_000_000_000n)
 const prices = new Map<string, { price: string; expiresAt: number }>()
 export async function localQuote(terms: SpendTerms): Promise<Quote> {
-  const assets = localNetworks[terms.chain].assets as Record<string, { decimals: number }>
-  const asset = assets[terms.asset]
+  const network = localNetworks[terms.chain]!
+  const asset = network.assets[terms.asset]
   if (!asset) throw new LocalPolicyError('No USD price mapping for this asset')
-  const amountId = terms.asset === 'ETH' ? 'coingecko:ethereum' : terms.asset === 'SOL' ? 'coingecko:solana' : terms.asset === 'alphaUSD' ? 'test-usd' : 'coingecko:usd-coin'
-  const feeId = (terms.chain === 'base' || terms.chain === 'sepolia') ? 'coingecko:ethereum' : terms.chain === 'solana' ? 'coingecko:solana' : terms.chain === 'tempo' ? 'test-usd' : 'coingecko:usd-coin'
+  const amountId = asset.priceId
+  const feeId = network.priceId
   const ids = [...new Set([amountId, ...(BigInt(terms.maxFeeAtomic) ? [feeId] : [])])].filter(id => id !== 'test-usd')
   const missing = ids.filter(id => (prices.get(id)?.expiresAt ?? 0) <= Date.now())
   try {
@@ -42,7 +42,7 @@ export async function localQuote(terms: SpendTerms): Promise<Quote> {
     const get = (id: string) => id === 'test-usd' ? { price: '1000000000000000000', expiresAt: Date.now() + 30_000 } : prices.get(id)!
     const amount = get(amountId), fee = BigInt(terms.maxFeeAtomic) ? get(feeId) : { price: '0', expiresAt: amount.expiresAt }
     if (!amount || !fee || Math.min(amount.expiresAt, fee.expiresAt) <= Date.now()) throw Error()
-    return { amountPrice: amount.price, feePrice: fee.price, amountDecimals: asset.decimals, feeDecimals: terms.chain === 'solana' ? 9 : 18, expiresAt: Math.min(amount.expiresAt, fee.expiresAt) }
+    return { amountPrice: amount.price, feePrice: fee.price, amountDecimals: asset.decimals, feeDecimals: network.decimals, expiresAt: Math.min(amount.expiresAt, fee.expiresAt) }
   } catch { throw new LocalPolicyError('Fresh USD prices are unavailable; no new payment can be signed. Try again later.') }
 }
 function paths(wallet: string) {
@@ -84,7 +84,7 @@ export async function reserveLocal(walletId: string, key: string, terms: SpendTe
   await locked(walletId, (ledger, save) => {
     const id = digest(key), previous = ledger.entries.find(entry => entry.key === id)
     if (previous) throw new LocalPolicyError('This request key already has a policy record; inspect history and reuse its original command to reconcile')
-    check(loadLocalWallet(walletId).policy ?? defaultRules, ledger.entries, BigInt(reservedUsd))
+    check(loadLocalWallet(walletId).policy ?? defaultRules, ledger.entries.filter(entry => localNetworks[entry.terms.chain]!.testnet === localNetworks[terms.chain]!.testnet), BigInt(reservedUsd))
     ledger.entries.push({ key: id, terms, createdAt: Date.now(), status: 'reserved', reservedUsd, quote }); save()
   })
 }
@@ -97,7 +97,7 @@ export async function signWithPolicy<T>(walletId: string, key: string, sign: () 
     const entry = ledger.entries.find(entry => entry.key === digest(key))!
     if (entry.status !== 'reserved' || quote.expiresAt <= Date.now()) throw new LocalPolicyError('Payment was already authorized or its quote expired')
     const amount = costUsd(entry.terms, quote)
-    check(loadLocalWallet(walletId).policy ?? defaultRules, ledger.entries, amount, entry.key)
+    check(loadLocalWallet(walletId).policy ?? defaultRules, ledger.entries.filter(other => localNetworks[other.terms.chain]!.testnet === localNetworks[entry.terms.chain]!.testnet), amount, entry.key)
     entry.quote = quote; entry.reservedUsd = amount.toString(); entry.status = 'signing'; entry.signedAt = Date.now(); save()
     return sign()
   })
@@ -113,13 +113,14 @@ export async function settleLocal(walletId: string, key: string, success: boolea
     entry.settledUsd = costUsd(entry.terms, entry.quote, fee, success).toString(); entry.status = success ? 'confirmed' : 'failed'; entry.settledAt = Date.now(); save()
   })
 }
-export async function showLocalPolicy(selector: string) {
+export async function showLocalPolicy(selector: string, environment: 'mainnet' | 'testnet' = 'mainnet') {
   const wallet = loadLocalWallet(selector)
   return locked(wallet.id, (ledger, save) => {
     save()
-    const spent = ledger.entries.reduce((sum, entry) => sum + BigInt(entry.settledUsd ?? '0'), 0n)
-    const pending = ledger.entries.filter(entry => entry.status === 'reserved' || entry.status === 'signing').reduce((sum, entry) => sum + BigInt(entry.reservedUsd), 0n)
-    return { wallet: wallet.name, status: wallet.policy?.paused ? 'Paused' : 'Active', ...Object.fromEntries(Object.entries(wallet.policy ?? defaultRules).filter(([key]) => key !== 'paused').map(([key, value]) => [key, value === null ? 'No cap' : `$${value}`])), spent: `$${formatUnits(spent, 6)}`, reserved: `$${formatUnits(pending, 6)}`, trackingSince: new Date(ledger.startedAt).toISOString(), note: 'Combined across all networks. Pre-policy transactions are history only. CLI safeguards—not tamper-proof enforcement.' }
+    const entries = ledger.entries.filter(entry => localNetworks[entry.terms.chain]!.testnet === (environment === 'testnet'))
+    const spent = entries.reduce((sum, entry) => sum + BigInt(entry.settledUsd ?? '0'), 0n)
+    const pending = entries.filter(entry => entry.status === 'reserved' || entry.status === 'signing').reduce((sum, entry) => sum + BigInt(entry.reservedUsd), 0n)
+    return { wallet: wallet.name, environment, status: wallet.policy?.paused ? 'Paused' : 'Active', ...Object.fromEntries(Object.entries(wallet.policy ?? defaultRules).filter(([key]) => key !== 'paused').map(([key, value]) => [key, value === null ? 'No cap' : `$${value}`])), spent: `$${formatUnits(spent, 6)}`, reserved: `$${formatUnits(pending, 6)}`, trackingSince: new Date(ledger.startedAt).toISOString(), note: 'Mainnet and testnets use separate allowances with the same limits. CLI rules apply only to payments made through Agentis.' }
   })
 }
 export async function setLocalPolicy(selector: string, changes: Partial<LocalRules>) {

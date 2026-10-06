@@ -16,7 +16,7 @@ export async function sendHostedTransfer(input: LocalSendInput, agent?: string) 
   const { session, wallet, name } = candidates[0]!
   let operation = await session.client.operations.create({
     walletId: wallet.id, action: 'transfer', chainId,
-    asset: terms.asset.token ? `${terms.chain === 'solana' ? 'spl' : 'erc20'}:${terms.asset.token}` : 'native',
+    asset: terms.asset.token ? `${localNetworks[terms.chain].family === 'solana' ? 'spl' : 'erc20'}:${terms.asset.token}` : 'native',
     to: terms.to, amountAtomic: terms.amountAtomic.toString(), maxFeeAtomic: terms.maxFeeAtomic.toString(),
   }, { idempotencyKey: input.key })
   if (operation.status === 'queued') operation = await session.client.operations.wait(operation.id, { timeoutMs: 120_000 })

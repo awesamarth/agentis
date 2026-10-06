@@ -7,11 +7,11 @@ export type AgentisAgent = { id: string; name: string; plugins: PluginId[]; limi
 export type AgentSettings = Pick<AgentisAgent, 'name' | 'limits' | 'mode' | 'allowedRecipients'> & { plugins?: AgentisAgent['plugins']; selection: { networks: string[]; defaultNetwork: string }; enableExecution?: boolean }
 export type AgentisWallet = { id: string; agentId: string | null; agentName: string | null; agentPlugins: AgentisAgent['plugins'] | null; serverAuthorized: boolean; address: string; chainId: string; policy: WalletPolicy; policyVersion: number; enabled: boolean }
 
-export type AgentPolicyView = Pick<AgentisAgent, 'name' | 'mode' | 'limits' | 'allowedRecipients'> & { agentId: string; spentMicros: string; reservedMicros: string; walletPolicy: WalletPolicy }
+export type AgentPolicyView = Pick<AgentisAgent, 'name' | 'mode' | 'limits' | 'allowedRecipients'> & { agentId: string; environment: 'mainnet' | 'testnet'; spentMicros: string; reservedMicros: string; walletPolicy: WalletPolicy }
 
 export type AgentBalance = {
   usdMicros: string | null; complete: boolean; checkedAt: string
-  networks: { chainId: string; name: string; usdMicros: string | null; complete: boolean; tokens: { asset: string; symbol: string; decimals: number; amountAtomic: string | null; usdMicros: string | null }[] }[]
+  networks: { chainId: string; name: string; testnet: boolean; usdMicros: string | null; complete: boolean; tokens: { asset: string; symbol: string; decimals: number; amountAtomic: string | null; usdMicros: string | null }[] }[]
 }
 
 export type ProfileSummary = {
@@ -61,7 +61,7 @@ export class AgentisClient {
   fetch = (input: FetchRequest, options: { idempotencyKey: string }) => this.request<Operation>('/fetch', 'POST', input, { 'Idempotency-Key': options.idempotencyKey }, AbortSignal.timeout(60_000))
   capabilities = () => this.request<Record<string, unknown>>('/capabilities')
   onboarding = {
-    get: () => this.request<{ settings: { networks: string[]; defaultNetwork: string; totalBudgetUsd: string | null; completedAt: string } | null; networks: Array<{ key: string; name: string; chainId: string; chainType: string; currency: string; decimals: number; assets: Array<{ id: OperationInput['asset']; symbol: string; decimals: number }>; explorer: string; executionReady: boolean; testnet: boolean }> }>('/onboarding'),
+    get: () => this.request<{ settings: { networks: string[]; defaultNetwork: string; totalBudgetUsd: string | null; completedAt: string } | null; networks: Array<{ key: string; name: string; chainId: string; chainType: string; currency: string; decimals: number; defaultFee: string; assets: Array<{ id: OperationInput['asset']; symbol: string; decimals: number }>; explorer: string; executionReady: boolean; testnet: boolean }> }>('/onboarding'),
 
   }
   oauth = {

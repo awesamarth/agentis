@@ -5,18 +5,21 @@ import { address, createKeyPairSignerFromBytes, getCompiledTransactionMessageDec
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS, getTransferCheckedInstructionDataEncoder } from '@solana-program/token'
 import { getSetComputeUnitLimitInstruction, getSetComputeUnitPriceInstruction } from '@solana-program/compute-budget'
 import { Connection, PublicKey } from '@solana/web3.js'
-import { solanaDevnet, solanaUsdc } from '@agentis-hq/core/solana-transfer'
+import { requireNetwork } from '@agentis-hq/core/networks'
 import type { PaymentPayload, PaymentRequirements } from '@x402/core/types'
 import { deriveSolanaKey, type LocalWallet } from './local-wallet'
-import { solanaGenesis } from './local-networks'
 import { signWithPolicy } from './local-policy'
 const equal = (a: ArrayLike<number>, b: ArrayLike<number>) => Buffer.from(a).equals(Buffer.from(b))
-const rpcUrl = () => process.env.SOLANA_DEVNET_RPC_URL ?? 'https://api.devnet.solana.com'
-const connection = () => new Connection(rpcUrl(), { commitment: 'confirmed', fetch: ((url: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) => fetch(url, { ...options, signal: AbortSignal.timeout(15000) })) as typeof fetch })
-export type SolanaProof = { source: string; destination: string; fromSlot: string; message: string; payerSignature: string }
+const rpcUrl = (chainId: string) => { const network = requireNetwork(chainId); return process.env[network.rpcEnv] ?? network.rpcUrl }
+const connection = (chainId: string) => new Connection(rpcUrl(chainId), { commitment: 'confirmed', fetch: ((url: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) => fetch(url, { ...options, signal: AbortSignal.timeout(15000) })) as typeof fetch })
+export type SolanaProof = { chainId: string; source: string; destination: string; fromSlot: string; message: string; payerSignature: string }
 export async function prepareLocalSvm(wallet: LocalWallet, key: string, url: string, requirements: PaymentRequirements): Promise<{ payload: PaymentPayload; proof: SolanaProof }> {
-  const rpc = connection()
-  if (await rpc.getGenesisHash() !== solanaGenesis) throw Error('Not Solana devnet')
+  const network = requireNetwork(requirements.network)
+  if (network.family !== 'solana' || !network.x402 || !wallet.chains.includes(network.key)) throw Error('Unsupported Solana payment network')
+  const solanaUsdc = network.x402.token
+  if (requirements.asset !== solanaUsdc) throw Error('Unsupported Solana payment token')
+  const rpc = connection(network.chainId)
+  if (await rpc.getGenesisHash() !== network.genesisHash) throw Error('Wrong Solana network')
   const native = await createKeyPairSignerFromBytes((await deriveSolanaKey(wallet.mnemonic)).secretKey)
   if (native.address !== wallet.addresses.solana || requirements.extra?.feePayer === native.address || requirements.payTo === native.address || !requirements.extra?.feePayer) throw Error('Invalid Solana payment signer/recipient')
   const [source] = await findAssociatedTokenPda({ mint: address(solanaUsdc), owner: native.address, tokenProgram: TOKEN_PROGRAM_ADDRESS })
@@ -40,16 +43,17 @@ export async function prepareLocalSvm(wallet: LocalWallet, key: string, url: str
     message = Buffer.from(transaction.messageBytes).toString('base64'); payerSignature = getBase58Decoder().decode(signatures[0][native.address]!)
     return signatures
   } }
-  const client = new x402Client().register(solanaDevnet, new ExactSvmScheme(signer, { rpcUrl: rpcUrl() }))
-  client.setSpendControls({ allowedAssets: [{ network: solanaDevnet, asset: solanaUsdc, maxAmountPerPayment: requirements.amount }] })
+  const client = new x402Client().register(requirements.network, new ExactSvmScheme(signer, { rpcUrl: rpcUrl(network.chainId) }))
+  client.setSpendControls({ allowedAssets: [{ network: requirements.network, asset: solanaUsdc, maxAmountPerPayment: requirements.amount }] })
   const payload = await client.createPaymentPayload({ x402Version: 2, resource: { url }, accepts: [requirements] })
   const wire = getTransactionDecoder().decode(Buffer.from((payload.payload as { transaction: string }).transaction, 'base64'))
   if (!message || !payerSignature || Buffer.from(wire.messageBytes).toString('base64') !== message || !wire.signatures[native.address] || getBase58Decoder().decode(wire.signatures[native.address]!) !== payerSignature) throw Error('Unexpected signed payment payload')
-  return { payload, proof: { source, destination, fromSlot, message, payerSignature } }
+  return { payload, proof: { chainId: network.chainId, source, destination, fromSlot, message, payerSignature } }
 }
 export async function localSvmReceipt(proof: SolanaProof, amountAtomic: string, hash?: string) {
-  const rpc = connection()
-  if (await rpc.getGenesisHash() !== solanaGenesis) throw Error('Wrong Solana network')
+  const network = requireNetwork(proof.chainId), solanaUsdc = network.x402!.token
+  const rpc = connection(network.chainId)
+  if (await rpc.getGenesisHash() !== network.genesisHash) throw Error('Wrong Solana network')
   let before: Parameters<typeof rpc.getTransaction>[0] | undefined
   while (true) {
     const candidates = hash ? [{ signature: hash as Parameters<typeof rpc.getTransaction>[0], slot: BigInt(proof.fromSlot) }] : await rpc.getSignaturesForAddress(new PublicKey(proof.source), { limit: 100, before })

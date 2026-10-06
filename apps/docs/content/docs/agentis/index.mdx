@@ -7,6 +7,8 @@ Agentis gives each agent independent wallets, USD limits, approval rules and opt
 
 Hosted wallets use Privy and scoped executor grants. Agents cannot change policy, approve themselves or export hosted keys. Local-custody CLI wallets are also available for users who want keys to remain on their machine.
 
-Supported testnets include Base Sepolia, Ethereum Sepolia, Arc, Tempo and Solana Devnet. Agentis supports direct transfers, x402/MPP paid GET requests, Uniswap swaps and ENS identity. Mainnet execution is not enabled.
+Choose Base, Ethereum, Tempo or Solana. Base is selected by default. Turn on **Enable testnets** in agent settings to add Base Sepolia, Ethereum Sepolia, Arc, Tempo Testnet or Solana Devnet.
+
+Mainnet and testnets have separate spending allowances. Direct transfers and x402/MPP paid GET requests use the same approval flow. Uniswap and ENS remain available on their supported testnets.
 
 See the repository [README](https://github.com/awesamarth/agentis#readme) for current setup, supported assets and verification boundaries.

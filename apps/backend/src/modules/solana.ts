@@ -4,17 +4,20 @@ import { getTokenSize } from '@solana-program/token'
 import { assertSolanaTransfer, buildSolanaTransfer, encodeTransaction, decodeTransaction, solanaDevnet, solanaUsdc } from '@agentis-hq/core/solana-transfer'
 import type { OperationInput, Operation } from '@agentis-hq/core/operations'
 
+import { requireNetwork } from '@agentis-hq/core/networks'
 export { solanaDevnet, solanaUsdc }
-export function solanaConnection(rpcUrl = process.env.SOLANA_DEVNET_RPC_URL ?? 'https://api.devnet.solana.com') {
-  return new Connection(rpcUrl, { commitment: 'confirmed', fetch: ((url: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) => fetch(url, { ...options, signal: AbortSignal.timeout(15_000) })) as typeof fetch })
+export function solanaConnection(chainId: string) {
+  const network = requireNetwork(chainId)
+  if (network.family !== 'solana') throw Error('Expected Solana network')
+  return new Connection(process.env[network.rpcEnv] ?? network.rpcUrl, { commitment: 'confirmed', fetch: ((url: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) => fetch(url, { ...options, signal: AbortSignal.timeout(15_000) })) as typeof fetch })
 }
-async function checkedConnection() {
-  const connection = solanaConnection()
-  if (!(await connection.getGenesisHash()).startsWith(solanaDevnet.slice(7))) throw new Error('RPC is not Solana devnet')
+async function checkedConnection(chainId: string) {
+  const connection = solanaConnection(chainId)
+  if (await connection.getGenesisHash() !== requireNetwork(chainId).genesisHash) throw new Error('Solana RPC network mismatch')
   return connection
 }
 export async function prepareSolanaTransfer(from: string, input: OperationInput) {
-  const connection = await checkedConnection()
+  const connection = await checkedConnection(input.chainId)
   const latest = await connection.getLatestBlockhash()
   const transaction = await buildSolanaTransfer(from, input, latest.blockhash)
   const fee = (await connection.getFeeForMessage(transaction.compileMessage())).value
@@ -23,22 +26,23 @@ export async function prepareSolanaTransfer(from: string, input: OperationInput)
   // Reserve possible ATA rent even if it exists now: it may close before execution.
   if (BigInt(fee) + rent > BigInt(input.maxFeeAtomic)) throw new Error('Solana fee and account-rent budget is too small')
   const needed = BigInt(fee) + rent + (input.asset === 'native' ? BigInt(input.amountAtomic) : 0n)
-  if (BigInt(await connection.getBalance(new PublicKey(from))) < needed) throw new Error('Fund the hosted wallet with devnet SOL first')
+  if (BigInt(await connection.getBalance(new PublicKey(from))) < needed) throw new Error('Fund the wallet with SOL on the selected network first')
   return { method: 'signTransaction', params: { encoding: 'base64', transaction: encodeTransaction(await transaction.serialize({ requireAllSignatures: false, verifySignatures: false })) } }
 }
 export async function verifySolanaTransfer(from: string, input: OperationInput, signed: string, unsigned: string) {
-  const connection = await checkedConnection()
+  const connection = await checkedConnection(input.chainId)
   const actual = await assertSolanaTransfer(from, input, signed)
   const expected = await assertSolanaTransfer(from, input, unsigned)
   if (encodeTransaction(actual.serializeMessage()) !== encodeTransaction(expected.serializeMessage()) || !(await actual.verifySignatures()) || !actual.signature || !(await connection.isBlockhashValid(actual.recentBlockhash!)).value) throw new Error('Invalid or expired Solana signature')
-  return { signedTransaction: `solana:${signed}`, transactionHash: getBase58Decoder().decode(actual.signature) }
+  return { signedTransaction: `solana:${JSON.stringify({ chainId: input.chainId, signed })}`, transactionHash: getBase58Decoder().decode(actual.signature) }
 }
-export async function broadcastSolanaTransfer(signed: string) {
-  const connection = await checkedConnection()
+export async function broadcastSolanaTransfer(serialized: string) {
+  const { chainId, signed } = JSON.parse(serialized) as { chainId: string; signed: string }
+  const connection = await checkedConnection(chainId)
   await connection.sendRawTransaction(decodeTransaction(signed), { skipPreflight: false, maxRetries: 0n })
 }
 export async function solanaReceipt(signature: string, input: OperationInput): Promise<Operation['receipt']> {
-  const connection = await checkedConnection()
+  const connection = await checkedConnection(input.chainId)
   const receipt = await connection.getTransaction(signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 })
   if (!receipt?.meta) return null
   const meta = receipt.meta
@@ -47,5 +51,5 @@ export async function solanaReceipt(signature: string, input: OperationInput): P
   const transferredNative = success && input.asset === 'native' && input.to !== payer ? BigInt(input.amountAtomic) : 0n
   const fee = BigInt(meta.preBalances[0]!) - BigInt(meta.postBalances[0]!) - transferredNative
   if (fee < 0n) throw new Error('Invalid Solana fee observation')
-  return { transactionHash: String(receipt.transaction.signatures[0]), chainId: solanaDevnet, blockNumber: String(receipt.slot), feeAtomic: fee.toString(), success, feePayment: { asset: 'native', amountAtomic: fee.toString(), decimals: 9 } }
+  return { transactionHash: String(receipt.transaction.signatures[0]), chainId: input.chainId, blockNumber: String(receipt.slot), feeAtomic: fee.toString(), success, feePayment: { asset: 'native', amountAtomic: fee.toString(), decimals: 9 } }
 }

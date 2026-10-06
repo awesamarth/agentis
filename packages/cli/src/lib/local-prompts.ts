@@ -22,7 +22,8 @@ export async function localCreationOptions(name?: string, chains?: string, json 
   if (!name && !interactive) throw Error('--name is required without an interactive terminal')
   if (interactive && (!name || !chains)) banner()
   const walletName = name ?? answer(await text({ message: 'Wallet name', validate: value => !value?.trim() ? 'Enter a wallet name' : value.trim().length > 64 || /[\u0000-\u001f\u007f-\u009f]/.test(value) ? 'Use 1–64 characters without control characters' : undefined }))
-  const selected = chains ? parseChains(chains) : interactive ? answer(await multiselect<LocalChain>({ message: 'Enable testnet chains (↑/↓ move, Space select, Enter continue)', options: Object.entries(localNetworks).map(([value, network]) => ({ value: value as LocalChain, label: network.name })), initialValues: ['base'], required: true })) : ['base'] as LocalChain[]
+  const enableTestnets = !chains && interactive ? answer(await confirm({ message: 'Enable testnets?', initialValue: false })) : false
+  const selected = chains ? parseChains(chains) : interactive ? answer(await multiselect<LocalChain>({ message: 'Choose networks (↑/↓ move, Space select, Enter continue)', options: Object.entries(localNetworks).filter(([, network]) => network.enabled !== false && (enableTestnets || !network.testnet)).map(([value, network]) => ({ value, label: network.name })), initialValues: ['base'], required: true })) : ['base'] as LocalChain[]
   // A plugins step can be added here when actual integrations are available.
   const policy = interactive ? await promptLocalRules({ ...defaultRules, ...policyChanges }, Object.keys(policyChanges), false) : localRules.parse({ ...defaultRules, ...policyChanges })
   return { name: walletName, chains: selected, policy }

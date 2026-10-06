@@ -6,13 +6,14 @@ import { createPrivyMpp, validateMpp } from '../modules/mpp'
 import { createPrivySvm, validateSvm } from '../modules/x402-solana'
 import type { WalletRpcParams } from '@privy-io/node/resources'
 import type { AuthorizationRequest, OperationInput } from '@agentis-hq/core/operations'
-import { evmClient } from '../modules/networks'
+import { evmClient, requireNetwork } from '../modules/networks'
+import { estimateL1Fee } from 'viem/op-stack'
 import { fail } from '../errors'
 import type { WalletRow } from '../db/schema'
 import type { Executor } from './types'
-import { prepareTempoTransfer, verifyTempoTransfer, roundedTempoFee, tempoFeeScale, tempoFeeToken } from '../modules/tempo'
+import { prepareTempoTransfer, verifyTempoTransfer, roundedTempoFee, tempoFeeScale } from '../modules/tempo'
 import { TxEnvelopeTempo } from 'ox/tempo'
-import { prepareSolanaTransfer, verifySolanaTransfer, broadcastSolanaTransfer, solanaReceipt, solanaDevnet, solanaUsdc } from '../modules/solana'
+import { prepareSolanaTransfer, verifySolanaTransfer, broadcastSolanaTransfer, solanaReceipt } from '../modules/solana'
 
 import { uniswapCall, validateSwapPool, uniswap, poolSwapAbi } from '../plugins/uniswap/swap'
 
@@ -32,8 +33,8 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
   async function check(wallet: WalletRow, input: OperationInput) {
     const owned = await inspectWallet(wallet.providerWalletId, wallet.ownerId)
     if (!owned.serverAuthorized) fail(409, 'wallet_setup_required', 'Open this agent’s rules and save once to enable hosted execution')
-    if (input.chainId === solanaDevnet ? owned.address !== wallet.address : owned.address.toLowerCase() !== wallet.address.toLowerCase()) throw new Error('Provider wallet address changed')
-    if (input.chainId === solanaDevnet) return null
+    if (requireNetwork(input.chainId).family === 'solana' ? owned.address !== wallet.address : owned.address.toLowerCase() !== wallet.address.toLowerCase()) throw new Error('Provider wallet address changed')
+    if (requireNetwork(input.chainId).family === 'solana') return null
     const client = evmClient(input.chainId)
     if (await client.getChainId() !== client.chain.id) throw new Error('RPC network mismatch')
     return client
@@ -41,17 +42,14 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
   const executor: Executor & { buildRequest(wallet: WalletRow, input: OperationInput, id: string, expiresAt: Date): Promise<AuthorizationRequest> } = {
     id: 'privy',
     validate(wallet, input) {
+      if (requireNetwork(input.chainId).enabled === false) fail(400, 'unsupported_network', 'This network is no longer available for new payments')
       if (input.identity) { if (wallet.chainId !== 'eip155:11155111') fail(400, 'unsupported_network', 'Identity writes require Ethereum Sepolia'); identityCall(input); return }
       if (input.swap) { if (wallet.chainId !== uniswap.chainId) fail(400, 'unsupported_network', 'Uniswap currently requires Base Sepolia'); uniswapCall(input, wallet.address); return }
-      if (input.action === 'paid_fetch') { if (input.mpp) validateMpp(wallet, input); else if (input.chainId === solanaDevnet) validateSvm(wallet, input); else validateX402(wallet, input); return }
-      if (input.chainId === solanaDevnet && wallet.chainId === solanaDevnet) {
-        if (!['native', `spl:${solanaUsdc}`].includes(input.asset) || BigInt(input.amountAtomic) > 18_446_744_073_709_551_615n) fail(400, 'unsupported_asset', 'Unsupported Solana transfer')
-        return
-      }
-      if (wallet.chainId !== input.chainId || !['eip155:84532', 'eip155:5042002', 'eip155:42431', 'eip155:11155111'].includes(input.chainId)) fail(503, 'unsupported_execution', 'Hosted transfer network is not enabled')
-      if (input.chainId === 'eip155:42431' && input.asset === 'native') fail(400, 'unsupported_asset', 'Tempo payments use TIP-20 tokens, not a native coin')
-      const token = input.chainId === 'eip155:84532' ? 'erc20:0x036cbd53842c5426634e7929541ec2318f3dcf7e' : input.chainId === 'eip155:42431' ? 'erc20:0x20c0000000000000000000000000000000000001' : input.chainId === 'eip155:11155111' ? 'erc20:0x1c7d4b196cb0c7b01d743fbc6116a902379c7238' : null
-      if (input.asset !== 'native' && input.asset.toLowerCase() !== token) fail(400, 'unsupported_asset', 'Transfer asset has not been enabled for this network')
+      if (input.action === 'paid_fetch') { if (input.mpp) validateMpp(wallet, input); else if (requireNetwork(input.chainId).family === 'solana') validateSvm(wallet, input); else validateX402(wallet, input); return }
+      const network = requireNetwork(input.chainId)
+      if (wallet.chainId !== input.chainId) fail(400, 'wrong_network', 'Wallet does not belong to this network')
+      if (!network.assets.some(asset => network.family === 'solana' ? asset.id === input.asset : asset.id.toLowerCase() === input.asset.toLowerCase())) fail(400, 'unsupported_asset', 'Transfer asset has not been enabled for this network')
+      if (network.family === 'solana' && BigInt(input.amountAtomic) > 18_446_744_073_709_551_615n) fail(400, 'invalid_amount', 'Solana amount exceeds the supported range')
     },
     async buildRequest(wallet: WalletRow, input: OperationInput, id: string, expiresAt: Date): Promise<AuthorizationRequest> {
       this.validate(wallet, input)
@@ -65,13 +63,14 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
       if ((input.swap || input.identity || input.asset !== 'native') && (!code || code === '0x')) throw new Error('Token contract not found')
       const signer = createWalletClient({ chain: client.chain, transport: http(client.transport.url, { retryCount: 0, timeout: 15_000 }) })
       let transaction: Record<string, unknown>
-      if (input.chainId === 'eip155:42431') {
-        transaction = await prepareTempoTransfer(wallet.address as Address, call, expiresAt, client.transport.url)
+      if (requireNetwork(input.chainId).family === 'tempo') {
+        transaction = await prepareTempoTransfer(wallet.address as Address, call, expiresAt, client.transport.url, input.chainId)
         if (roundedTempoFee(BigInt(String(transaction.gas_limit)) * BigInt(String(transaction.max_fee_per_gas))) > BigInt(input.maxFeeAtomic)) fail(409, 'fee_cap_exceeded', 'Estimated Tempo fee exceeds the requested cap')
       } else {
         const tx = await signer.prepareTransactionRequest({ account: wallet.address as Address, ...call, type: 'eip1559' })
-        if (tx.gas * tx.maxFeePerGas > BigInt(input.maxFeeAtomic)) fail(409, 'fee_cap_exceeded', 'Estimated network fee exceeds the requested cap')
-        if (await client.getBalance({ address: wallet.address as Address }) < call.value + tx.gas * tx.maxFeePerGas) fail(409, 'insufficient_gas_balance', 'Wallet balance cannot cover the transfer and maximum network fee. Fund the wallet before retrying.')
+        const l1Fee = requireNetwork(input.chainId).family === 'base' ? await estimateL1Fee(client, { ...tx, account: wallet.address as Address }) * 2n : 0n
+        if (tx.gas * tx.maxFeePerGas + l1Fee > BigInt(input.maxFeeAtomic)) fail(409, 'fee_cap_exceeded', 'Estimated network fee exceeds the requested cap')
+        if (await client.getBalance({ address: wallet.address as Address }) < call.value + tx.gas * tx.maxFeePerGas + l1Fee) fail(409, 'insufficient_gas_balance', 'Wallet balance cannot cover the transfer and maximum network fee. Fund the wallet before retrying.')
         transaction = { type: 2, chain_id: client.chain.id, to: call.to, value: toHex(call.value), data: call.data, nonce: tx.nonce, gas_limit: toHex(tx.gas), max_fee_per_gas: toHex(tx.maxFeePerGas), max_priority_fee_per_gas: toHex(tx.maxPriorityFeePerGas) }
       }
       return {
@@ -81,8 +80,9 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
       }
     },
     async prepare(wallet, input, _authorization, execution) {
+      this.validate(wallet, input)
       if (!execution || execution.expiresAt.getTime() <= Date.now()) throw new Error('Valid operation context required')
-      if (input.action === 'paid_fetch') return input.mpp ? mpp.prepare(wallet, input, execution) : input.chainId === solanaDevnet ? svm.prepare(wallet, input, execution) : x402.prepare(wallet, input, execution)
+      if (input.action === 'paid_fetch') return input.mpp ? mpp.prepare(wallet, input, execution) : requireNetwork(input.chainId).family === 'solana' ? svm.prepare(wallet, input, execution) : x402.prepare(wallet, input, execution)
       const request = await executor.buildRequest(wallet, input, execution.id, execution.expiresAt)
       if (request.url !== `https://api.privy.io/v1/wallets/${encodeURIComponent(wallet.providerWalletId)}/rpc` || request.headers['privy-app-id'] !== appId || Number(request.headers['privy-request-expiry']) <= Date.now()) throw new Error('Invalid or expired authorization request')
       if (!['eth_signTransaction', 'signTransaction'].includes(String(request.body.method))) throw new Error('Only transaction signing is permitted')
@@ -93,9 +93,9 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
         request_expiry: Number(request.headers['privy-request-expiry']),
       }) as { data?: { signed_transaction?: string } }
       if (!result.data?.signed_transaction) throw new Error('Missing signed transaction')
-      if (input.chainId === solanaDevnet) return verifySolanaTransfer(wallet.address, input, result.data.signed_transaction, (request.body.params as { transaction: string }).transaction)
+      if (requireNetwork(input.chainId).family === 'solana') return verifySolanaTransfer(wallet.address, input, result.data.signed_transaction, (request.body.params as { transaction: string }).transaction)
       if (!result.data.signed_transaction.startsWith('0x')) throw new Error('Expected signed EVM transaction')
-      if (input.chainId === 'eip155:42431') {
+      if (requireNetwork(input.chainId).family === 'tempo') {
         const transaction = (request.body.params as { transaction: Awaited<ReturnType<typeof prepareTempoTransfer>> }).transaction
         const signedTransaction = result.data.signed_transaction as Hex
         const expected = transferCall(input)
@@ -116,7 +116,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
       if (serialized.startsWith('solana:')) return broadcastSolanaTransfer(serialized.slice(7))
       const signedTransaction = serialized as TransactionSerialized
       const tx = serialized.startsWith('0x76') ? TxEnvelopeTempo.deserialize(serialized as `0x76${string}`) : parseTransaction(signedTransaction)
-      if (![84532, 5042002, 42431, 11155111].includes(tx.chainId!)) throw new Error('Broadcast network not permitted')
+      if (requireNetwork(`eip155:${tx.chainId}`).chainType !== 'ethereum') throw new Error('Broadcast network not permitted')
       const client = evmClient(`eip155:${tx.chainId}`)
       if (await client.getChainId() !== tx.chainId) throw new Error('RPC network mismatch')
       await client.sendRawTransaction({ serializedTransaction: signedTransaction })
@@ -125,19 +125,19 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
       if (!input) throw new Error('Network context required')
       if (input.action === 'paid_fetch' && !input.mpp) {
         if (!signedTransaction) throw new Error('Persisted payment required')
-        return input.chainId === solanaDevnet ? svm.receipt(signedTransaction, input, transactionHash) : x402.receipt(signedTransaction, input, transactionHash)
+        return requireNetwork(input.chainId).family === 'solana' ? svm.receipt(signedTransaction, input, transactionHash) : x402.receipt(signedTransaction, input, transactionHash)
       }
       if (!transactionHash) throw new Error('Transaction hash required')
-      if (input.chainId === solanaDevnet) return solanaReceipt(transactionHash, input)
+      if (requireNetwork(input.chainId).family === 'solana') return solanaReceipt(transactionHash, input)
       const client = evmClient(input.chainId)
       if (await client.getChainId() !== client.chain.id) throw new Error('RPC network mismatch')
       try {
         const receipt = await client.getTransactionReceipt({ hash: transactionHash as Hex })
-        const tempo = input.chainId === 'eip155:42431'
+        const tempo = requireNetwork(input.chainId).family === 'tempo'
         const fee = tempo ? roundedTempoFee(receipt.gasUsed * receipt.effectiveGasPrice) : receipt.gasUsed * receipt.effectiveGasPrice + BigInt((receipt as unknown as { l1Fee?: bigint }).l1Fee ?? 0n)
         if (input.identity) return { transactionHash: receipt.transactionHash, chainId: input.chainId, blockNumber: receipt.blockNumber.toString(), feeAtomic: fee.toString(), success: receipt.status === 'success', identity: identityReceipt(input, receipt) }
         const transfers = parseEventLogs({ abi: erc20Abi, logs: receipt.logs, eventName: 'Transfer' })
-        if (tempo && (receipt as unknown as { feeToken?: string }).feeToken?.toLowerCase() !== tempoFeeToken) throw new Error('Unexpected Tempo fee token')
+        if (tempo && (receipt as unknown as { feeToken?: string }).feeToken?.toLowerCase() !== requireNetwork(input.chainId).feeToken) throw new Error('Unexpected Tempo fee token')
         if (input.swap) {
           if (input.action === 'uniswap_approval') {
             const approvals = parseEventLogs({ abi: erc20Abi, logs: receipt.logs, eventName: 'Approval' })
@@ -161,7 +161,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
           return { transactionHash: receipt.transactionHash, chainId: input.chainId, blockNumber: receipt.blockNumber.toString(), feeAtomic: fee.toString(), success: receipt.status === 'success', swap: settled }
         }
         const transferred = input.asset === 'native' || transfers.some(log => log.address.toLowerCase() === input.asset.slice(6).toLowerCase() && log.args.from.toLowerCase() === receipt.from.toLowerCase() && log.args.to.toLowerCase() === input.to.toLowerCase() && log.args.value === BigInt(input.amountAtomic))
-        return { transactionHash: receipt.transactionHash, chainId: input.chainId, blockNumber: receipt.blockNumber.toString(), feeAtomic: fee.toString(), success: receipt.status === 'success' && transferred, feePayment: { asset: tempo ? `erc20:${tempoFeeToken}` : 'native', amountAtomic: (tempo ? fee / tempoFeeScale : fee).toString(), decimals: tempo ? 6 : 18 } }
+        return { transactionHash: receipt.transactionHash, chainId: input.chainId, blockNumber: receipt.blockNumber.toString(), feeAtomic: fee.toString(), success: receipt.status === 'success' && transferred, feePayment: { asset: tempo ? `erc20:${requireNetwork(input.chainId).feeToken}` : 'native', amountAtomic: (tempo ? fee / tempoFeeScale : fee).toString(), decimals: tempo ? 6 : 18 } }
       } catch (error) {
         if (error instanceof Error && error.name === 'TransactionReceiptNotFoundError') return null
         throw error

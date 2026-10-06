@@ -12,6 +12,6 @@ bun run index.ts
 bun run worker
 ```
 
-`DATABASE_URL` is required; there is no JSON fallback or automatic startup migration. Execution defaults disabled. Configure explicit local Anvil mode for disposable local tests or Privy mode for hosted testnet execution.
+`DATABASE_URL` is required; there is no JSON fallback or automatic startup migration. Execution defaults disabled. Configure explicit local Anvil mode for disposable local tests or Privy mode for hosted execution. Network configuration lives in `packages/core/src/networks.ts`; mainnet is the default, and testnets must be selected explicitly.
 
 See `../../docs/architecture.md` for API, approval security, limitations and local setup.

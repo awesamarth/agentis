@@ -11,15 +11,21 @@ import { getSetComputeUnitLimitInstruction, getSetComputeUnitPriceInstruction } 
 import { PublicKey } from '@solana/web3.js'
 import { x402Payment, type FetchRequest, type OperationInput, type Operation, type PaidHttpResponse } from '@agentis-hq/core/operations'
 import type { WalletRow } from '../db/schema'
-import { solanaConnection, solanaDevnet, solanaUsdc } from './solana'
+import { solanaConnection } from './solana'
+import { requireNetwork, networkByKey } from '@agentis-hq/core/networks'
 import { paymentHttp } from './payment-http'
 import { settlementHeaders, type SavePaymentHash } from './x402-settlement'
 import { fail } from '../errors'
 
 const origins = () => (process.env.AGENTIS_PAID_FETCH_LOCAL_ORIGINS ?? '').split(',').filter(Boolean)
-const rpcUrl = () => process.env.SOLANA_DEVNET_RPC_URL ?? 'https://api.devnet.solana.com'
+function svmNetwork(chainId: string) {
+  const network = requireNetwork(chainId)
+  if (network.family !== 'solana' || !network.x402) throw Error('Unsupported Solana payment network')
+  return { networkId: network.chainId as `solana:${string}`, solanaUsdc: network.x402.token, genesisHash: network.genesisHash, rpcUrl: process.env[network.rpcEnv] ?? network.rpcUrl }
+}
 const equalBytes = (a: ArrayLike<number>, b: ArrayLike<number>) => Buffer.from(a).equals(Buffer.from(b))
-export async function discoverSvm(input: FetchRequest): Promise<OperationInput> {
+export async function discoverSvm(input: FetchRequest, chainId = networkByKey('solana')!.chainId): Promise<OperationInput> {
+  const { networkId, solanaUsdc } = svmNetwork(chainId)
   let response
   try { response = await paymentHttp({ url: input.url, method: 'GET', headers: {} }, {}, origins()) }
   catch { fail(400, 'paid_fetch_unavailable', 'Paid URL was blocked or unavailable; no payment was created') }
@@ -27,27 +33,29 @@ export async function discoverSvm(input: FetchRequest): Promise<OperationInput> 
   let challenge
   try { challenge = decodePaymentRequiredHeader(response.headers['payment-required']) } catch { fail(400, 'invalid_challenge', 'Invalid x402 challenge') }
   if (challenge.x402Version !== 2 || !Array.isArray(challenge.accepts)) fail(400, 'invalid_challenge', 'Expected x402 v2')
-  const selected = challenge.accepts.find(r => r.network === solanaDevnet && r.scheme === 'exact' && r.asset === solanaUsdc && typeof r.extra?.feePayer === 'string')
-  if (!selected) fail(400, 'unsupported_payment', 'Expected sponsored Solana devnet USDC x402')
+  const selected = challenge.accepts.find(r => r.network === networkId && r.scheme === 'exact' && r.asset === solanaUsdc && typeof r.extra?.feePayer === 'string')
+  if (!selected) fail(400, 'unsupported_payment', 'Expected sponsored USDC payment on the selected Solana network')
   const payment = x402Payment.parse({ url: input.url, maxAmountAtomic: input.maxAmountAtomic, requirements: { ...selected, extra: { feePayer: selected.extra!.feePayer, ...(selected.extra!.memo ? { memo: selected.extra!.memo } : {}) } } })
   if (BigInt(selected.amount) > BigInt(input.maxAmountAtomic) || BigInt(selected.amount) > (1n << 64n) - 1n) fail(409, 'price_limit', 'Seller price exceeds the payment ceiling')
-  return { walletId: input.walletId, action: 'paid_fetch', chainId: solanaDevnet, asset: `spl:${solanaUsdc}`, to: address(selected.payTo), amountAtomic: selected.amount, maxFeeAtomic: '0', reason: input.reason ?? '', payment }
+  return { walletId: input.walletId, action: 'paid_fetch', chainId: networkId, asset: `spl:${solanaUsdc}`, to: address(selected.payTo), amountAtomic: selected.amount, maxFeeAtomic: '0', reason: input.reason ?? '', payment }
 }
 export function validateSvm(wallet: WalletRow, input: OperationInput) {
+  const { networkId, solanaUsdc } = svmNetwork(input.chainId)
   const p = input.payment
-  if (!p || input.mpp || input.action !== 'paid_fetch' || wallet.chainId !== solanaDevnet || input.chainId !== solanaDevnet || input.asset !== `spl:${solanaUsdc}` || input.maxFeeAtomic !== '0' || p.requirements.network !== solanaDevnet || p.requirements.asset !== solanaUsdc || p.requirements.scheme !== 'exact' || p.requirements.payTo !== input.to || p.requirements.amount !== input.amountAtomic || BigInt(input.amountAtomic) > BigInt(p.maxAmountAtomic) || !('feePayer' in p.requirements.extra) || p.requirements.extra.feePayer === wallet.address || input.to === wallet.address) throw new Error('Solana payment terms differ from approval')
+  if (!p || input.mpp || input.action !== 'paid_fetch' || wallet.chainId !== networkId || input.chainId !== networkId || input.asset !== `spl:${solanaUsdc}` || input.maxFeeAtomic !== '0' || p.requirements.network !== networkId || p.requirements.asset !== solanaUsdc || p.requirements.scheme !== 'exact' || p.requirements.payTo !== input.to || p.requirements.amount !== input.amountAtomic || BigInt(input.amountAtomic) > BigInt(p.maxAmountAtomic) || !('feePayer' in p.requirements.extra) || p.requirements.extra.feePayer === wallet.address || input.to === wallet.address) throw new Error('Solana payment terms differ from approval')
   return p.requirements.extra
 }
 type SignedPayment = { input: OperationInput; payer: string; source: string; destination: string; fromSlot: string; message: string; payerSignature: string; payload: PaymentPayload }
 export function createPrivySvm(privy: PrivyClient, authorizationKey: string, inspect: (id: string, owner: string) => Promise<{ address: string; serverAuthorized?: boolean }>) {
   return {
     async prepare(wallet: WalletRow, input: OperationInput, execution: { id: string; expiresAt: Date }) {
+      const { networkId, solanaUsdc, genesisHash, rpcUrl } = svmNetwork(input.chainId)
       const extra = validateSvm(wallet, input)
       if (Date.now() + 120_000 >= execution.expiresAt.getTime()) throw new Error('Not enough approval time remains')
       const owned = await inspect(wallet.providerWalletId, wallet.ownerId)
       if (!owned.serverAuthorized || owned.address !== wallet.address) throw new Error('Wallet ownership changed')
-      const connection = solanaConnection(rpcUrl())
-      if (!(await connection.getGenesisHash()).startsWith(solanaDevnet.slice(7))) throw new Error('RPC is not Solana devnet')
+      const connection = solanaConnection(input.chainId)
+      if (await connection.getGenesisHash() !== genesisHash) throw new Error('Solana RPC network mismatch')
       const fromSlot = String(await connection.getSlot())
       const [source] = await findAssociatedTokenPda({ mint: address(solanaUsdc), owner: address(wallet.address), tokenProgram: TOKEN_PROGRAM_ADDRESS })
       const [destination] = await findAssociatedTokenPda({ mint: address(solanaUsdc), owner: address(input.to), tokenProgram: TOKEN_PROGRAM_ADDRESS })
@@ -78,9 +86,9 @@ export function createPrivySvm(privy: PrivyClient, authorizationKey: string, ins
         payerSignature = getBase58Decoder().decode(signature)
         return signatures
       } }
-      const client = new x402Client().register(solanaDevnet, new ExactSvmScheme(signer, { rpcUrl: rpcUrl() }))
-      client.setSpendControls({ allowedAssets: [{ network: solanaDevnet, asset: solanaUsdc, maxAmountPerPayment: input.amountAtomic }] })
-      const payload = await client.createPaymentPayload({ x402Version: 2, resource: { url: input.payment!.url }, accepts: [input.payment!.requirements] })
+      const client = new x402Client().register(networkId, new ExactSvmScheme(signer, { rpcUrl }))
+      client.setSpendControls({ allowedAssets: [{ network: networkId, asset: solanaUsdc, maxAmountPerPayment: input.amountAtomic }] })
+      const payload = await client.createPaymentPayload({ x402Version: 2, resource: { url: input.payment!.url }, accepts: [{ ...input.payment!.requirements, network: networkId }] })
       const wire = getTransactionDecoder().decode(Buffer.from((payload.payload as { transaction: string }).transaction, 'base64'))
       if (!message || !payerSignature || Buffer.from(wire.messageBytes).toString('base64') !== message || !wire.signatures[native.address] || getBase58Decoder().decode(wire.signatures[native.address]!) !== payerSignature) throw new Error('Unexpected signed Solana payload')
       const stored: SignedPayment = { input, payer: wallet.address, source, destination, fromSlot, message, payerSignature, payload }
@@ -97,8 +105,9 @@ export function createPrivySvm(privy: PrivyClient, authorizationKey: string, ins
     async receipt(serialized: string, input: OperationInput, transactionHash?: string | null): Promise<Operation['receipt']> {
       const stored: SignedPayment = JSON.parse(serialized.slice(9))
       if (JSON.stringify(stored.input) !== JSON.stringify(input)) throw new Error('Persisted Solana payment mismatch')
-      const connection = solanaConnection(rpcUrl())
-      if (!(await connection.getGenesisHash()).startsWith(solanaDevnet.slice(7))) throw new Error('RPC is not Solana devnet')
+      const { networkId, solanaUsdc, genesisHash } = svmNetwork(input.chainId)
+      const connection = solanaConnection(input.chainId)
+      if (await connection.getGenesisHash() !== genesisHash) throw new Error('Solana RPC network mismatch')
       // Use the seller's hash first; paginated history is only lost-response recovery.
       let before: Parameters<typeof connection.getTransaction>[0] | undefined
       while (true) {
@@ -120,7 +129,7 @@ export function createPrivySvm(privy: PrivyClient, authorizationKey: string, ins
             const receivedBefore = amount(tx.meta.preTokenBalances, stored.destination), receivedAfter = amount(tx.meta.postTokenBalances, stored.destination)
             if (before === undefined || after === undefined || receivedBefore === undefined || receivedAfter === undefined || BigInt(before) - BigInt(after) !== BigInt(input.amountAtomic) || BigInt(receivedAfter) - BigInt(receivedBefore) !== BigInt(input.amountAtomic)) throw new Error('Solana settled amount differs from approval')
           }
-          return { transactionHash: candidate.signature, chainId: solanaDevnet, blockNumber: String(tx.slot), feeAtomic: '0', success: !tx.meta.err, feePayment: { asset: 'native', amountAtomic: '0', decimals: 9 } }
+          return { transactionHash: candidate.signature, chainId: networkId, blockNumber: String(tx.slot), feeAtomic: '0', success: !tx.meta.err, feePayment: { asset: 'native', amountAtomic: '0', decimals: 9 } }
         }
         if (transactionHash || candidates.length < 100) return null
         const next = candidates[candidates.length - 1]!.signature

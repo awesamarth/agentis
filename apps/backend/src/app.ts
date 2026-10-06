@@ -171,7 +171,7 @@ export function createApp(service: OperationService, identity: Identity, origins
     return c.json(await agentBalance(enabled))
   })
   app.route('/v1', onboardingRoutes(service, identity))
-  app.get('/v1/capabilities', c => c.json({ defaultChain: defaultProductChain, networks: Object.fromEntries(supportedNetworks.map(network => [network.chainId, { name: network.name, testnet: network.testnet, execution: service.executor?.id === 'privy' }])), core: { transfers: !!service.executor, x402: service.executor?.id === 'privy', mpp: service.executor?.id === 'privy' }, paidFetch: { methods: ['GET'], x402Networks: service.executor?.id === 'privy' ? ['eip155:84532', 'eip155:5042002', 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'] : [], mppNetworks: service.executor?.id === 'privy' ? ['eip155:42431'] : [] }, plugins: service.config, pluginCatalog: service.plugins.catalog, executor: service.executor?.id ?? null, approvalSecurity: service.executor?.id === 'anvil' ? 'local-demo-app-authorization' : service.executor?.id === 'privy' ? 'backend-policy-and-owner-approval' : 'live-execution-unavailable' }))
+  app.get('/v1/capabilities', c => c.json({ defaultChain: defaultProductChain, networks: Object.fromEntries(supportedNetworks.map(network => [network.chainId, { name: network.name, testnet: network.testnet, execution: service.executor?.id === 'privy' }])), core: { transfers: !!service.executor, x402: service.executor?.id === 'privy', mpp: service.executor?.id === 'privy' }, paidFetch: { methods: ['GET'], x402Networks: service.executor?.id === 'privy' ? supportedNetworks.filter(network => network.x402).map(network => network.chainId) : [], mppNetworks: service.executor?.id === 'privy' ? supportedNetworks.filter(network => network.mpp).map(network => network.chainId) : [] }, plugins: service.config, pluginCatalog: service.plugins.catalog, executor: service.executor?.id ?? null, approvalSecurity: service.executor?.id === 'anvil' ? 'local-demo-app-authorization' : service.executor?.id === 'privy' ? 'backend-policy-and-owner-approval' : 'live-execution-unavailable' }))
   app.get('/v1/wallets', async c => {
     const principal = c.get('principal')
     let scope = eq(wallets.ownerId, principal.ownerId)
@@ -185,10 +185,10 @@ export function createApp(service: OperationService, identity: Identity, origins
   app.post('/v1/wallets', async c => {
     const principal = c.get('principal')
     if (principal.kind !== 'owner') fail(403, 'owner_required', 'Only the owner can link wallets')
-    const body = z.object({ providerWalletId: z.string().min(1).max(128), chainId: z.enum(['eip155:8453', 'eip155:84532', 'eip155:1']), policy: walletPolicy }).strict().parse(await c.req.json())
+    const body = z.object({ providerWalletId: z.string().min(1).max(128), chainId: z.string().refine(chainId => supportedNetworks.some(network => network.chainId === chainId)), policy: walletPolicy }).strict().parse(await c.req.json())
     if (!identity.inspectWallet) fail(503, 'provider_unavailable', 'Privy wallet linking unavailable')
     const checked = await identity.inspectWallet(body.providerWalletId, principal.ownerId)
-    if (checked.chainType !== 'ethereum') fail(400, 'chain_mismatch', 'Expected Ethereum wallet')
+    if (checked.chainType !== supportedNetworks.find(network => network.chainId === body.chainId)!.chainType) fail(400, 'chain_mismatch', 'Wallet type does not match the selected network')
     const [wallet] = await service.db.insert(wallets).values({ ...checked, ownerId: principal.ownerId, chainId: body.chainId, policy: body.policy, provider: 'privy' }).onConflictDoNothing().returning()
     if (!wallet) fail(409, 'wallet_exists', 'Wallet already linked')
     return c.json({ id: wallet.id, address: wallet.address, chainId: wallet.chainId, policy: wallet.policy, policyVersion: wallet.policyVersion, enabled: wallet.enabled }, 201)

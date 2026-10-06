@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { networks } from './networks'
 
 // JSON amounts never pass through Number. Limits are atomic units of the wallet's
 // configured asset, including the maximum network fee for native transfers.
@@ -14,10 +15,10 @@ export type FetchRequest = z.input<typeof fetchRequest>
 export const x402Payment = z.object({
   url: z.url().max(4096), maxAmountAtomic: positiveAtomic,
   requirements: z.object({
-    scheme: z.literal('exact'), network: z.enum(['eip155:84532', 'eip155:11155111', 'eip155:5042002', 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1']), asset: z.string(), amount: positiveAtomic,
+    scheme: z.literal('exact'), network: z.string().refine(id => networks.some(network => network.chainId === id && network.x402), 'Unsupported x402 network').transform(id => id as `${string}:${string}`), asset: z.string(), amount: positiveAtomic,
     payTo: z.string(), maxTimeoutSeconds: z.number().int().min(15).max(120),
     extra: z.union([
-      z.object({ name: z.literal('USDC'), version: z.literal('2') }).strict(),
+      z.object({ name: z.string().min(1).max(80), version: z.literal('2') }).strict(),
       z.object({ feePayer: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/), memo: z.string().max(256).optional() }).strict(),
     ]),
   }).strict(),

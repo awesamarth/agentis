@@ -1,13 +1,11 @@
 import { erc20Abi, multicall3Abi, type Address } from 'viem'
-import { baseSepolia } from 'viem/chains'
 import { PublicKey } from '@solana/web3.js'
 import { z } from 'zod'
 import type { WalletRow } from '../db/schema'
-import { supportedNetworks, evmClient } from './networks'
+import { networks as supportedNetworks, evmClient } from './networks'
 import { solanaConnection } from './solana'
-import { quoteUsd } from './usd-budget'
+import { displayPrice, DISPLAY_CACHE_MS } from './display-prices'
 
-const portfolioNetworks = { base: 'base-sepolia', arc: 'arc-testnet', sepolia: 'eth-sepolia' } as const
 const portfolioResponse = z.object({
   data: z.object({
     tokens: z.array(z.object({ address: z.string(), network: z.string(), tokenAddress: z.string().nullable(), tokenBalance: z.string() })),
@@ -16,7 +14,7 @@ const portfolioResponse = z.object({
   error: z.object({ partialErrors: z.array(z.object({ network: z.string(), message: z.string() })) }).optional(),
 })
 type BalanceResult = {
-  networks: { chainId: string; name: string; tokens: { asset: string; symbol: string; decimals: number; amountAtomic: string | null; usdMicros: string | null }[]; usdMicros: string | null; complete: boolean }[]
+  networks: { chainId: string; name: string; testnet: boolean; tokens: { asset: string; symbol: string; decimals: number; amountAtomic: string | null; usdMicros: string | null }[]; usdMicros: string | null; complete: boolean }[]
   usdMicros: string | null
   complete: boolean
   checkedAt: string
@@ -56,7 +54,7 @@ async function portfolioSnapshot(wallets: WalletRow[]): Promise<PortfolioSnapsho
   const grouped = new Map<string, Set<string>>()
   for (const wallet of wallets) {
     const network = supportedNetworks.find(network => network.chainId === wallet.chainId)
-    const slug = network && network.key in portfolioNetworks ? portfolioNetworks[network.key as keyof typeof portfolioNetworks] : null
+    const slug = network?.portfolio
     if (!slug) continue
     const networks = grouped.get(wallet.address.toLowerCase()) ?? new Set<string>()
     networks.add(slug); grouped.set(wallet.address.toLowerCase(), networks)
@@ -87,11 +85,11 @@ async function portfolioSnapshot(wallets: WalletRow[]): Promise<PortfolioSnapsho
 async function readBalance(wallets: WalletRow[], portfolio: PortfolioSnapshot): Promise<BalanceResult> {
   const networks = await Promise.all(wallets.map(async wallet => {
     const network = supportedNetworks.find(network => network.chainId === wallet.chainId)
-    if (!network) return { chainId: wallet.chainId, name: wallet.chainId, tokens: [], usdMicros: null, complete: false }
-    const slug = network.key in portfolioNetworks ? portfolioNetworks[network.key as keyof typeof portfolioNetworks] : null
+    if (!network) return { chainId: wallet.chainId, name: wallet.chainId, testnet: false, tokens: [], usdMicros: null, complete: false }
+    const slug = network.portfolio
     const portfolioComplete = !!slug && portfolio.complete.has(pairKey(wallet.address, slug))
     const client = network.chainType === 'ethereum' ? evmClient(wallet.chainId, 2) : undefined
-    const connection = network.chainType === 'solana' ? solanaConnection() : undefined
+    const connection = network.chainType === 'solana' ? solanaConnection(wallet.chainId) : undefined
     let multicall: { status: string; result?: bigint }[] | null | undefined
     let solanaRead = Promise.resolve()
     const direct = async (asset: typeof network.assets[number], index: number) => {
@@ -110,9 +108,9 @@ async function readBalance(wallets: WalletRow[], portfolio: PortfolioSnapshot): 
         return read
       }
       if (!client) throw new Error('Unsupported balance network')
-      if (network.key === 'base') {
+      if (network.chain?.contracts?.multicall3) {
         multicall ??= await client.multicall({ contracts: network.assets.map(item => item.id === 'native'
-          ? { address: baseSepolia.contracts.multicall3.address, abi: multicall3Abi, functionName: 'getEthBalance' as const, args: [wallet.address as Address] as const }
+          ? { address: network.chain!.contracts!.multicall3!.address, abi: multicall3Abi, functionName: 'getEthBalance' as const, args: [wallet.address as Address] as const }
           : { address: item.id.slice(6) as Address, abi: erc20Abi, functionName: 'balanceOf' as const, args: [wallet.address as Address] as const }) }).catch(() => null)
         const balance = multicall?.[index]
         if (balance?.status !== 'success' || typeof balance.result !== 'bigint') throw new Error('Balance read failed')
@@ -130,21 +128,23 @@ async function readBalance(wallets: WalletRow[], portfolio: PortfolioSnapshot): 
           : await direct(asset, index)
         if (amount < 0n) throw new Error('Invalid balance')
         amountAtomic = amount.toString()
-        if (amount === 0n) usdMicros = '0'
+        if (network.testnet) { /* Token quantities only; skip price requests entirely. */ }
+        else if (amount === 0n) usdMicros = '0'
         else {
           try {
-            const quote = await quoteUsd({ chainId: wallet.chainId, asset: asset.id })
-            usdMicros = (amount * BigInt(quote.assetPrice) / (10n ** BigInt(asset.decimals) * 1_000_000_000_000n)).toString()
+            const price = await displayPrice(asset.priceId, { chainId: wallet.chainId, asset: asset.id })
+            usdMicros = (amount * price / (10n ** BigInt(asset.decimals) * 1_000_000_000_000n)).toString()
           } catch { /* Keep the token amount when only its USD price is unavailable. */ }
         }
       } catch { /* Missing values remain partial, never zero. */ }
       return { asset: asset.id, symbol: asset.symbol, decimals: asset.decimals, amountAtomic, usdMicros }
     }))
     const known = tokens.filter(token => token.usdMicros !== null)
-    return { chainId: network.chainId, name: network.name, tokens, usdMicros: known.length ? known.reduce((sum, token) => sum + BigInt(token.usdMicros!), 0n).toString() : null, complete: known.length === tokens.length }
+    return { chainId: network.chainId, name: network.name, testnet: network.testnet, tokens, usdMicros: known.length ? known.reduce((sum, token) => sum + BigInt(token.usdMicros!), 0n).toString() : null, complete: network.testnet ? tokens.every(token => token.amountAtomic !== null) : known.length === tokens.length }
   }))
-  const known = networks.filter(network => network.usdMicros !== null)
-  return { networks, usdMicros: known.length || !networks.length ? known.reduce((sum, network) => sum + BigInt(network.usdMicros!), 0n).toString() : null, complete: networks.every(network => network.complete), checkedAt: new Date().toISOString() }
+  const mainnets = networks.filter(network => !network.testnet)
+  const known = mainnets.filter(network => network.usdMicros !== null)
+  return { networks, usdMicros: known.length || !mainnets.length ? known.reduce((sum, network) => sum + BigInt(network.usdMicros!), 0n).toString() : null, complete: mainnets.every(network => network.complete), checkedAt: new Date().toISOString() }
 }
 
 async function loadAgentBalances(entries: { id: string; wallets: WalletRow[] }[]) {
@@ -166,7 +166,7 @@ async function loadAgentBalances(entries: { id: string; wallets: WalletRow[] }[]
       pending.set(key, task)
       try {
         const value = await task
-        cache.set(key, { value, expiresAt: Date.now() + (value.complete ? 45_000 : 10_000) })
+        cache.set(key, { value, expiresAt: Date.now() + DISPLAY_CACHE_MS })
         results.set(entry.id, value)
       } finally { pending.delete(key) }
     }))
@@ -176,6 +176,7 @@ async function loadAgentBalances(entries: { id: string; wallets: WalletRow[] }[]
 }
 
 export async function agentBalances(entries: { id: string; wallets: WalletRow[] }[]) {
+  entries = entries.map(entry => ({ ...entry, wallets: entry.wallets.filter(wallet => wallet.enabled) }))
   const key = JSON.stringify(entries.map(entry => [entry.id, cacheKey(entry.wallets)]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))))
   const active = pendingBatches.get(key)
   if (active) return active

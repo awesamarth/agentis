@@ -31,11 +31,12 @@ try {
   const legacyPath = join(directory, 'legacy.json')
   const legacy = JSON.stringify({ version: 2, id: crypto.randomUUID(), name: 'legacy', chain: 'solana', mnemonic, address: await deriveLocalAddress(mnemonic), createdAt: new Date().toISOString() })
   writeFileSync(legacyPath, legacy, { mode: 0o600 })
-  assert.equal(listLocalWallets(directory).find(item => item.name === 'legacy')!.networks[0]!.address, await deriveLocalAddress(mnemonic))
+  assert.throws(() => listLocalWallets(directory), /older local wallet/, 'Legacy testnet aliases must never become mainnet consent')
   assert.equal(readFileSync(legacyPath, 'utf8'), legacy)
   chmodSync(legacyPath, 0o644)
   assert.throws(() => listLocalWallets(directory), /permissions/)
   chmodSync(legacyPath, 0o600)
+  writeFileSync(legacyPath, JSON.stringify({ ...stored, id: crypto.randomUUID(), name: 'safe-fixture' }))
   symlinkSync(legacyPath, join(directory, 'link.json'))
   assert.throws(() => listLocalWallets(directory), /permissions/)
   const home = join(directory, 'home'); mkdirSync(home, { mode: 0o700 })
@@ -55,12 +56,12 @@ try {
     return Response.json({ jsonrpc: '2.0', id: rpc.id, result: '0x1' }) // Wrong EVM chain: mainnet.
   } })
   try {
-    const child = Bun.spawn(['bun', resolve('packages/cli/src/index.ts'), 'wallet', 'send', '--local', '--wallet', 'cli-check', '--chain', 'base', '--to', '0x0000000000000000000000000000000000000001', '--amount', '0.001', '--key', 'wrong-chain', '--yes'], { env: { ...process.env, HOME: home, BASE_SEPOLIA_RPC_URL: `http://127.0.0.1:${server.port}` }, stdout: 'pipe', stderr: 'pipe' })
+    const child = Bun.spawn(['bun', resolve('packages/cli/src/index.ts'), 'wallet', 'send', '--local', '--wallet', 'cli-check', '--chain', 'base', '--to', '0x0000000000000000000000000000000000000001', '--amount', '0.001', '--key', 'wrong-chain', '--yes'], { env: { ...process.env, HOME: home, BASE_RPC_URL: `http://127.0.0.1:${server.port}` }, stdout: 'pipe', stderr: 'pipe' })
     const error = await new Response(child.stderr).text()
     assert.equal(await child.exited, 1)
     assert(error.includes('network-and-wallet-validation'))
     assert.deepEqual(calls, ['eth_chainId']) // No signing/submission or even fee preparation.
   } finally { server.stop(true) }
   assert.equal(run(['fetch', '--local', '--wallet', 'cli-check']).exitCode, 1)
-  console.log('Local wallets: shared EVM derivation, separate Solana, Base default, legacy preservation, permissions, exact decimals, CLI JSON and wrong-chain rejection passed. No money sent.')
+  console.log('Local wallets: shared EVM derivation, separate Solana, Base mainnet default, legacy rejection/preservation, permissions, exact decimals, CLI JSON and wrong-chain rejection passed. No money sent.')
 } finally { rmSync(directory, { recursive: true, force: true }) }

@@ -12,6 +12,7 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
+    "./networks": { "types": "./dist/networks.d.ts", "import": "./dist/networks.js", "require": "./dist/networks.cjs" },
     "./operations": {
       "types": "./dist/operations.d.ts",
       "import": "./dist/operations.js",
@@ -37,6 +38,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "zod": "^4.5.4"
+    "zod": "^4.5.4",
+    "viem": "2.56.3"
   }
 }

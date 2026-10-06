@@ -121,6 +121,7 @@
       "name": "@agentis-hq/core",
       "version": "0.3.0",
       "dependencies": {
+        "viem": "2.56.3",
         "zod": "^4.5.4",
       },
       "devDependencies": {

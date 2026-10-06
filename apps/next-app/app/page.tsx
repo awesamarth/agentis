@@ -23,7 +23,7 @@ const productSections = [
   {
     kicker: 'payments',
     title: 'Agents can pay for work without leaving policy behind.',
-    body: 'Transfers and paid API requests share one authorization, execution, reconciliation and receipt lifecycle across supported testnets.',
+    body: 'Transfers and paid API requests share one authorization, execution, reconciliation and receipt lifecycle across supported networks.',
     items: ['explicit operation state', 'approval requests', 'stable retry keys'],
   },
   {
@@ -251,7 +251,7 @@ export default function LandingPage() {
               Dashboard for humans. SDK and MCP for agents. CLI for both.
             </h2>
             <p className="mt-7 max-w-2xl font-sans text-lg font-light leading-relaxed text-beige/70">
-              One SDK for operation requests, approval links and receipts. Hosted and local testnet execution use the same explicit payment and reconciliation model.
+              One SDK for operation requests, approval links and receipts. Hosted and local wallets use the same explicit payment and reconciliation model.
             </p>
             <Link
               href="https://docs.agentis.systems"
@@ -277,7 +277,7 @@ export default function LandingPage() {
 
       <footer className="flex flex-col gap-3 border-t border-beige-darker px-6 py-6 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-ink-muted sm:flex-row sm:items-center sm:justify-between sm:px-12">
         <span>agentis.systems</span>
-        <span>Testnet financial infrastructure · 2026</span>
+        <span>Payment infrastructure for agents · 2026</span>
       </footer>
     </main>
   )

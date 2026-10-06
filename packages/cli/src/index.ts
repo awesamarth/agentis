@@ -59,15 +59,15 @@ async function main() {
     Use none to remove a cap; zero blocks spending. No flags on set opens interactive editing.
   fetch <url> --local --wallet <name-or-id> --chain <chain> --max-amount <decimal> --key <request-key>
     [--max-fee <decimal>] [--yes]  Local x402 (Base/Arc/Solana USDC) / Tempo MPP alphaUSD.
-  wallet create --local [--name <name>] [--chains base,arc,tempo,solana,sepolia]
+  wallet create --local [--name <name>] [--chains base,ethereum,tempo,solana]
     Interactive name + chain selection; Base selected by default. Flags work without a terminal.
   wallet send [--hosted | --local] --wallet <name-or-id> --chain <chain> --to <address> --amount <decimal> --key <request-key>
     [--asset ETH|SOL|USDC|alphaUSD] [--max-fee <decimal>] [--yes]
     Hosted by default: ask mode returns a dashboard approval link; automatic executes within policy.
-    Testnets only. Native asset by default (alphaUSD on Tempo). --yes skips local confirmation only.
+    Mainnet by default. Use base-sepolia, sepolia, arc, tempo-testnet or solana-devnet for testnets. --yes skips local confirmation only.
     Reuse identical terms and --key after uncertainty: only the receipt is checked, never a resend.
   fetch <url> --wallet <wallet-id> --max-amount-atomic <cap> --key <idempotency-key>
-    Base/Arc/Solana testnet USDC x402 or Tempo alphaUSD MPP GET; Tempo also requires --max-fee-atomic (18-decimal protocol USD units).
+    USDC x402 or Tempo MPP paid GET; Tempo also requires --max-fee-atomic (18-decimal protocol USD units).
   operations create --file <request.json> --key <idempotency-key>
   operations list|get <id>|wait <id>
   operations approve|reject <id> --hash <operation-hash>   (owner only)
@@ -101,7 +101,13 @@ ${identityHelp}`)
   else if (command === 'wallet' && subcommand === 'history' && !values.local) output = await hostedHistory(values.agent, values.wallet, Number(values.limit ?? '20'))
   else if (command === 'policy') {
     if (!values.wallet) throw Error('--wallet required')
-    if (subcommand === 'show') output = await showLocalPolicy(values.wallet)
+    if (subcommand === 'show') {
+      const wallet = loadLocalWallet(values.wallet)
+      const environments = [...new Set(wallet.chains.map(chain => localNetworks[chain].testnet ? 'testnet' as const : 'mainnet' as const))]
+      const views = []
+      for (const environment of environments) views.push(await showLocalPolicy(wallet.id, environment))
+      output = views
+    }
     else {
       let changes = policyChanges
       if (!Object.keys(changes).length) {
@@ -124,12 +130,13 @@ ${identityHelp}`)
       const input = { wallet: values.wallet, chain: values.chain, to: values.to, amount: values.amount, key: values.key, asset: values.asset, maxFee: values['max-fee'] }
       if (input.to.includes('.')) {
         const chains = parseChains(input.chain); if (chains.length !== 1) throw Error('Choose one payment network')
+        if (!localNetworks[chains[0]!].testnet) throw Error('Use a recipient address for mainnet payments')
         const resolved = await new AgentisClient({ baseUrl: apiUrl(), token: '' }).identity.resolve(input.to, localNetworks[chains[0]!].chainId)
         if (!values.json) console.log(`${resolved.name} → ${resolved.address} (${resolved.chainId})`)
         input.to = resolved.address
       }
       const terms = localSendTerms(input)
-      const confirm = () => confirmLocalSend(`Send ${values.amount} ${terms.symbol} from ${terms.wallet.name} to ${terms.to} on ${terms.chain} testnet? Fee budget: ${terms.maxFee} ${(terms.chain === 'base' || terms.chain === 'sepolia') ? 'ETH' : terms.chain === 'solana' ? 'SOL' : terms.chain === 'tempo' ? 'alphaUSD' : 'USDC'}.`, values.yes ?? false, values.json ?? false)
+      const confirm = () => confirmLocalSend(`Send ${values.amount} ${terms.symbol} from ${terms.wallet.name} to ${terms.to} on ${localNetworks[terms.chain].name}? Fee budget: ${terms.maxFee} ${localNetworks[terms.chain].currency}.`, values.yes ?? false, values.json ?? false)
       output = await sendLocalTransfer(input, confirm)
     } else if (subcommand === 'history') {
       if (!values.wallet) throw Error('--wallet required')

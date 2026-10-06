@@ -15,6 +15,7 @@ import { fetchRequest } from '@agentis-hq/core/operations'
 import { discoverX402 } from './modules/x402'
 import { discoverMpp } from './modules/mpp'
 import { discoverSvm } from './modules/x402-solana'
+import { findNetwork, requireNetwork, sameEnvironment } from '@agentis-hq/core/networks'
 
 export type Principal = { kind: 'owner'; ownerId: string } | { kind: 'agent'; ownerId: string; grantId: string }
 export const hash = (value: string) => createHash('sha256').update(value).digest('hex')
@@ -88,7 +89,7 @@ export class OperationService {
       : await tx.select(operationSummaryColumns).from(operations).where(eq(operations.ownerId, wallet.ownerId))
     let total = 0n, hourly = 0n, daily = 0n
     for (const row of history) {
-      if (row.id === excludeId) continue
+      if (row.id === excludeId || !sameEnvironment(row.input.chainId, wallet.chainId)) continue
       const holding = (reserved as readonly string[]).includes(row.status)
       const charged = BigInt(holding ? row.usdReservedMicros ?? '0' : row.usdSettledMicros ?? '0')
       const age = Date.now() - (row.settledAt ?? row.createdAt).getTime()
@@ -115,6 +116,7 @@ export class OperationService {
     if (parsed.ens) fail(400, 'server_resolution', 'ENS payment metadata is server-managed; put the name in to')
     const requestHash = hash(JSON.stringify(parsed))
     if (parsed.action === 'transfer' && parsed.to.includes('.')) {
+      if (!requireNetwork(parsed.chainId).testnet) fail(400, 'ens_network', 'Use a recipient address for mainnet payments')
       const resolved = await resolveRecipient(parsed.to, parsed.chainId)
       parsed.to = resolved.address
       parsed.ens = { name: resolved.name, resolver: resolved.resolver, resolutionChainId: 'eip155:11155111' }
@@ -132,14 +134,14 @@ export class OperationService {
     let network = ''
     const existing = await this.db.transaction(async tx => {
       const wallet = await this.lockWallet(tx, principal, request.walletId)
-      if (!wallet.enabled || !['eip155:84532', 'eip155:5042002', 'eip155:42431', 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'].includes(wallet.chainId) || wallet.provider !== 'privy') fail(400, 'unsupported_payment', 'Choose an enabled hosted testnet wallet')
+      if (!wallet.enabled || findNetwork(wallet.chainId)?.enabled === false || !(findNetwork(wallet.chainId)?.x402 || findNetwork(wallet.chainId)?.mpp) || wallet.provider !== 'privy') fail(400, 'unsupported_payment', 'Choose a wallet that supports paid requests')
       network = wallet.chainId
       const [row] = await tx.select().from(operations).where(and(eq(operations.principalKey, principalKey), eq(operations.idempotencyKey, idempotencyKey)))
       if (row && row.requestHash !== requestHash) fail(409, 'idempotency_conflict', 'Idempotency key already used for a different request')
       return row ? this.view(row) : null
     })
     if (existing) return existing
-    return this.createInput(principal, buildTransfer(operationInput.parse(await (network === 'eip155:42431' ? discoverMpp(request) : network.startsWith('solana:') ? discoverSvm(request) : discoverX402(request, network)))), idempotencyKey, requestHash)
+    return this.createInput(principal, buildTransfer(operationInput.parse(await (requireNetwork(network).mpp ? discoverMpp(request, network) : requireNetwork(network).family === 'solana' ? discoverSvm(request, network) : discoverX402(request, network)))), idempotencyKey, requestHash)
   }
 
   private async createInput(principal: Principal, input: OperationInput, idempotencyKey: string, requestHash = hash(JSON.stringify(input))): Promise<Operation> {
@@ -220,13 +222,14 @@ export class OperationService {
     }
     const [agent] = await this.db.select().from(agents).where(and(eq(agents.id, wallet.agentId!), eq(agents.ownerId, principal.ownerId)))
     if (!agent) fail(404, 'not_found', 'Named agent not found')
-    const rows = await this.db.select({ status: operations.status, reserved: operations.usdReservedMicros, settled: operations.usdSettledMicros }).from(operations).innerJoin(wallets, eq(wallets.id, operations.walletId)).where(and(eq(operations.ownerId, principal.ownerId), eq(wallets.agentId, agent.id)))
+    const rows = await this.db.select({ chainId: wallets.chainId, status: operations.status, reserved: operations.usdReservedMicros, settled: operations.usdSettledMicros }).from(operations).innerJoin(wallets, eq(wallets.id, operations.walletId)).where(and(eq(operations.ownerId, principal.ownerId), eq(wallets.agentId, agent.id)))
     let spent = 0n, held = 0n
     for (const row of rows) {
+      if (!sameEnvironment(row.chainId, wallet.chainId)) continue
       if ((reserved as readonly string[]).includes(row.status)) held += BigInt(row.reserved ?? '0')
       else spent += BigInt(row.settled ?? '0')
     }
-    return { name: agent.name, agentId: agent.id, mode: agent.mode, limits: agent.limits, allowedRecipients: agent.allowedRecipients, spentMicros: spent.toString(), reservedMicros: held.toString(), walletPolicy: wallet.policy }
+    return { name: agent.name, agentId: agent.id, environment: requireNetwork(wallet.chainId).testnet ? 'testnet' : 'mainnet', mode: agent.mode, limits: agent.limits, allowedRecipients: agent.allowedRecipients, spentMicros: spent.toString(), reservedMicros: held.toString(), walletPolicy: wallet.policy }
   }
 
   async history(principal: Principal) {

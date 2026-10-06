@@ -17,8 +17,10 @@ Hosted commands cover balances, policy/history reads, transfers, paid fetches, U
 Local custody supports wallet creation, balances, policies, transfers and x402/MPP paid fetches:
 
 ```sh
-agentis wallet create --local --name local-agent --chains base,arc,tempo,solana,sepolia
+agentis wallet create --local --name local-agent --chains base,ethereum,tempo,solana
 agentis policy show --local --wallet local-agent
 ```
+
+Use `base-sepolia`, `sepolia`, `arc`, `tempo-testnet` or `solana-devnet` to select testnets explicitly.
 
 Local wallet files are plaintext, owner-permission-protected files. Reuse an unchanged request key after uncertainty. An unknown submission is not permission to pay again. Run `agentis --help` for exact flags.

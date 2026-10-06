@@ -26,7 +26,7 @@ const principal = { kind: 'agent' as const, ownerId: 'owner-a', grantId: 'grant-
 const valid = service([[wallet], [grant], [agent], [
   { status: 'confirmed', settled: '200', reserved: '999' }, { status: 'failed', settled: '25' },
   { status: 'unknown', reserved: '300' }, { status: 'queued', reserved: '40' }, { status: 'denied' },
-]])
+].map(row => ({ ...row, chainId: wallet.chainId }))])
 const policy = await valid.instance.policyView(principal, wallet.id)
 assert.equal(policy.spentMicros, '225'); assert.equal(policy.reservedMicros, '340')
 assert.equal(policy.limits.perTransaction, '0'); assert.equal(policy.limits.hourly, null)

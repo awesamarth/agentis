@@ -6,7 +6,7 @@ Give each agent its own wallets, budget and on-chain identity. Let it pay for AP
 
 [Live dashboard](https://www.agentis.systems/dashboard) · [Public API](https://api.agentis.systems/health) · [Uniswap integration](#uniswap-integration) · [ENSv2 integration](#ensv2-integration) · [Developer feedback](FEEDBACK.md)
 
-> **Testnet only.** The hosted dashboard and backend are deployed. The V2 CLI and SDK are published on npm, and the [agent skill](skills/agentis/SKILL.md) provides concise guidance for operating them.
+The [agent skill](skills/agentis/SKILL.md) provides concise guidance for operating Agentis through the CLI, SDK and remote MCP.
 
 ## Why Agentis
 
@@ -33,13 +33,17 @@ One backend handles authorization, execution and receipts across the dashboard, 
 
 | Network | Assets | Paid API support |
 | --- | --- | --- |
+| Base | ETH, USDC | x402 |
+| Ethereum | ETH, USDC | x402 |
+| Tempo | pathUSD | MPP |
+| Solana | SOL, USDC | x402 |
 | Base Sepolia | ETH, USDC | x402 |
 | Ethereum Sepolia | ETH, USDC | x402; requires a Sepolia-enabled seller/facilitator |
 | Arc Testnet | USDC | x402 |
 | Tempo Testnet | alphaUSD | MPP |
 | Solana Devnet | SOL, USDC | x402 |
 
-Base is the default EVM network. ENSv2 identity writes use Ethereum Sepolia; Uniswap currently uses Base Sepolia only. Enabling a network does not automatically enable a plugin or expand an existing restricted credential.
+Base mainnet is the default network. Enable testnets in agent settings to select them. Mainnet and testnets have separate budget usage; balance totals and profile spending include mainnet only. ENSv2 identity writes use Ethereum Sepolia; Uniswap currently uses Base Sepolia only. Enabling a network does not automatically enable a plugin or expand an existing restricted credential.
 
 ## Get started
 
@@ -47,7 +51,7 @@ Base is the default EVM network. ENSv2 identity writes use Ethereum Sepolia; Uni
 
 1. Sign in to the [dashboard](https://www.agentis.systems/dashboard).
 2. Create an agent, choose its networks, set spending limits and select optional plugins.
-3. Fund its wallets with the appropriate **testnet** assets, including gas where required.
+3. Fund its wallets on the selected networks, including gas where required.
 4. Connect your agent through CLI browser login, remote MCP, or an API key from the agent's detail page.
 5. Request a payment. In **ask** mode, the owner reviews and approves it in the dashboard. In **automatic** mode, eligible requests execute within the configured rules.
 
@@ -79,7 +83,7 @@ bun packages/cli/src/index.ts fetch https://your-seller.example/paid-data \
 
 # Or create a separate local-custody wallet.
 bun packages/cli/src/index.ts wallet create --local \
-  --name local-agent --chains base,arc,tempo,solana,sepolia
+  --name local-agent --chains base,ethereum,tempo,solana
 ```
 
 Keep the same request key and terms when checking an uncertain payment. A new key means a new payment request. Local CLI keys are **plaintext, owner-permission-protected files**, not encrypted wallets.
@@ -233,7 +237,7 @@ Authenticate → validate request → reserve budget → approve / authorize
 - **Uncertain execution:** signed bytes/hash are persisted before broadcast. Unknown submissions retain reservations and reconcile; a timeout is not permission to create another payment.
 - **Local custody:** the CLI enforces its own wallet-wide ledger and rules. This is local software enforcement, not hosted security or protection against someone who controls the machine/private key.
 
-This is testnet software, not an audited mainnet custody product. Rate limiting, webhook delivery and permanently unknown-submission recovery remain follow-up work. Umbra, Jupiter Earn and the former Quasar enforcement are not part of this V2 implementation.
+Mainnet support is implemented in source; live verification so far covers testnets, not mainnet payments. This is not an audited custody product. Rate limiting, webhook delivery and permanently unknown-submission recovery remain follow-up work. Umbra, Jupiter Earn and the former Quasar enforcement are not part of this V2 implementation.
 
 ## Run locally
 
