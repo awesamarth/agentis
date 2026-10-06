@@ -16,7 +16,7 @@ export async function sendHostedTransfer(input: TransferInput, agent?: string) {
   const { session, wallet, name } = candidates[0]!
   let operation = await session.client.operations.create({
     walletId: wallet.id, action: 'transfer', chainId,
-    asset: terms.asset.id,
+    asset: terms.asset.id, ...(terms.feeAsset ? { feeAsset: terms.feeAsset } : {}),
     to: terms.to, amountAtomic: terms.amountAtomic.toString(), maxFeeAtomic: terms.maxFeeAtomic.toString(),
   }, { idempotencyKey: input.key })
   if (operation.status === 'queued') operation = await session.client.operations.wait(operation.id, { timeoutMs: 120_000 })

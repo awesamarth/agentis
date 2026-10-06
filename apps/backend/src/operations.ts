@@ -9,6 +9,7 @@ import { ApiError, fail } from './errors'
 import { safeErrorDetails } from './modules/error-diagnostics'
 import type { PluginConfig } from './plugins'
 import { buildTransfer } from './modules/transfers'
+import { defaultTempoFeeAsset } from '@agentis-hq/core/tempo'
 import { quoteUsd, usdCost } from './modules/usd-budget'
 import type { Executor } from './providers/types'
 import { fetchRequest } from '@agentis-hq/core/operations'
@@ -141,6 +142,7 @@ export class OperationService {
       return row ? this.view(row) : null
     })
     if (existing) return existing
+    if (!requireNetwork(network).mpp && (request.asset || request.feeAsset)) fail(400, 'unsupported_payment', 'Token selection is currently supported only for Tempo MPP')
     return this.createInput(principal, buildTransfer(operationInput.parse(await (requireNetwork(network).mpp ? discoverMpp(request, network) : requireNetwork(network).family === 'solana' ? discoverSvm(request, network) : discoverX402(request, network)))), idempotencyKey, requestHash)
   }
 
@@ -158,6 +160,9 @@ export class OperationService {
         if (existing.requestHash !== requestHash) fail(409, 'idempotency_conflict', 'Idempotency key already used for a different operation')
         return this.view(existing)
       }
+      // Bind new Tempo fees to an explicit token before approval, after idempotency
+      // lookup. Older persisted operations retain their original fee-token meaning.
+      if (requireNetwork(input.chainId).family === 'tempo') input = { ...input, feeAsset: input.feeAsset ?? defaultTempoFeeAsset(input.chainId, input.asset).id }
       if (!this.executor || wallet.provider !== this.executor.id) fail(503, 'executor_unavailable', 'This provider is not enabled for execution yet')
       if (wallet.provider === 'privy' && !wallet.serverAuthorized) fail(409, 'wallet_setup_required', 'Open this agent’s rules and save once to enable hosted execution')
       this.executor.validate(wallet, input)

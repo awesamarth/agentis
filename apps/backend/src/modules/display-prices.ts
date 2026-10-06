@@ -1,4 +1,5 @@
-import { quoteUsd } from './usd-budget'
+import { requireNetwork } from '@agentis-hq/core/networks'
+import { readPrice } from '@agentis-hq/core/prices'
 
 export const DISPLAY_CACHE_MS = 120_000
 // Display-only assumption, keyed by configured asset identity, not arbitrary symbols.
@@ -9,7 +10,12 @@ export const DISPLAY_PRICE_OVERRIDES: Readonly<Record<string, bigint>> = {
 type PriceInput = { chainId: string; asset: string }
 type PriceSource = (input: PriceInput) => Promise<{ assetPrice: string }>
 
-export function createDisplayPriceReader(quote: PriceSource = quoteUsd) {
+const marketPrice: PriceSource = async input => {
+  const asset = requireNetwork(input.chainId).assets.find(asset => asset.id === input.asset)
+  if (!asset) throw Error('Unknown display asset')
+  return { assetPrice: (await readPrice(asset.priceId)).value }
+}
+export function createDisplayPriceReader(quote: PriceSource = marketPrice) {
   const prices = new Map<string, { price: bigint; expiresAt: number }>()
   const pending = new Map<string, Promise<bigint>>()
   return async function displayPrice(priceId: string, input: PriceInput) {

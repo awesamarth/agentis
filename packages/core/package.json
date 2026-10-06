@@ -12,14 +12,28 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
-    "./networks": { "types": "./dist/networks.d.ts", "import": "./dist/networks.js", "require": "./dist/networks.cjs" },
+    "./networks": {
+      "types": "./dist/networks.d.ts",
+      "import": "./dist/networks.js",
+      "require": "./dist/networks.cjs"
+    },
+    "./tempo": { "types": "./dist/tempo.d.ts", "import": "./dist/tempo.js", "require": "./dist/tempo.cjs" },
+    "./prices": { "types": "./dist/prices.d.ts", "import": "./dist/prices.js", "require": "./dist/prices.cjs" },
     "./operations": {
       "types": "./dist/operations.d.ts",
       "import": "./dist/operations.js",
       "require": "./dist/operations.cjs"
     },
-    "./solana-transfer": { "types": "./dist/solana-transfer.d.ts", "import": "./dist/solana-transfer.js", "require": "./dist/solana-transfer.cjs" },
-    "./payment-http": { "types": "./dist/payment-http.d.ts", "import": "./dist/payment-http.js", "require": "./dist/payment-http.cjs" },
+    "./solana-transfer": {
+      "types": "./dist/solana-transfer.d.ts",
+      "import": "./dist/solana-transfer.js",
+      "require": "./dist/solana-transfer.cjs"
+    },
+    "./payment-http": {
+      "types": "./dist/payment-http.d.ts",
+      "import": "./dist/payment-http.js",
+      "require": "./dist/payment-http.cjs"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -30,15 +44,33 @@
     "build": "tsup",
     "dev": "tsup --watch"
   },
-  "peerDependencies": { "@solana/web3.js": "3.0.0-rc.3", "@solana/kit": "6.8.0", "@solana-program/token": "0.11.0" },
-  "peerDependenciesMeta": { "@solana/web3.js": { "optional": true }, "@solana/kit": { "optional": true }, "@solana-program/token": { "optional": true } },
+  "peerDependencies": {
+    "@solana/web3.js": "3.0.0-rc.3",
+    "@solana/kit": "6.8.0",
+    "@solana-program/token": "0.11.0"
+  },
+  "peerDependenciesMeta": {
+    "@solana/web3.js": {
+      "optional": true
+    },
+    "@solana/kit": {
+      "optional": true
+    },
+    "@solana-program/token": {
+      "optional": true
+    }
+  },
   "devDependencies": {
-    "@solana/web3.js": "3.0.0-rc.3", "@solana/kit": "6.8.0", "@solana-program/token": "0.11.0",
+    "@solana/web3.js": "3.0.0-rc.3",
+    "@solana/kit": "6.8.0",
+    "@solana-program/token": "0.11.0",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "zod": "^4.5.4",
-    "viem": "2.56.3"
+    "@redstone-finance/protocol": "1.0.0",
+    "mppx": "0.9.3",
+    "viem": "2.56.3",
+    "zod": "^4.5.4"
   }
 }

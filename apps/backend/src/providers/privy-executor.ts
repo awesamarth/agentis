@@ -11,8 +11,9 @@ import { estimateL1Fee } from 'viem/op-stack'
 import { fail } from '../errors'
 import type { WalletRow } from '../db/schema'
 import type { Executor } from './types'
-import { prepareTempoTransfer, verifyTempoTransfer, roundedTempoFee, tempoFeeScale } from '../modules/tempo'
+import { prepareTempoTransfer, verifyTempoTransfer, roundedTempoFee } from '../modules/tempo'
 import { TxEnvelopeTempo } from 'ox/tempo'
+import { tempoFeeAsset, checkTempoFunds, verifyTempoReceipt } from '@agentis-hq/core/tempo'
 import { prepareSolanaTransfer, verifySolanaTransfer, broadcastSolanaTransfer, solanaReceipt } from '../modules/solana'
 
 import { uniswapCall, validateSwapPool, uniswap, poolSwapAbi } from '../plugins/uniswap/swap'
@@ -47,6 +48,8 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
       if (input.swap) { if (wallet.chainId !== uniswap.chainId) fail(400, 'unsupported_network', 'Uniswap currently requires Base Sepolia'); uniswapCall(input, wallet.address); return }
       if (input.action === 'paid_fetch') { if (input.mpp) validateMpp(wallet, input); else if (requireNetwork(input.chainId).family === 'solana') validateSvm(wallet, input); else validateX402(wallet, input); return }
       const network = requireNetwork(input.chainId)
+      if (network.family === 'tempo') tempoFeeAsset(input)
+      else if (input.feeAsset) fail(400, 'unsupported_asset', 'Fee token selection requires Tempo')
       if (wallet.chainId !== input.chainId) fail(400, 'wrong_network', 'Wallet does not belong to this network')
       if (!network.assets.some(asset => network.family === 'solana' ? asset.id === input.asset : asset.id.toLowerCase() === input.asset.toLowerCase())) fail(400, 'unsupported_asset', 'Transfer asset has not been enabled for this network')
       if (network.family === 'solana' && BigInt(input.amountAtomic) > 18_446_744_073_709_551_615n) fail(400, 'invalid_amount', 'Solana amount exceeds the supported range')
@@ -64,8 +67,10 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
       const signer = createWalletClient({ chain: client.chain, transport: http(client.transport.url, { retryCount: 0, timeout: 15_000 }) })
       let transaction: Record<string, unknown>
       if (requireNetwork(input.chainId).family === 'tempo') {
-        transaction = await prepareTempoTransfer(wallet.address as Address, call, expiresAt, client.transport.url, input.chainId)
-        if (roundedTempoFee(BigInt(String(transaction.gas_limit)) * BigInt(String(transaction.max_fee_per_gas))) > BigInt(input.maxFeeAtomic)) fail(409, 'fee_cap_exceeded', 'Estimated Tempo fee exceeds the requested cap')
+        transaction = await prepareTempoTransfer(wallet.address as Address, call, expiresAt, client.transport.url, input.chainId, input.feeAsset)
+        const maxFee = roundedTempoFee(BigInt(String(transaction.gas_limit)) * BigInt(String(transaction.max_fee_per_gas)))
+        if (maxFee > BigInt(input.maxFeeAtomic)) fail(409, 'fee_cap_exceeded', 'Estimated Tempo fee exceeds the requested cap')
+        await checkTempoFunds(client, input, wallet.address as Address, maxFee)
       } else {
         const tx = await signer.prepareTransactionRequest({ account: wallet.address as Address, ...call, type: 'eip1559' })
         const l1Fee = requireNetwork(input.chainId).family === 'base' ? await estimateL1Fee(client, { ...tx, account: wallet.address as Address }) * 2n : 0n
@@ -137,7 +142,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
         const fee = tempo ? roundedTempoFee(receipt.gasUsed * receipt.effectiveGasPrice) : receipt.gasUsed * receipt.effectiveGasPrice + BigInt((receipt as unknown as { l1Fee?: bigint }).l1Fee ?? 0n)
         if (input.identity) return { transactionHash: receipt.transactionHash, chainId: input.chainId, blockNumber: receipt.blockNumber.toString(), feeAtomic: fee.toString(), success: receipt.status === 'success', identity: identityReceipt(input, receipt) }
         const transfers = parseEventLogs({ abi: erc20Abi, logs: receipt.logs, eventName: 'Transfer' })
-        if (tempo && (receipt as unknown as { feeToken?: string }).feeToken?.toLowerCase() !== requireNetwork(input.chainId).feeToken) throw new Error('Unexpected Tempo fee token')
+        if (tempo) return { transactionHash: receipt.transactionHash, chainId: input.chainId, blockNumber: receipt.blockNumber.toString(), ...verifyTempoReceipt(receipt, input) }
         if (input.swap) {
           if (input.action === 'uniswap_approval') {
             const approvals = parseEventLogs({ abi: erc20Abi, logs: receipt.logs, eventName: 'Approval' })
@@ -161,7 +166,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
           return { transactionHash: receipt.transactionHash, chainId: input.chainId, blockNumber: receipt.blockNumber.toString(), feeAtomic: fee.toString(), success: receipt.status === 'success', swap: settled }
         }
         const transferred = input.asset === 'native' || transfers.some(log => log.address.toLowerCase() === input.asset.slice(6).toLowerCase() && log.args.from.toLowerCase() === receipt.from.toLowerCase() && log.args.to.toLowerCase() === input.to.toLowerCase() && log.args.value === BigInt(input.amountAtomic))
-        return { transactionHash: receipt.transactionHash, chainId: input.chainId, blockNumber: receipt.blockNumber.toString(), feeAtomic: fee.toString(), success: receipt.status === 'success' && transferred, feePayment: { asset: tempo ? `erc20:${requireNetwork(input.chainId).feeToken}` : 'native', amountAtomic: (tempo ? fee / tempoFeeScale : fee).toString(), decimals: tempo ? 6 : 18 } }
+        return { transactionHash: receipt.transactionHash, chainId: input.chainId, blockNumber: receipt.blockNumber.toString(), feeAtomic: fee.toString(), success: receipt.status === 'success' && transferred, feePayment: { asset: 'native', amountAtomic: fee.toString(), decimals: 18 } }
       } catch (error) {
         if (error instanceof Error && error.name === 'TransactionReceiptNotFoundError') return null
         throw error

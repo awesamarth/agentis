@@ -1,3 +1,4 @@
+import { tempoFeeAsset, defaultTempoFeeAsset } from '@agentis-hq/core/tempo'
 import { getAddress, parseUnits } from 'viem'
 import { PublicKey } from '@solana/web3.js'
 import { localNetworks, parseChains } from './local-networks'
@@ -9,6 +10,7 @@ export type TransferInput = {
   amount: string
   asset?: string
   maxFee?: string
+  feeAsset?: string
   key: string
 }
 
@@ -44,5 +46,7 @@ export function transferTerms(input: TransferInput, allowEns = false) {
   } catch {
     throw Error('Invalid recipient address for this chain')
   }
-  return { chain, symbol, asset, amountAtomic, maxFee, maxFeeAtomic, to }
+  if (input.feeAsset && network.family !== 'tempo') throw Error('Fee token selection requires Tempo')
+  const feeAsset = network.family === 'tempo' ? (input.feeAsset ? tempoFeeAsset({ chainId: network.chainId, feeAsset: input.feeAsset }) : defaultTempoFeeAsset(network.chainId, asset.id)).id : undefined
+  return { chain, symbol, asset, amountAtomic, maxFee, maxFeeAtomic, feeAsset, to }
 }

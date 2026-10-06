@@ -14,6 +14,7 @@ export default function TransferRequest() {
   const [chainId, setChainId] = useState('')
   const [walletId, setWalletId] = useState('')
   const [assetId, setAssetId] = useState('')
+  const [feeAssetId, setFeeAssetId] = useState('')
   const attempt = useRef<{ body: string; key: string } | null>(null)
   const client = useAgentisClient('Sign in first')
   const wallets = useQuery({ queryKey: ['wallets', user?.id], enabled: ready && authenticated, queryFn: () => client.wallets.list() })
@@ -24,11 +25,13 @@ export default function TransferRequest() {
   const network = availableNetworks.find(network => network.chainId === chainId) ?? availableNetworks[0]
   const networkWallets = available.filter(wallet => wallet.chainId === network?.chainId)
   const selected = networkWallets.find(wallet => wallet.id === walletId) ?? networkWallets[0]
-  const asset = network?.assets.find(asset => asset.id === assetId) ?? network?.assets[0]
+  const asset = network?.assets.find(asset => asset.id === assetId) ?? network?.assets.find(asset => asset.symbol === network.defaultAsset) ?? network?.assets[0]
+  const feeAssets = network?.family === 'tempo' ? network.assets.filter(asset => asset.feeEligible !== false) : []
+  const feeAsset = feeAssets.find(asset => asset.id === feeAssetId) ?? feeAssets.find(item => item.id === asset?.id) ?? feeAssets.find(asset => asset.symbol === network?.defaultAsset)
   const submit = useMutation({ mutationFn: async (form: FormData) => {
     if (!selected || !network || !asset) throw new Error('Set up an enabled wallet first')
     const value = String(form.get('amount'))
-    const input = { walletId: selected.id, chainId: selected.chainId, action: 'transfer' as const, asset: asset.id, to: String(form.get('to')), amountAtomic: parseAmount(value, asset.decimals).toString(), maxFeeAtomic: parseAmount(String(form.get('fee')), network.decimals).toString(), reason: String(form.get('reason')) }
+    const input = { walletId: selected.id, chainId: selected.chainId, action: 'transfer' as const, asset: asset.id, ...(feeAsset ? { feeAsset: feeAsset.id } : {}), to: String(form.get('to')), amountAtomic: parseAmount(value, asset.decimals).toString(), maxFeeAtomic: parseAmount(String(form.get('fee')), network.decimals).toString(), reason: String(form.get('reason')) }
     const body = JSON.stringify(input)
     if (attempt.current?.body !== body) attempt.current = { body, key: crypto.randomUUID() }
     return client.operations.create(input, { idempotencyKey: attempt.current.key })
@@ -37,12 +40,13 @@ export default function TransferRequest() {
   const inputClass = 'mt-2 w-full border border-beige-darker bg-[#f8f4ed] p-3 font-mono text-sm'
   return <section className="border border-beige-darker p-6"><h2 className="font-serif text-2xl font-bold">Make a payment</h2><p className="mt-2 text-ink-muted">Review a payment before authorizing it. Your wallet needs funds for the amount and network fee.</p>
     <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={event => { event.preventDefault(); submit.mutate(new FormData(event.currentTarget)) }}>
-      <Dropdown label="Network" value={network?.chainId ?? ''} disabled={submit.isPending} onChange={value => { setChainId(value); setWalletId(''); setAssetId(''); submit.reset() }} options={availableNetworks.map(network => ({ value: network.chainId, label: network.name }))} />
+      <Dropdown label="Network" value={network?.chainId ?? ''} disabled={submit.isPending} onChange={value => { setChainId(value); setWalletId(''); setAssetId(''); setFeeAssetId(''); submit.reset() }} options={availableNetworks.map(network => ({ value: network.chainId, label: network.name }))} />
       <Dropdown label="Agent wallet" value={selected?.id ?? ''} disabled={submit.isPending} onChange={setWalletId} options={networkWallets.map(wallet => ({ value: wallet.id, label: agents.data?.find(agent => agent.id === wallet.agentId)?.name ?? `Wallet ${wallet.id.slice(0, 8)}` }))} />
       <Dropdown label="Asset" value={asset?.id ?? ''} disabled={submit.isPending} onChange={setAssetId} options={network?.assets.map(asset => ({ value: asset.id, label: asset.symbol })) ?? []} />
       <label>Recipient address or ENS name<input key={network?.chainId} name="to" className={inputClass} required placeholder={network?.chainType === 'solana' ? 'Address or agent.yourname.eth' : '0x… or agent.yourname.eth'} /></label>
       <label>Amount ({asset?.symbol})<input key={`${network?.chainId}:${asset?.id}`} name="amount" className={inputClass} required inputMode="decimal" placeholder="0.00001" /></label>
-      <label>Fee budget ({network?.currency})<input key={network?.key} name="fee" className={inputClass} required inputMode="decimal" defaultValue={network?.defaultFee} /></label>
+      {network?.family === 'tempo' && <Dropdown label="Pay network fees with" value={feeAsset?.id ?? ''} disabled={submit.isPending} onChange={setFeeAssetId} options={feeAssets.map(asset => ({ value: asset.id, label: asset.symbol }))} />}
+      <label>Fee budget ({feeAsset?.symbol ?? network?.currency})<input key={network?.key} name="fee" className={inputClass} required inputMode="decimal" defaultValue={network?.defaultFee} /></label>
       <label className="sm:col-span-2">What is this payment for? (optional)<input name="reason" className={inputClass} maxLength={500} /></label>
       {submit.error && <p role="alert" className="sm:col-span-2">{submit.error.message}</p>}
       <button disabled={submit.isPending} className="bg-black p-4 font-mono text-xs uppercase tracking-widest text-beige disabled:opacity-40 sm:col-span-2">{submit.isPending ? 'Requesting…' : 'Review payment'}</button>

@@ -37,7 +37,9 @@ Agentis provides independent agent wallets, shared USD budgets, approvals and re
 
 ### Core payments
 
-- Hosted/local transfer, x402 and Tempo MPP network routing is catalog-driven. Mainnet Tempo uses pathUSD; testnet Tempo uses alphaUSD. Mainnet support is implemented locally, not live-verified or deployed by this change.
+- Hosted/local transfer, x402 and Tempo MPP network routing is catalog-driven. Tempo allowlist: OUSD/USDC.e/pathUSD on both environments, plus alphaUSD only on testnet; no betaUSD/thetaUSD. OUSD defaults for new selections. Payment and fee tokens are independently bound to approval; testnet USDC.e is not fee-eligible and defaults to OUSD fees at creation. Older implicit fee semantics remain unchanged. See `docs/tempo.md`.
+- Tempo pricing: signature/quorum-verified fresh RedStone pathUSD/canonical-USDC packages and direct CoinGecko Open USD quotes; no stale-price/$1 spending fallback. USDC pricing does not establish bridge solvency. MPP selects and persists one exact supported offer; only unsponsored pull-mode charge is supported, not sessions/splits/auto-swaps.
+- Mainnet support and Tempo hardening are implemented locally, not deployed or live-spending verified by these changes.
 - Onboarding/settings have an Enable testnets toggle; disabling it removes testnets from the selection. Disabled wallets are filtered before balance/RPC reads.
 - Mainnet-only USD balance/profile totals; testnet token balances and activity stay separate. Display responses/prices cache for 120 seconds, with display-only USDC=$1. Spending prices remain fresh and fail-closed.
 - Local wallet format is v4. Older aliases are rejected without modifying private files, rather than silently treating former testnet consent as mainnet consent.
@@ -67,9 +69,11 @@ All plugin execution still goes through Agentis policy, approval, signing and re
 
 Verified with real testnet activity: hosted/local transfers, Base/Arc/Solana x402, Tempo MPP, production Arc send, one Base Sepolia Uniswap swap, ENS namespace/records/delegation and ERC-8004 registration. Owner considers ENS identity setup done; do not keep it as the next polishing task. Separate agent-signed record-update and payment-to-name live checks remain pending below. Owner verified production ChatGPT web MCP connection/payment, revocation and non-consented wallet rejection. Focused fake-signer and local checks cover authorization, budgets, scheduling and MCP OAuth.
 
+Tempo hardening verification: offline token/fee/MPP/oracle regressions, the installed MPP client with fake RPC/signing, and isolated approval/accounting/unknown-submission checks pass. Live read-only probes verified all listed Tempo token contracts/fee eligibility, fresh mainnet price sources, and unpaid USDC.e/pathUSD seller offers. This does not establish funded end-to-end settlement.
+
 Still pending:
 
-- Live mainnet execution/paid-API verification and deployment of the catalog changes. No mainnet spending is authorized. Unit checks, local wallet/policy checks, isolated mainnet/testnet accounting and MCP/OAuth checks pass; no browser checks run.
+- Owner will perform live mainnet execution/paid-API verification. Deployment and funded live tests of the expanded Tempo token/fee matrix remain pending. No mainnet spending is authorized for the assistant. Unit checks, local wallet/policy checks, isolated mainnet/testnet accounting and MCP/OAuth checks pass; no browser checks run.
 - Plugins remain pinned to their existing testnets and their implementations were not changed. Mainnet ENS sends require recipient addresses; mainnet plugin support is not part of this work.
 - ENS agent-signed record update and payment-to-name live verification.
 - Additional live scheduled/funding Uniswap execution.
@@ -77,6 +81,7 @@ Still pending:
 - Rate limits, pagination, webhooks and operator recovery tooling.
 - Owner-deferred fiat funding: treat onramp/offramp as owner-only core wallet flows, not plugins. Privy + Meld/Onramp Money is the leading India/INR onramp candidate, but requires Meld KYB, a Privy React SDK upgrade and live regional verification; real providers fund mainnets, so do not silently target testnet wallet counterparts. Offramp remains later because Privy/Bridge does not document INR payout rails.
 - User TODO: Muse plugin and ChatGPT plugin. Track as future work, not authorization to implement; ChatGPT's existing custom MCP connection is already verified.
+- Owner-selected next integrations after Tempo hardening/mainnet validation: AgentCard and Mercator. Not started; inspect exact integration/custody/credential contracts before implementation.
 - Owner-tracked product TODOs, not approved implementation yet: Monid plugin (inspect its exact x402/MPP contracts first); possible Meta Muse integration (official material establishes Link’s wallet for agents is built into Muse, but not a public Muse connector platform); and a product/architecture decision between AgentCard and Link agent payments. Determine each option’s exact custody, approval, credential-handling, availability and integration contracts before deciding whether it is a core payment rail or an optional plugin. Link Financial Insights is a separate optional data integration, not part of payment core, and remains deferred.
 - Owner-tracked paid API/data-product candidates, exploratory only: (1) an agent-commerce capability detector and searchable index for MCP, OpenAPI, `llms.txt`, UCP, x402, MPP, authentication, networks/assets and live endpoint status; (2) a country-specific live-sports viewing availability database with official broadcaster/streaming links, language, price and replay information; and (3) a game-availability database covering storefronts, regional pricing, platforms, subscription catalogs, cloud gaming, cross-play/cross-save and delistings, potentially paired with a consumer discovery/backlog product. Prefer a useful public website plus developer API and optional MPP/x402 access; research data acquisition, legality, freshness, demand and maintenance cost before choosing one.
 

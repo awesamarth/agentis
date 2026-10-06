@@ -61,7 +61,7 @@ export class AgentisClient {
   fetch = (input: FetchRequest, options: { idempotencyKey: string }) => this.request<Operation>('/fetch', 'POST', input, { 'Idempotency-Key': options.idempotencyKey }, AbortSignal.timeout(60_000))
   capabilities = () => this.request<Record<string, unknown>>('/capabilities')
   onboarding = {
-    get: () => this.request<{ settings: { networks: string[]; defaultNetwork: string; totalBudgetUsd: string | null; completedAt: string } | null; networks: Array<{ key: string; name: string; chainId: string; chainType: string; currency: string; decimals: number; defaultFee: string; assets: Array<{ id: OperationInput['asset']; symbol: string; decimals: number }>; explorer: string; executionReady: boolean; testnet: boolean }> }>('/onboarding'),
+    get: () => this.request<{ settings: { networks: string[]; defaultNetwork: string; totalBudgetUsd: string | null; completedAt: string } | null; networks: Array<{ key: string; name: string; chainId: string; chainType: string; family: string; currency: string; decimals: number; defaultAsset: string; defaultFee: string; assets: Array<{ id: OperationInput['asset']; symbol: string; decimals: number; feeEligible?: boolean }>; explorer: string; executionReady: boolean; testnet: boolean }> }>('/onboarding'),
 
   }
   oauth = {

@@ -31,7 +31,7 @@ Cloud-hosted clients cannot reach your laptop's localhost. They need a deployed 
 - `agentis_policy`: read shared USD limits, mode and spent/reserved amounts.
 - `agentis_history`: recent payments across issuing keys within authorized wallets/networks.
 - `agentis_send`: decimal token amounts; creates a backend transfer request.
-- `agentis_fetch`: x402 Base/Arc/Solana USDC or Tempo MPP alphaUSD paid GET.
+- `agentis_fetch`: x402 USDC or Tempo MPP charge paid GET. Tempo supports OUSD, USDC.e and pathUSD, plus testnet alphaUSD. Optional `asset` selects the payment token; `feeAsset` selects an eligible gas token. Testnet USDC.e cannot pay gas; its creation-time default is OUSD. No sessions, sponsorship or automatic swaps.
 - `agentis_get_operation`: status, receipt and paid HTTP response for this connection's operations.
 - `agentis_list_operations`: this connection's requests.
 - `agentis_capabilities`: execution capabilities and network/asset metadata.

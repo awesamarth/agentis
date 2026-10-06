@@ -19,7 +19,16 @@ export function validatePaymentHeaders(headers: Record<string, string>) {
     if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name) || /[\r\n]/.test(value) || forbiddenHeaders.has(name.toLowerCase()) || (name.toLowerCase() === 'authorization' && /^Payment\s/i.test(value))) throw new Error('Unsafe or pre-signed request header')
   }
 }
-export async function paymentHttp(input: PaymentHttpRequest, paymentHeaders: Record<string, string> = {}, localOrigins: readonly string[] = [], onHeaders?: (headers: Record<string, string>) => Promise<void>): Promise<PaymentHttpResponse> {
+export function paymentHttp(input: PaymentHttpRequest, paymentHeaders: Record<string, string> = {}, localOrigins: readonly string[] = [], onHeaders?: (headers: Record<string, string>) => Promise<void>): Promise<PaymentHttpResponse> {
+  return boundedHttp(input, paymentHeaders, localOrigins, onHeaders, 1_048_576)
+}
+// The public RedStone snapshot contains all feeds (~2 MiB). This fixed-host,
+// credential-free oracle reader does not increase paid-response limits.
+export const redstoneSnapshotUrl = 'https://oracle-gateway-1.a.redstone.finance/data-packages/latest/redstone-primary-prod'
+export function redstoneHttp() {
+  return boundedHttp({ url: redstoneSnapshotUrl, method: 'GET', headers: {} }, {}, [], undefined, 4_194_304)
+}
+async function boundedHttp(input: PaymentHttpRequest, paymentHeaders: Record<string, string>, localOrigins: readonly string[], onHeaders: ((headers: Record<string, string>) => Promise<void>) | undefined, responseLimit: number): Promise<PaymentHttpResponse> {
   validatePaymentHeaders(input.headers)
   const url = new URL(input.url)
   const local = process.env.NODE_ENV !== 'production' && url.protocol === 'http:' && url.hostname === '127.0.0.1' && localOrigins.includes(url.origin)
@@ -53,7 +62,7 @@ export async function paymentHttp(input: PaymentHttpRequest, paymentHeaders: Rec
       if ((response.statusCode ?? 0) >= 300 && response.statusCode! < 400) { response.destroy(new Error('Paid request redirects are not followed')); return }
       if (response.headers['content-encoding'] && response.headers['content-encoding'] !== 'identity') { response.destroy(new Error('Compressed paid responses are not accepted')); return }
       const chunks: Buffer[] = []; let size = 0
-      response.on('data', (chunk: Buffer) => { size += chunk.length; if (size > 1_048_576) response.destroy(new Error('Response exceeds 1 MiB')); else chunks.push(chunk) })
+      response.on('data', (chunk: Buffer) => { size += chunk.length; if (size > responseLimit) response.destroy(new Error(`Response exceeds ${responseLimit / 1_048_576} MiB`)); else chunks.push(chunk) })
       response.on('end', () => {
         clearTimeout(deadline)
         void headersSaved.then(() => resolve({ status: response.statusCode ?? 502, headers, bodyBase64: Buffer.concat(chunks).toString('base64') }), reject)

@@ -3,18 +3,19 @@ import { mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, existsS
 import { join } from 'node:path'
 import { createPublicClient, createWalletClient, encodeFunctionData, erc20Abi, http, keccak256, type Hex, type Chain } from 'viem'
 import { mnemonicToAccount } from 'viem/accounts'
-import { TxEnvelopeTempo } from 'ox/tempo'
+import { TxEnvelopeTempo, SignatureEnvelope } from 'ox/tempo'
 import { tempo as tempoChain } from 'viem/chains'
 import { estimateL1Fee } from 'viem/op-stack'
 import { Connection, PublicKey } from '@solana/web3.js'
 import { getBase58Decoder } from '@solana/kit'
 import { buildSolanaTransfer } from '@agentis-hq/core/solana-transfer'
 import { localNetworks, type LocalChain } from './local-networks'
+import { checkTempoFunds, verifyTempoReceipt } from '@agentis-hq/core/tempo'
 import { transferTerms, type TransferInput } from './transfer-terms'
 import { deriveSolanaKey, loadLocalWallet, localWalletDirectory, privatePath } from './local-wallet'
 import { reserveLocal, signWithPolicy, settleLocal, releaseUnissued, LocalPolicyError } from './local-policy'
 
-type RecordData = { key?: string; createdAt?: string; request: string; wallet: string; chain: LocalChain; to: string; asset: string; amount: string; maxFee: string; status: string; hash?: string; signed?: string; feeAtomic?: string; failure?: { stage: string; code: string } }
+type RecordData = { key?: string; createdAt?: string; request: string; wallet: string; chain: LocalChain; to: string; asset: string; amount: string; maxFee: string; status: string; hash?: string; signed?: string; feeAtomic?: string; feeAsset?: string; feePayment?: { asset: string; amountAtomic: string; decimals: number }; failure?: { stage: string; code: string } }
 const tempoFee = (amount: bigint) => ((amount + 999_999_999_999n) / 1_000_000_000_000n) * 1_000_000_000_000n
 export function localSendTerms(input: TransferInput) {
   const terms = transferTerms(input)
@@ -23,16 +24,16 @@ export function localSendTerms(input: TransferInput) {
   return { ...terms, wallet }
 }
 export async function sendLocalTransfer(input: TransferInput, confirm: () => Promise<void> = async () => {}) {
-  const { chain, wallet, symbol, asset, amountAtomic, maxFee, maxFeeAtomic, to } = localSendTerms(input)
+  const { chain, wallet, symbol, asset, amountAtomic, maxFee, maxFeeAtomic, feeAsset, to } = localSendTerms(input)
   const network = localNetworks[chain]!
   const directory = join(localWalletDirectory(), 'transactions')
   mkdirSync(directory, { recursive: true, mode: 0o700 }); privatePath(directory, true)
-  const request = JSON.stringify({ wallet: wallet.id, chain, to, asset: symbol, amount: amountAtomic.toString(), maxFee: maxFeeAtomic.toString() })
+  const request = JSON.stringify({ wallet: wallet.id, chain, to, asset: symbol, amount: amountAtomic.toString(), maxFee: maxFeeAtomic.toString(), ...(input.feeAsset ? { feeAsset } : {}) })
   const hash = (value: string) => createHash('sha256').update(value).digest('hex')
   const file = join(directory, `${hash(`${wallet.id}:${input.key}`)}.json`)
   const lock = join(directory, `${hash(`${wallet.id}:${chain}`)}.lock`)
-  let record: RecordData = { key: input.key, createdAt: new Date().toISOString(), request, wallet: wallet.id, chain, to, asset: symbol, amount: input.amount, maxFee, status: 'preparing' }
-  const summary = () => ({ wallet: wallet.name, chainId: localNetworks[chain].chainId, to, amount: record.amount, asset: symbol, status: record.status, transactionHash: record.hash, feeAtomic: record.feeAtomic, key: input.key, ...(record.status === 'unknown' || record.status === 'submitted' ? { note: 'Not settled yet. Run the identical command with the same --key to check; do not send again with a new key.' } : {}) })
+  let record: RecordData = { key: input.key, createdAt: new Date().toISOString(), request, wallet: wallet.id, chain, to, asset: symbol, amount: input.amount, maxFee, feeAsset, status: 'preparing' }
+  const summary = () => ({ wallet: wallet.name, chainId: localNetworks[chain].chainId, to, amount: record.amount, asset: symbol, status: record.status, transactionHash: record.hash, feeAtomic: record.feeAtomic, feeAsset: record.feeAsset, feePayment: record.feePayment, key: input.key, ...(record.status === 'unknown' || record.status === 'submitted' ? { note: 'Not settled yet. Run the identical command with the same --key to check; do not send again with a new key.' } : {}) })
   const save = () => {
     const temporary = `${file}.${crypto.randomUUID()}.tmp`
     writeFileSync(temporary, JSON.stringify(record), { flag: 'wx', mode: 0o600 }); renameSync(temporary, file)
@@ -41,6 +42,7 @@ export async function sendLocalTransfer(input: TransferInput, confirm: () => Pro
   const solana = () => new Connection(process.env[network.rpcEnv] ?? network.rpcUrl, { commitment: 'confirmed', fetch: ((url: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) => fetch(url, { ...options, signal: AbortSignal.timeout(15_000) })) as typeof fetch })
   async function receipt() {
     if (!record.hash) throw Error('This request has no submitted transaction. Inspect its local journal before using a new key.')
+    const before = { ...record }
     try {
       if (network.family === 'solana') {
         const client = solana()
@@ -55,6 +57,10 @@ export async function sendLocalTransfer(input: TransferInput, confirm: () => Pro
         const client = createPublicClient({ chain: localNetworks[chain].chain as Chain, transport: transportFor(chain) })
         if (await client.getChainId() !== network.chain!.id) throw Error('Wrong network')
         const result = await client.getTransactionReceipt({ hash: record.hash as Hex })
+        if (network.family === 'tempo') {
+          const settled = verifyTempoReceipt(result, { chainId: network.chainId, asset: asset.id, feeAsset: record.feeAsset, to, amountAtomic: amountAtomic.toString() }, wallet.addresses.evm!)
+          record.feePayment = settled.feePayment
+        }
         record.status = result.status === 'success' ? 'confirmed' : 'failed'
         const fee = result.gasUsed * result.effectiveGasPrice + BigInt((result as unknown as { l1Fee?: bigint }).l1Fee ?? 0n)
         record.feeAtomic = String(network.family === 'tempo' ? tempoFee(fee) : fee)
@@ -64,7 +70,7 @@ export async function sendLocalTransfer(input: TransferInput, confirm: () => Pro
         delete record.signed
       }
       save()
-    } catch { /* Unknown submission is not permission to sign or broadcast again. */ }
+    } catch { record = before /* Failed reconciliation/ledger writes never report a false confirmation. */ }
     return summary()
   }
   if (existsSync(file)) {
@@ -104,17 +110,25 @@ export async function sendLocalTransfer(input: TransferInput, confirm: () => Pro
         if (account.address.toLowerCase() !== wallet.addresses.evm?.toLowerCase()) throw Error('Address mismatch')
         const publicClient = createPublicClient({ chain: localNetworks[chain].chain as Chain, transport: transportFor(chain) })
         if (await publicClient.getChainId() !== network.chain!.id) throw Error('Wrong network')
-        await reserveLocal(wallet.id, input.key, { chain, asset: symbol, amountAtomic: amountAtomic.toString(), maxFeeAtomic: maxFeeAtomic.toString() })
+        await reserveLocal(wallet.id, input.key, { chain, asset: symbol, amountAtomic: amountAtomic.toString(), maxFeeAtomic: maxFeeAtomic.toString(), feeAsset })
         await confirm()
         const call = asset.token ? { to: asset.token as Hex, value: 0n, data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [to as Hex, amountAtomic] }) } : { to: to as Hex, value: amountAtomic, data: '0x' as Hex }
         let signed: Hex
         stage = 'evm-transaction-preparation'
         if (network.family === 'tempo') {
           const client = createWalletClient({ account, chain: network.chain as typeof tempoChain, transport: transportFor(chain) })
-          const prepared = await client.prepareTransactionRequest({ account, nonce: await publicClient.getTransactionCount({ address: account.address, blockTag: 'pending' }), type: 'tempo', calls: [call], feeToken: asset.token as Hex, nonceKey: 0n, validBefore: Math.floor(Date.now() / 1000) + 120 })
+          const prepared = await client.prepareTransactionRequest({ account, nonce: await publicClient.getTransactionCount({ address: account.address, blockTag: 'pending' }), type: 'tempo', calls: [call], feeToken: feeAsset!.slice(6) as Hex, nonceKey: 0n, validBefore: Math.floor(Date.now() / 1000) + 120 })
           if (tempoFee(prepared.gas * prepared.maxFeePerGas) > maxFeeAtomic) throw Error('Fee cap exceeded')
+          await checkTempoFunds(publicClient, { chainId: network.chainId, asset: asset.id, feeAsset, amountAtomic: amountAtomic.toString() }, account.address, prepared.gas * prepared.maxFeePerGas)
           stage = 'tempo-signing'
-          signed = await signWithPolicy(wallet.id, input.key, () => client.signTransaction(prepared))
+          signed = await signWithPolicy(wallet.id, input.key, async () => {
+            if (prepared.validBefore! * 1000 <= Date.now() + 3000) throw Error('Tempo signing window expired')
+            return client.signTransaction(prepared)
+          })
+          const actual = TxEnvelopeTempo.deserialize(signed as `0x76${string}`)
+          const expected = TxEnvelopeTempo.deserialize((network.chain as typeof tempoChain).serializers.transaction(prepared as never) as `0x76${string}`)
+          const payload = TxEnvelopeTempo.getSignPayload(actual)
+          if (!actual.signature || payload !== TxEnvelopeTempo.getSignPayload(expected) || SignatureEnvelope.extractAddress({ payload, signature: actual.signature }).toLowerCase() !== account.address.toLowerCase()) throw Error('Tempo signed transaction differs from approved terms')
         } else {
           const client = createWalletClient({ account, chain: localNetworks[chain].chain as Chain, transport: transportFor(chain) })
           const prepared = await client.prepareTransactionRequest({ ...call, type: 'eip1559', account, nonce: await publicClient.getTransactionCount({ address: account.address, blockTag: 'pending' }) })

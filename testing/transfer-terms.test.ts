@@ -31,7 +31,7 @@ test('ENS pass-through is explicit; local construction does not silently resolve
 
 test('asset defaults and fee units remain network-specific', () => {
   const tempo = transferTerms({ ...input, chain: 'tempo', asset: undefined })
-  expect(tempo.symbol).toBe('pathUSD')
+  expect(tempo.symbol).toBe('OUSD')
   expect(tempo.amountAtomic).toBe(1000001n)
   expect(tempo.maxFeeAtomic).toBe(10000000000000000n)
   const solana = transferTerms({ ...input, chain: 'solana', to: '11111111111111111111111111111111', asset: undefined })

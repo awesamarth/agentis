@@ -1,17 +1,15 @@
-import { z } from 'zod'
 import { Challenge, Credential } from 'mppx'
 import { tempo } from 'mppx/client'
-import { Methods } from 'mppx/tempo'
 import { createViemAccount, formatViemTransaction } from '@privy-io/node/viem'
 import type { PrivyClient } from '@privy-io/node'
 import { createWalletClient, http, decodeFunctionData, getAddress, type Hex } from 'viem'
 import { tempo as tempoMainnet } from 'viem/chains'
 import { Abis } from 'viem/tempo'
 import { SignatureEnvelope, TxEnvelopeTempo } from 'ox/tempo'
-import { positiveAtomic, type FetchRequest, type OperationInput, type PaidHttpResponse } from '@agentis-hq/core/operations'
+import { type FetchRequest, type OperationInput, type PaidHttpResponse } from '@agentis-hq/core/operations'
 import type { WalletRow } from '../db/schema'
 import { evmClient, requireNetwork } from './networks'
-import { roundedTempoFee } from './tempo'
+import { roundedTempoFee, selectTempoChallenge, parseTempoChallenge, tempoFeeAsset, tempoAsset, defaultTempoFeeAsset, checkTempoFunds } from '@agentis-hq/core/tempo'
 import { paymentHttp } from './payment-http'
 import { fail } from '../errors'
 
@@ -21,37 +19,35 @@ function mppNetwork(chainId: string) {
   return { ...network, feeToken: network.feeToken, chain: network.chain }
 }
 const origins = () => (process.env.AGENTIS_PAID_FETCH_LOCAL_ORIGINS ?? '').split(',').filter(Boolean)
-const terms = z.object({ amount: positiveAtomic, currency: z.string(), recipient: z.string(), methodDetails: z.object({
-  chainId: z.number().int().positive(), feePayer: z.literal(false).optional(), supportedModes: z.array(z.enum(['pull', 'push'])).optional(), memo: z.string().regex(/^0x[0-9a-fA-F]{64}$/).optional(),
-}).strict() }).strict()
-function parseChallenge(header: string, chainId: string) {
-  const network = mppNetwork(chainId)
-  const tempoFeeToken = network.feeToken
-  const challenge = Challenge.deserialize(header, { methods: [Methods.charge] })
-  const request = terms.parse(challenge.request)
-  if (request.methodDetails.chainId !== network.chain.id || challenge.method !== 'tempo' || challenge.intent !== 'charge' || (challenge.header && challenge.header.toLowerCase() !== 'authorization') || request.currency.toLowerCase() !== tempoFeeToken || (request.methodDetails.supportedModes && !request.methodDetails.supportedModes.includes('pull')) || !challenge.expires || !Number.isFinite(Date.parse(challenge.expires))) throw new Error('Unsupported Tempo charge')
-  return { challenge, request }
-}
+
 export async function discoverMpp(input: FetchRequest, chainId = 'eip155:4217'): Promise<OperationInput> {
-  const network = mppNetwork(chainId)
-  const tempoFeeToken = network.feeToken
+  mppNetwork(chainId)
+  let selectedFee: string | undefined
+  try {
+    if (input.asset) tempoAsset(chainId, input.asset)
+    if (input.feeAsset) selectedFee = tempoFeeAsset({ chainId, feeAsset: input.feeAsset }).id
+  } catch { fail(400, 'unsupported_token', 'Choose an enabled Tempo payment token and an eligible fee token for this network') }
   if (!input.maxFeeAtomic) fail(400, 'fee_cap_required', 'Tempo requires --max-fee-atomic (18-decimal protocol USD fee units)')
   let response
   try { response = await paymentHttp({ url: input.url, method: 'GET', headers: {} }, {}, origins()) }
   catch { fail(400, 'paid_fetch_unavailable', 'Paid URL was blocked or unavailable; no payment was created') }
   if (response.status !== 402 || !response.headers['www-authenticate']) fail(400, 'mpp_required', 'Expected a Tempo MPP charge challenge')
   let parsed
-  try { parsed = parseChallenge(response.headers['www-authenticate'], chainId) } catch { fail(400, 'unsupported_payment', 'Expected an unsponsored Tempo charge matching the selected wallet network and token') }
-  const { challenge, request } = parsed
+  try { parsed = selectTempoChallenge(response.headers['www-authenticate'], chainId, input.maxAmountAtomic, input.asset) } catch { fail(400, 'unsupported_payment', 'No supported Tempo charge within the selected token, network, price and expiry limits') }
+  const { challenge, request, asset } = parsed
+  const feeAsset = selectedFee ?? defaultTempoFeeAsset(chainId, asset.id).id
   if (BigInt(request.amount) > BigInt(input.maxAmountAtomic)) fail(409, 'price_limit', 'Seller price exceeds your payment ceiling')
   const deadline = Date.parse(challenge.expires!)
   if (deadline < Date.now() + 30_000 || deadline > Date.now() + 600_000) fail(400, 'challenge_expiry', 'Expected a challenge expiring within ten minutes, with time left to approve')
-  return { walletId: input.walletId, action: 'paid_fetch', chainId, asset: `erc20:${tempoFeeToken}`, to: getAddress(request.recipient), amountAtomic: request.amount, maxFeeAtomic: input.maxFeeAtomic, reason: input.reason ?? '', mpp: { url: input.url, challenge: response.headers['www-authenticate'], expiresAt: challenge.expires!, maxAmountAtomic: input.maxAmountAtomic } }
+  return { walletId: input.walletId, action: 'paid_fetch', chainId, asset: asset.id, feeAsset, to: getAddress(request.recipient), amountAtomic: request.amount, maxFeeAtomic: input.maxFeeAtomic, reason: input.reason ?? '', mpp: { url: input.url, challenge: Challenge.serialize(challenge), expiresAt: challenge.expires!, maxAmountAtomic: input.maxAmountAtomic } }
 }
 export function validateMpp(wallet: WalletRow, input: OperationInput) {
-  const network = input.chainId, tempoFeeToken = mppNetwork(network).feeToken
-  if (!input.mpp || input.payment || input.action !== 'paid_fetch' || wallet.chainId !== network || input.chainId !== network || input.asset.toLowerCase() !== `erc20:${tempoFeeToken}` || BigInt(input.maxFeeAtomic) <= 0n) throw new Error('Invalid MPP operation')
-  const parsed = parseChallenge(input.mpp.challenge, network)
+  const network = input.chainId
+  mppNetwork(network)
+  tempoFeeAsset(input)
+  if (!input.mpp || input.payment || input.action !== 'paid_fetch' || wallet.chainId !== network || BigInt(input.maxFeeAtomic) <= 0n) throw new Error('Invalid MPP operation')
+  const parsed = parseTempoChallenge(input.mpp.challenge, network)
+  if (input.asset.toLowerCase() !== parsed.asset.id) throw Error('MPP currency differs from approval')
   if (parsed.request.recipient.toLowerCase() !== input.to.toLowerCase() || parsed.request.amount !== input.amountAtomic || BigInt(input.amountAtomic) > BigInt(input.mpp.maxAmountAtomic) || parsed.challenge.expires !== input.mpp.expiresAt) throw new Error('MPP terms differ from approval')
   return parsed.challenge
 }
@@ -60,7 +56,8 @@ type SignedPayment = { input: OperationInput; credential: string; signed: Hex; h
 export function createPrivyMpp(privy: PrivyClient, authorizationKey: string, inspect: (id: string, owner: string) => Promise<{ address: string; serverAuthorized?: boolean }>) {
   return {
     async prepare(wallet: WalletRow, input: OperationInput, execution: { id: string; expiresAt: Date }) {
-      const config = mppNetwork(input.chainId), network = config.chainId, tempoFeeToken = config.feeToken
+      const config = mppNetwork(input.chainId), network = config.chainId, tempoFeeToken = tempoFeeAsset(input).id.slice(6) as Hex
+      const paymentToken = tempoAsset(network, input.asset).id.slice(6) as Hex
       const challenge = validateMpp(wallet, input)
       const deadline = Math.min(execution.expiresAt.getTime(), Date.parse(challenge.expires!))
       if (Date.now() + 30_000 >= deadline) throw new Error('MPP approval expired or too close to expiry')
@@ -71,16 +68,20 @@ export function createPrivyMpp(privy: PrivyClient, authorizationKey: string, ins
       const native = createViemAccount(privy, { walletId: wallet.providerWalletId, address: wallet.address as Hex, authorizationContext: { authorization_private_keys: [authorizationKey] } })
       let signed: Hex | undefined, hash: Hex | undefined, attempted = false
       const refuse = async (): Promise<never> => { throw new Error('Only the approved Tempo transaction may be signed') }
-      const account: typeof native = { ...native, sign: refuse, signMessage: refuse, signTypedData: refuse, async signTransaction(transaction, options) {
+      const account: typeof native = { ...native, sign: refuse, signMessage: refuse, signTypedData: refuse, signAuthorization: refuse, async signTransaction(transaction, options) {
         if (attempted) throw new Error('Only one MPP signature is allowed')
         attempted = true
         const tx = formatViemTransaction(transaction)
         if (tx.type !== 118 || tx.chain_id !== config.chain.id || tx.calls.length !== 1 || tx.fee_token?.toLowerCase() !== tempoFeeToken || tx.fee_payer_signature || tx.access_list?.length || BigInt(tx.valid_after ?? 0) < 0n || BigInt(tx.valid_after ?? 0) > BigInt(Math.floor(Date.now() / 1000))) throw new Error('Unsupported Tempo transaction')
         const call = tx.calls[0]!
         const decoded = decodeFunctionData({ abi: Abis.tip20, data: call.data as Hex })
-        if (call.to.toLowerCase() !== tempoFeeToken || BigInt(call.value ?? 0) !== 0n || decoded.functionName !== 'transferWithMemo' || decoded.args[0].toLowerCase() !== input.to.toLowerCase() || decoded.args[1] !== BigInt(input.amountAtomic)) throw new Error('MPP call differs from approved recipient or amount')
-        const expected = TxEnvelopeTempo.from({ chainId: config.chain.id, calls: [{ to: tempoFeeToken, data: call.data as Hex, value: 0n }], feeToken: tempoFeeToken, nonceKey: BigInt(tx.nonce_key!), nonce: BigInt(tx.nonce!), validAfter: Number(BigInt(tx.valid_after ?? 0)), validBefore: Number(BigInt(tx.valid_before!)), gas: BigInt(tx.gas_limit!), maxFeePerGas: BigInt(tx.max_fee_per_gas!), maxPriorityFeePerGas: BigInt(tx.max_priority_fee_per_gas!) })
+        if (call.to.toLowerCase() !== paymentToken || BigInt(call.value ?? 0) !== 0n || decoded.functionName !== 'transferWithMemo' || decoded.args[0].toLowerCase() !== input.to.toLowerCase() || decoded.args[1] !== BigInt(input.amountAtomic) || (challenge.request.methodDetails.memo && decoded.args[2] !== challenge.request.methodDetails.memo)) throw new Error('MPP call differs from approved recipient or amount')
+        const expected = TxEnvelopeTempo.from({ chainId: config.chain.id, calls: [{ to: paymentToken, data: call.data as Hex, value: 0n }], feeToken: tempoFeeToken, nonceKey: BigInt(tx.nonce_key!), nonce: BigInt(tx.nonce!), validAfter: Number(BigInt(tx.valid_after ?? 0)), validBefore: Number(BigInt(tx.valid_before!)), gas: BigInt(tx.gas_limit!), maxFeePerGas: BigInt(tx.max_fee_per_gas!), maxPriorityFeePerGas: BigInt(tx.max_priority_fee_per_gas!) })
         if (expected.nonceKey !== (1n << 256n) - 1n || expected.validBefore! * 1000 > deadline || expected.validBefore! * 1000 <= Date.now() + 3000 || roundedTempoFee(expected.gas! * expected.maxFeePerGas!) > BigInt(input.maxFeeAtomic)) throw new Error('MPP expiry or gas exceeds approval')
+        const envelope = transaction as unknown as { authorizationList?: unknown[]; keyAuthorization?: unknown }
+        if (envelope.authorizationList?.length || envelope.keyAuthorization) throw Error('Tempo delegation is not supported')
+        await checkTempoFunds(rpc, input, wallet.address as Hex, expected.gas! * expected.maxFeePerGas!)
+        if (expected.validBefore! * 1000 <= Date.now() + 3000) throw Error('MPP signing window expired')
         signed = await native.signTransaction(transaction, options)
         const actual = TxEnvelopeTempo.deserialize(signed as `0x76${string}`)
         const payload = TxEnvelopeTempo.getSignPayload(actual)

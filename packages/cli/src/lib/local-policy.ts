@@ -1,9 +1,10 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync, renameSync, unlinkSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { parseUnits, formatUnits } from 'viem'
+import { formatUnits } from 'viem'
 import { z } from 'zod'
-import { paymentHttp } from '@agentis-hq/core/payment-http'
+import { readPrice } from '@agentis-hq/core/prices'
+import { tempoFeeAsset } from '@agentis-hq/core/tempo'
 import { localNetworks, type LocalChain } from './local-networks'
 import { loadLocalWallet, localWalletDirectory, privatePath } from './local-wallet'
 import { defaultRules, localRules, usdMicros, type LocalRules } from './local-rules'
@@ -11,38 +12,28 @@ import { defaultRules, localRules, usdMicros, type LocalRules } from './local-ru
 export class LocalPolicyError extends Error { constructor(message: string) { super(message); this.name = 'LocalPolicyError' } }
 const digest = (value: string) => createHash('sha256').update(value).digest('hex')
 const ceil = (n: bigint, d: bigint) => (n + d - 1n) / d
-export type SpendTerms = { chain: LocalChain; asset: string; amountAtomic: string; maxFeeAtomic: string }
+export type SpendTerms = { chain: LocalChain; asset: string; amountAtomic: string; maxFeeAtomic: string; feeAsset?: string }
 const quoteSchema = z.object({ amountPrice: z.string().regex(/^\d+$/), feePrice: z.string().regex(/^\d+$/), amountDecimals: z.number().int(), feeDecimals: z.number().int(), expiresAt: z.number() })
 type Quote = z.infer<typeof quoteSchema>
-const entrySchema = z.object({ key: z.string(), terms: z.object({ chain: z.string().refine(chain => Object.hasOwn(localNetworks, chain)), asset: z.string(), amountAtomic: z.string().regex(/^\d+$/), maxFeeAtomic: z.string().regex(/^\d+$/) }), createdAt: z.number(), signedAt: z.number().optional(), settledAt: z.number().optional(), status: z.enum(['reserved', 'signing', 'confirmed', 'failed', 'released']), reservedUsd: z.string().regex(/^\d+$/), settledUsd: z.string().regex(/^\d+$/).optional(), quote: quoteSchema })
+const entrySchema = z.object({ key: z.string(), terms: z.object({ chain: z.string().refine(chain => Object.hasOwn(localNetworks, chain)), asset: z.string(), amountAtomic: z.string().regex(/^\d+$/), maxFeeAtomic: z.string().regex(/^\d+$/), feeAsset: z.string().optional() }), createdAt: z.number(), signedAt: z.number().optional(), settledAt: z.number().optional(), status: z.enum(['reserved', 'signing', 'confirmed', 'failed', 'released']), reservedUsd: z.string().regex(/^\d+$/), settledUsd: z.string().regex(/^\d+$/).optional(), quote: quoteSchema })
 type Entry = z.infer<typeof entrySchema>
 const ledgerSchema = z.object({ version: z.literal(1), startedAt: z.number(), entries: z.array(entrySchema) })
 export const costUsd = (terms: SpendTerms, quote: Quote, fee = terms.maxFeeAtomic, success = true) => (success ? ceil(BigInt(terms.amountAtomic) * BigInt(quote.amountPrice), 10n ** BigInt(quote.amountDecimals) * 1_000_000_000_000n) : 0n) + ceil(BigInt(fee) * BigInt(quote.feePrice), 10n ** BigInt(quote.feeDecimals) * 1_000_000_000_000n)
-const prices = new Map<string, { price: string; expiresAt: number }>()
 export async function localQuote(terms: SpendTerms): Promise<Quote> {
   const network = localNetworks[terms.chain]!
   const asset = network.assets[terms.asset]
   if (!asset) throw new LocalPolicyError('No USD price mapping for this asset')
   const amountId = asset.priceId
-  const feeId = network.priceId
-  const ids = [...new Set([amountId, ...(BigInt(terms.maxFeeAtomic) ? [feeId] : [])])].filter(id => id !== 'test-usd')
-  const missing = ids.filter(id => (prices.get(id)?.expiresAt ?? 0) <= Date.now())
+  const feeId = network.family === 'tempo' ? tempoFeeAsset({ chainId: network.chainId, feeAsset: terms.feeAsset }).priceId : network.priceId
   try {
-    if (missing.length) {
-      const response = await paymentHttp({ url: `https://coins.llama.fi/prices/current/${missing.map(encodeURIComponent).join(',')}`, method: 'GET', headers: {} })
-      if (response.status !== 200) throw Error()
-      const coins = JSON.parse(Buffer.from(response.bodyBase64, 'base64').toString()).coins
-      for (const id of missing) {
-        const p = z.object({ price: z.number().positive().finite(), timestamp: z.number().int().positive(), confidence: z.number().min(0.95).max(1) }).parse(coins[id])
-        const now = Date.now(), text = String(p.price)
-        if (p.timestamp * 1000 < now - 300_000 || p.timestamp * 1000 > now + 30_000 || !/^\d+(\.\d{1,18})?$/.test(text)) throw Error()
-        prices.set(id, { price: parseUnits(text, 18).toString(), expiresAt: Math.min(now + 30_000, p.timestamp * 1000 + 300_000) })
-      }
+    const get = async (id: string) => {
+      if (id !== 'test-usd') return readPrice(id)
+      if (!network.testnet) throw Error('Test valuation forbidden on mainnet')
+      return { value: '1000000000000000000', expiresAt: Date.now() + 30_000 }
     }
-    const get = (id: string) => id === 'test-usd' ? { price: '1000000000000000000', expiresAt: Date.now() + 30_000 } : prices.get(id)!
-    const amount = get(amountId), fee = BigInt(terms.maxFeeAtomic) ? get(feeId) : { price: '0', expiresAt: amount.expiresAt }
-    if (!amount || !fee || Math.min(amount.expiresAt, fee.expiresAt) <= Date.now()) throw Error()
-    return { amountPrice: amount.price, feePrice: fee.price, amountDecimals: asset.decimals, feeDecimals: network.decimals, expiresAt: Math.min(amount.expiresAt, fee.expiresAt) }
+    const amount = await get(amountId), fee = BigInt(terms.maxFeeAtomic) ? await get(feeId) : { value: '0', expiresAt: amount.expiresAt }
+    if (Math.min(amount.expiresAt, fee.expiresAt) <= Date.now()) throw Error()
+    return { amountPrice: amount.value, feePrice: fee.value, amountDecimals: asset.decimals, feeDecimals: network.decimals, expiresAt: Math.min(amount.expiresAt, fee.expiresAt) }
   } catch { throw new LocalPolicyError('Fresh USD prices are unavailable; no new payment can be signed. Try again later.') }
 }
 function paths(wallet: string) {

@@ -20,4 +20,4 @@ bun run index.ts
 
 Use a separate development database and testnet wallets. Execution defaults to disabled. Never point a local worker at a stale production snapshot, and never commit environment files, wallet keys or signed-payment journals.
 
-Run `bun run check` for package builds and TypeScript checks. Focused integration checks live under `testing/`; there is no root automated test suite.
+Run `bun run check` for package builds and TypeScript checks. Run `bun run check:offline` for curated no-money regressions. Database-backed and explicit live checks remain separate under `testing/`.

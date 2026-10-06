@@ -9,6 +9,8 @@ export const chainId = z.string().regex(/^(eip155:[1-9]\d*|solana:[A-Za-z0-9]+)$
 export const fetchRequest = z.object({
   walletId: z.string().uuid(), url: z.url().max(4096), maxAmountAtomic: positiveAtomic,
   maxFeeAtomic: positiveAtomic.optional(),
+  asset: z.string().min(1).max(96).optional(),
+  feeAsset: z.string().min(1).max(96).optional(),
   reason: z.string().trim().max(500).default(''),
 }).strict()
 export type FetchRequest = z.input<typeof fetchRequest>
@@ -37,8 +39,9 @@ export const operationInput = z.object({
   to: z.string().min(1).max(128),
   amountAtomic: atomic,
   maxFeeAtomic: atomic,
+  feeAsset: z.string().regex(/^erc20:0x[0-9a-fA-F]{40}$/).optional(),
   reason: z.string().trim().max(500).default(''),
-}).strict().refine(input => input.action === 'identity_write' ? !!input.identity && input.amountAtomic === '0' && input.asset === 'native' && input.chainId === 'eip155:11155111' && !input.swap : !input.identity && BigInt(input.amountAtomic) > 0n, 'Invalid identity action or amount').refine(input => input.action.startsWith('uniswap_') ? !!input.swap && !input.payment && !input.mpp && BigInt(input.maxFeeAtomic) > 0n : !input.swap).refine(input => input.action === 'paid_fetch' ? (!!input.payment && !input.mpp && input.maxFeeAtomic === '0') || (!!input.mpp && !input.payment && BigInt(input.maxFeeAtomic) > 0n) : !input.payment && !input.mpp && BigInt(input.maxFeeAtomic) > 0n, 'Invalid payment action or fee cap')
+}).strict().refine(input => !input.feeAsset || networks.some(network => network.family === 'tempo' && network.chainId === input.chainId && network.assets.some(asset => asset.feeEligible !== false && asset.id.toLowerCase() === input.feeAsset!.toLowerCase())), 'Fee token is not supported on this network').refine(input => input.action === 'identity_write' ? !!input.identity && input.amountAtomic === '0' && input.asset === 'native' && input.chainId === 'eip155:11155111' && !input.swap : !input.identity && BigInt(input.amountAtomic) > 0n, 'Invalid identity action or amount').refine(input => input.action.startsWith('uniswap_') ? !!input.swap && !input.payment && !input.mpp && BigInt(input.maxFeeAtomic) > 0n : !input.swap).refine(input => input.action === 'paid_fetch' ? (!!input.payment && !input.mpp && input.maxFeeAtomic === '0') || (!!input.mpp && !input.payment && BigInt(input.maxFeeAtomic) > 0n) : !input.payment && !input.mpp && BigInt(input.maxFeeAtomic) > 0n, 'Invalid payment action or fee cap')
 export type OperationInput = z.input<typeof operationInput>
 
 export const walletPolicy = z.object({

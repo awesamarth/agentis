@@ -9,7 +9,7 @@ Add a catalog entry with its stable key, CAIP chain ID, environment, supported e
 Enable a payment rail only when its exact contracts are supported:
 
 - x402: token, operation asset, atomic-unit scale and EIP-3009 domain where applicable.
-- MPP: Tempo network and supported payment/fee token.
+- MPP: Tempo network, explicit payment-token allowlist and fee eligibility. New operations persist an independent fee asset; historical implicit fees retain their original identity. See [Tempo support](tempo.md).
 - Alchemy Portfolio: optional supported network slug; other networks use direct RPC reads.
 
 A new network using an existing adapter is primarily configuration. A new execution family, token standard or payment protocol still needs explicit validation, signing and reconciliation code. Never infer those capabilities from a network name.

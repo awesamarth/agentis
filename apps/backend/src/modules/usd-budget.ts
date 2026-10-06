@@ -1,64 +1,26 @@
-import { z } from 'zod'
-import { parseUnits } from 'viem'
 import type { OperationInput, UsdQuote } from '@agentis-hq/core/operations'
+import { readPrice } from '@agentis-hq/core/prices'
+import { tempoFeeAsset } from '@agentis-hq/core/tempo'
 import { supportedNetworks } from './networks'
-import { paymentHttp } from './payment-http'
+export { parsePrice } from '@agentis-hq/core/prices'
 
-const priceSchema = z.object({ price: z.number().positive().finite(), timestamp: z.number().int().positive(), confidence: z.number().min(0.95).max(1) })
-const cache = new Map<string, { value: string; expiresAt: number }>()
-let refreshing: Promise<void> | null = null
 const ceil = (value: bigint, divisor: bigint) => (value + divisor - 1n) / divisor
 // USD prices use 18 decimal places; ledger dollars use 6. Never round spending down.
 export function usdCost(input: OperationInput, quote: UsdQuote, fee = input.maxFeeAtomic, success = true) {
   const value = (amount: string, price: string, decimals: number) => ceil(BigInt(amount) * BigInt(price), 10n ** BigInt(decimals) * 1_000_000_000_000n)
   return (success && input.action !== 'uniswap_approval' ? value(input.amountAtomic, quote.assetPrice, quote.assetDecimals) : 0n) + value(fee, quote.feePrice, quote.feeDecimals)
 }
-export function parsePrice(raw: unknown, now = Date.now()) {
-  const price = priceSchema.parse(raw)
-  if (price.timestamp * 1000 > now + 30_000 || price.timestamp * 1000 < now - 300_000) throw new Error('Price is stale or future-dated')
-  const text = String(price.price)
-  if (!/^\d+(\.\d{1,18})?$/.test(text)) throw new Error('Unsupported price precision')
-  return { value: parseUnits(text, 18).toString(), expiresAt: Math.min(now + 30_000, price.timestamp * 1000 + 300_000) }
-}
-export async function quoteUsd(input: Pick<OperationInput, 'chainId' | 'asset'>): Promise<UsdQuote> {
+export async function quoteUsd(input: Pick<OperationInput, 'chainId' | 'asset' | 'feeAsset'>): Promise<UsdQuote> {
   const network = supportedNetworks.find(network => network.chainId === input.chainId)
   const asset = network?.assets.find(asset => input.asset.startsWith('erc20:') ? asset.id.toLowerCase() === input.asset.toLowerCase() : asset.id === input.asset)
-  if (!network || !asset) throw new Error('Asset has no configured USD price source')
-  const ids = [...new Set([asset.priceId, network.priceId])]
-  while (ids.some(id => id !== 'test-usd' && (!cache.has(id) || cache.get(id)!.expiresAt <= Date.now()))) {
-    if (!refreshing) {
-      const missing = ids.filter(id => id !== 'test-usd' && (!cache.has(id) || cache.get(id)!.expiresAt <= Date.now()))
-      refreshing = (async () => {
-        const url = `https://coins.llama.fi/prices/current/${missing.map(encodeURIComponent).join(',')}`
-        for (let attempt = 0; attempt < 2; attempt++) {
-          // A CDN can serve an old quote repeatedly. Retry once with a bounded
-          // refresh key; never accept stale prices or silently assume $1.
-          const refreshUrl = attempt ? `${url}?_refresh=${Math.floor(Date.now() / 30_000)}` : url
-          const response = await paymentHttp({ url: refreshUrl, method: 'GET', headers: { accept: 'application/json' } })
-          if (response.status !== 200) throw new Error('USD price service unavailable')
-          const data = z.object({ coins: z.record(z.string(), z.unknown()) }).parse(JSON.parse(Buffer.from(response.bodyBase64, 'base64').toString('utf8')))
-          try {
-            const prices = missing.map(id => [id, parsePrice(data.coins[id])] as const)
-            for (const [id, price] of prices) cache.set(id, price)
-            break
-          } catch (error) {
-            if (attempt || !(error instanceof Error) || error.message !== 'Price is stale or future-dated') throw error
-          }
-        }
-      })().finally(() => { refreshing = null })
-    }
-    await refreshing
+  if (!network || !asset) throw Error('Asset has no configured USD price source')
+  const feeId = network.family === 'tempo' ? tempoFeeAsset(input).priceId : network.priceId
+  const get = async (id: string) => {
+    if (id !== 'test-usd') return readPrice(id)
+    if (!network.testnet) throw Error('Test valuation is forbidden on mainnet')
+    return { value: '1000000000000000000', expiresAt: Date.now() + 30_000 }
   }
-  const get = (id: string) => {
-    // Explicit test-token reference only. Never assume that a mainnet stablecoin equals $1.
-    if (id === 'test-usd') {
-      if (!network.testnet) throw new Error('Test valuation is forbidden on mainnet')
-      return { value: '1000000000000000000', expiresAt: Date.now() + 30_000 }
-    }
-    const price = cache.get(id)
-    if (!price || price.expiresAt <= Date.now()) throw new Error('USD quote expired')
-    return price
-  }
-  const assetPrice = get(asset.priceId), feePrice = get(network.priceId)
+  const [assetPrice, feePrice] = await Promise.all([get(asset.priceId), get(feeId)])
+  if (Math.min(assetPrice.expiresAt, feePrice.expiresAt) <= Date.now()) throw Error('USD quote expired')
   return { assetPrice: assetPrice.value, feePrice: feePrice.value, assetDecimals: asset.decimals, feeDecimals: network.decimals, expiresAt: Math.min(assetPrice.expiresAt, feePrice.expiresAt) }
 }

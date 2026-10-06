@@ -21,6 +21,8 @@ agentis wallet create --local --name local-agent --chains base,ethereum,tempo,so
 agentis policy show --local --wallet local-agent
 ```
 
+Tempo supports OUSD (the new-selection default), USDC.e and pathUSD on mainnet and testnet, plus alphaUSD on testnet. Sends and MPP charge requests accept `--asset` and `--fee-asset` for separate payment/gas tokens. Testnet USDC.e cannot pay gas and defaults to OUSD fees at request creation. No betaUSD/thetaUSD, MPP sessions, sponsored charges or automatic swaps.
+
 Use `base-sepolia`, `sepolia`, `arc`, `tempo-testnet` or `solana-devnet` to select testnets explicitly.
 
 Local wallet files are plaintext, owner-permission-protected files. Reuse an unchanged request key after uncertainty. An unknown submission is not permission to pay again. Run `agentis --help` for exact flags.

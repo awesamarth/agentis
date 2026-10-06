@@ -79,7 +79,7 @@ describe('developer-owned network catalog', () => {
     for (const network of networks.filter(n => n.mpp)) {
       const expiresAt = new Date(Date.now() + 120_000).toISOString()
       const challenge = Challenge.serialize(Challenge.from({ secretKey: 'fixture-only', realm: 'example.com', method: 'tempo', intent: 'charge', expires: expiresAt, request: { amount: '1', currency: network.feeToken!, recipient: address, methodDetails: { chainId: network.chain!.id, feePayer: false, supportedModes: ['pull'] } } }))
-      const input: OperationInput = { ...transfer(network.chainId, network.assets[0]!.id), action: 'paid_fetch', mpp: { url: 'https://example.com/paid', challenge, expiresAt, maxAmountAtomic: '1' } }
+      const input: OperationInput = { ...transfer(network.chainId, `erc20:${network.feeToken}`), action: 'paid_fetch', mpp: { url: 'https://example.com/paid', challenge, expiresAt, maxAmountAtomic: '1' } }
       expect(() => validateMpp(wallet(network.chainId), input)).not.toThrow()
       const other = networks.find(n => n.mpp && n.testnet !== network.testnet)!
       expect(() => validateMpp(wallet(other.chainId), { ...input, chainId: other.chainId, asset: other.assets[0]!.id })).toThrow()

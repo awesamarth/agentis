@@ -1,15 +1,14 @@
 import { createHash } from 'node:crypto'
 import { mkdirSync, existsSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
-import { z } from 'zod'
 import { createPublicClient, createWalletClient, http, getAddress, parseEventLogs, parseAbiItem, erc20Abi, formatUnits, decodeFunctionData, type Hex, type Chain } from 'viem'
 import { mnemonicToAccount } from 'viem/accounts'
 import { tempo as tempoChain } from 'viem/chains'
 import { Abis } from 'viem/tempo'
 import { TxEnvelopeTempo } from 'ox/tempo'
-import { Challenge, Credential } from 'mppx'
+import { Credential } from 'mppx'
 import { tempo } from 'mppx/client'
-import { Methods } from 'mppx/tempo'
+import { selectTempoChallenge, tempoAsset, tempoFeeAsset, defaultTempoFeeAsset, checkTempoFunds, verifyTempoReceipt } from '@agentis-hq/core/tempo'
 import { x402Client } from '@x402/core/client'
 import { decodePaymentRequiredHeader, encodePaymentSignatureHeader, decodePaymentResponseHeader } from '@x402/core/http'
 import { ExactEvmScheme } from '@x402/evm/exact/client'
@@ -20,8 +19,8 @@ import { loadLocalWallet, localWalletDirectory, privatePath } from './local-wall
 import { localNetworks, parseChains, type LocalChain } from './local-networks'
 import { reserveLocal, signWithPolicy, releaseUnissued, settleLocal, LocalPolicyError } from './local-policy'
 import { prepareLocalSvm, localSvmReceipt, type SolanaProof } from './local-paid-solana'
-export type LocalFetchInput = { wallet: string; chain: string; url: string; maxAmountAtomic: string; maxFeeAtomic?: string; key: string }
-type PaidRecord = { kind: 'paid-fetch'; createdAt: string; request: string; key: string; wallet: string; chain: LocalChain; url: string; status: string; asset: string; amount: string; amountAtomic?: string; to?: string; credential?: string; signed?: string; signature?: string; hash?: string; nonce?: Hex; fromBlock?: string; solana?: SolanaProof; feeAtomic?: string; httpResponse?: PaidHttpResponse; httpError?: string }
+export type LocalFetchInput = { wallet: string; chain: string; url: string; maxAmountAtomic: string; maxFeeAtomic?: string; asset?: string; feeAsset?: string; key: string }
+type PaidRecord = { kind: 'paid-fetch'; createdAt: string; request: string; key: string; wallet: string; chain: LocalChain; url: string; status: string; asset: string; feeAsset?: string; feePayment?: { asset: string; amountAtomic: string; decimals: number }; amount: string; amountAtomic?: string; to?: string; credential?: string; signed?: string; signature?: string; hash?: string; nonce?: Hex; fromBlock?: string; solana?: SolanaProof; feeAtomic?: string; httpResponse?: PaidHttpResponse; httpError?: string }
 const token = (chain: LocalChain) => (localNetworks[chain]!.x402?.token ?? localNetworks[chain]!.feeToken)!
 const family = (chain: LocalChain) => localNetworks[chain]!.family
 const used = parseAbiItem('event AuthorizationUsed(address indexed authorizer, bytes32 indexed nonce)')
@@ -33,6 +32,7 @@ export async function localPaidFetch(input: LocalFetchInput, confirm: (summary: 
   positiveAtomic.parse(input.maxAmountAtomic)
   const chain = chains[0]!, wallet = loadLocalWallet(input.wallet), network = localNetworks[chain]!
   if (!network.x402 && !network.mpp) throw Error('Paid requests are not supported on this network')
+  if (network.family !== 'tempo' && (input.asset || input.feeAsset)) throw Error('Paid token selection requires Tempo')
   const solanaUsdc = network.x402?.token
   const evmChain = network.chain as typeof tempoChain
   if (!wallet.chains.includes(chain)) throw Error('Chain is not enabled on this local wallet')
@@ -42,11 +42,11 @@ export async function localPaidFetch(input: LocalFetchInput, confirm: (summary: 
   mkdirSync(directory, { recursive: true, mode: 0o700 }); privatePath(directory, true)
   const digest = (s: string) => createHash('sha256').update(s).digest('hex')
   const file = join(directory, `${digest(`${wallet.id}:${input.key}`)}.json`), lock = `${file}.lock`
-  const request = JSON.stringify({ kind: 'paid-fetch', wallet: wallet.id, chain, url: input.url, maximum: input.maxAmountAtomic, fee })
+  const request = JSON.stringify({ kind: 'paid-fetch', wallet: wallet.id, chain, url: input.url, maximum: input.maxAmountAtomic, fee, ...(input.asset ? { asset: input.asset } : {}), ...(input.feeAsset ? { feeAsset: input.feeAsset } : {}) })
   const origins = (process.env.AGENTIS_PAID_FETCH_LOCAL_ORIGINS ?? '').split(',').filter(Boolean)
   let record: PaidRecord = { kind: 'paid-fetch', createdAt: new Date().toISOString(), request, key: input.key, wallet: wallet.id, chain, url: input.url, status: 'preparing', asset: network.mpp ? network.defaultAsset : 'USDC', amount: '' }
   const save = () => { const tmp = `${file}.${crypto.randomUUID()}.tmp`; writeFileSync(tmp, JSON.stringify(record), { flag: 'wx', mode: 0o600 }); renameSync(tmp, file) }
-  const summary = () => ({ wallet: wallet.name, chainId: localNetworks[chain].chainId, amount: record.amount, asset: record.asset, to: record.to, url: input.url, status: record.status, transactionHash: record.hash, feeAtomic: record.feeAtomic, httpResponse: record.httpResponse, httpError: record.httpError, key: input.key, ...(record.status === 'unknown' ? { note: 'Settlement unknown; budget stays reserved. Reuse this exact command/key to check. Never use a new key blindly.' } : {}) })
+  const summary = () => ({ wallet: wallet.name, chainId: localNetworks[chain].chainId, amount: record.amount, asset: record.asset, to: record.to, url: input.url, status: record.status, transactionHash: record.hash, feeAtomic: record.feeAtomic, feeAsset: record.feeAsset, feePayment: record.feePayment, httpResponse: record.httpResponse, httpError: record.httpError, key: input.key, ...(record.status === 'unknown' ? { note: 'Settlement unknown; budget stays reserved. Reuse this exact command/key to check. Never use a new key blindly.' } : {}) })
   async function reconcile() {
     if (!record.credential && !record.hash && !record.solana) throw new LocalPolicyError('This request has no submitted proof. Inspect its journal before using a new key.')
     try {
@@ -65,6 +65,10 @@ export async function localPaidFetch(input: LocalFetchInput, confirm: (summary: 
             const authorized = parseEventLogs({ abi: [used], logs: receipt.logs }).some(log => log.address.toLowerCase() === token(chain) && log.args.authorizer.toLowerCase() === wallet.addresses.evm!.toLowerCase() && log.args.nonce === record.nonce)
             const paid = parseEventLogs({ abi: erc20Abi, logs: receipt.logs, eventName: 'Transfer' }).some(log => log.address.toLowerCase() === token(chain) && log.args.from.toLowerCase() === wallet.addresses.evm!.toLowerCase() && log.args.to.toLowerCase() === record.to!.toLowerCase() && log.args.value === BigInt(record.amountAtomic!))
             if (receipt.status !== 'success' || !authorized || !paid) throw Error('Wrong payment settlement')
+          }
+          if (family(chain) === 'tempo') {
+            const settled = verifyTempoReceipt(receipt, { chainId: network.chainId, asset: tempoAsset(network.chainId, record.asset).id, feeAsset: record.feeAsset, to: record.to!, amountAtomic: record.amountAtomic! }, wallet.addresses.evm!)
+            record.feePayment = settled.feePayment
           }
           result = { hash: receipt.transactionHash, success: receipt.status === 'success', fee: family(chain) === 'tempo' ? roundTempo(receipt.gasUsed * receipt.effectiveGasPrice).toString() : '0' }
         }
@@ -93,32 +97,37 @@ export async function localPaidFetch(input: LocalFetchInput, confirm: (summary: 
       const response = await paymentHttp({ url: input.url, method: 'GET', headers: {} }, {}, origins)
       if (response.status !== 402) throw Error('Expected a paid GET challenge (HTTP 402)')
       if (family(chain) === 'tempo') {
-        const challenge = Challenge.deserialize(response.headers['www-authenticate']!, { methods: [Methods.charge] })
-        const terms = z.object({ amount: positiveAtomic, currency: z.string(), recipient: z.string(), methodDetails: z.object({ chainId: z.literal(evmChain.id), feePayer: z.literal(false).optional(), supportedModes: z.array(z.enum(['pull', 'push'])).optional(), memo: z.string().regex(/^0x[0-9a-fA-F]{64}$/).optional() }).strict() }).strict().parse(challenge.request)
-        const deadline = Date.parse(challenge.expires ?? '')
-        if (challenge.method !== 'tempo' || challenge.intent !== 'charge' || (challenge.header && challenge.header.toLowerCase() !== 'authorization') || terms.currency.toLowerCase() !== token(chain) || (terms.methodDetails.supportedModes && !terms.methodDetails.supportedModes.includes('pull')) || !Number.isFinite(deadline) || deadline < Date.now() + 30_000 || deadline > Date.now() + 600_000 || BigInt(terms.amount) > BigInt(input.maxAmountAtomic)) throw Error('Unsupported or over-budget MPP challenge')
+        const { challenge, request: terms, asset: paymentAsset } = selectTempoChallenge(response.headers['www-authenticate']!, network.chainId, input.maxAmountAtomic, input.asset)
+        const deadline = Date.parse(challenge.expires!)
+        record.asset = paymentAsset.symbol
+        record.feeAsset = (input.feeAsset ? tempoFeeAsset({ chainId: network.chainId, feeAsset: input.feeAsset }) : defaultTempoFeeAsset(network.chainId, paymentAsset.id)).id
+        const paymentToken = paymentAsset.id.slice(6), feeToken = record.feeAsset.slice(6)
         record.to = getAddress(terms.recipient); record.amountAtomic = terms.amount; record.amount = formatUnits(BigInt(terms.amount), 6)
         const native = mnemonicToAccount(wallet.mnemonic), client = rpc(chain)
         if (native.address.toLowerCase() !== wallet.addresses.evm?.toLowerCase() || await client.getChainId() !== evmChain.id) throw Error('Wrong signer or network')
-        await reserveLocal(wallet.id, input.key, { chain, asset: network.defaultAsset, amountAtomic: terms.amount, maxFeeAtomic: fee })
-        await confirm(`Pay ${record.amount} ${record.asset} to ${record.to} on ${network.name} for GET ${input.url}? Maximum fee: ${formatUnits(BigInt(fee), 18)} ${network.currency}.`)
+        await reserveLocal(wallet.id, input.key, { chain, asset: record.asset, amountAtomic: terms.amount, maxFeeAtomic: fee, feeAsset: record.feeAsset })
+        await confirm(`Pay ${record.amount} ${record.asset} to ${record.to} on ${network.name} for GET ${input.url}? Maximum fee: ${formatUnits(BigInt(fee), 18)} ${tempoFeeAsset({ chainId: network.chainId, feeAsset: record.feeAsset }).symbol}.`)
         let attempted = false
         const refuse = async (): Promise<never> => { throw Error('Only the approved transaction may be signed') }
-        const account: typeof native = { ...native, sign: refuse, signMessage: refuse, signTypedData: refuse, async signTransaction(transaction, options) {
+        const account: typeof native = { ...native, sign: refuse, signMessage: refuse, signTypedData: refuse, signAuthorization: refuse, async signTransaction(transaction, options) {
           if (attempted) throw Error('Only one MPP signature allowed'); attempted = true
           const unsigned = await evmChain.serializers.transaction(transaction as never)
           if (!unsigned.startsWith('0x76')) throw Error('Not a Tempo transaction')
           const expected = TxEnvelopeTempo.deserialize(unsigned as `0x76${string}`)
-          if (expected.chainId !== evmChain.id || expected.calls.length !== 1 || String(expected.feeToken).toLowerCase() !== token(chain) || expected.feePayerSignature || expected.accessList?.length || expected.authorizationList?.length || expected.nonceKey !== (1n << 256n) - 1n || !expected.validBefore || expected.validBefore * 1000 > deadline || expected.validBefore * 1000 < Date.now() + 3000 || (expected.validAfter ?? 0) * 1000 > Date.now() || !expected.gas || !expected.maxFeePerGas || roundTempo(expected.gas * expected.maxFeePerGas) > BigInt(fee)) throw Error('MPP transaction exceeds the approved terms')
+          if (expected.chainId !== evmChain.id || expected.calls.length !== 1 || String(expected.feeToken).toLowerCase() !== feeToken || expected.feePayerSignature || expected.accessList?.length || expected.authorizationList?.length || expected.nonceKey !== (1n << 256n) - 1n || !expected.validBefore || expected.validBefore * 1000 > deadline || expected.validBefore * 1000 < Date.now() + 3000 || (expected.validAfter ?? 0) * 1000 > Date.now() || !expected.gas || !expected.maxFeePerGas || roundTempo(expected.gas * expected.maxFeePerGas) > BigInt(fee)) throw Error('MPP transaction exceeds the approved terms')
           const call = expected.calls[0]!, decoded = decodeFunctionData({ abi: Abis.tip20, data: call.data! })
-          if (call.to?.toLowerCase() !== token(chain) || (call.value ?? 0n) !== 0n || decoded.functionName !== 'transferWithMemo' || decoded.args[0].toLowerCase() !== record.to!.toLowerCase() || decoded.args[1] !== BigInt(terms.amount) || (terms.methodDetails.memo && decoded.args[2] !== terms.methodDetails.memo)) throw Error('Wrong MPP transfer')
-          const signed = await signWithPolicy(wallet.id, input.key, () => native.signTransaction(transaction, options))
+          if (call.to?.toLowerCase() !== paymentToken || (call.value ?? 0n) !== 0n || decoded.functionName !== 'transferWithMemo' || decoded.args[0].toLowerCase() !== record.to!.toLowerCase() || decoded.args[1] !== BigInt(terms.amount) || (terms.methodDetails.memo && decoded.args[2] !== terms.methodDetails.memo)) throw Error('Wrong MPP transfer')
+          await checkTempoFunds(client, { chainId: network.chainId, asset: paymentAsset.id, feeAsset: record.feeAsset, amountAtomic: terms.amount }, native.address, expected.gas * expected.maxFeePerGas)
+          const signed = await signWithPolicy(wallet.id, input.key, async () => {
+            if (expected.validBefore! * 1000 <= Date.now() + 3000) throw Error('MPP signing window expired')
+            return native.signTransaction(transaction, options)
+          })
           const actual = TxEnvelopeTempo.deserialize(signed as `0x76${string}`)
           if (!actual.signature || TxEnvelopeTempo.getSignPayload(actual) !== TxEnvelopeTempo.getSignPayload(expected)) throw Error('Wrong signed transaction')
           record.signed = signed; record.hash = TxEnvelopeTempo.hash({ ...actual, signature: actual.signature })
           return signed
         } }
-        const signingClient = createWalletClient({ account, chain: { ...evmChain, feeToken: token(chain) as Hex }, transport: http(client.transport.url, { timeout: 15000, retryCount: 0 }) })
+        const signingClient = createWalletClient({ account, chain: { ...evmChain, feeToken: feeToken as Hex }, transport: http(client.transport.url, { timeout: 15000, retryCount: 0 }) })
         const method = tempo.charge({ account, mode: 'pull', autoSwap: false, expectedChainId: evmChain.id, expectedRecipients: [record.to as Hex], getClient: () => signingClient })
         record.credential = await method.createCredential({ challenge, context: {} })
         const proof = Credential.deserialize<{ type: string; signature: string }>(record.credential)
@@ -162,7 +171,7 @@ export async function localPaidFetch(input: LocalFetchInput, confirm: (summary: 
       record.status = 'unknown'; save() // Persist signed proof before ANY paid HTTP request.
     } catch (error) {
       await releaseUnissued(wallet.id, input.key)
-      record.status = 'preparation_failed'; save()
+      record.status = record.hash || record.signed ? 'unknown' : 'preparation_failed'; save()
       if (error instanceof LocalPolicyError) throw error
       throw Error('Paid request preparation failed; no paid HTTP request was submitted. Inspect the journal/limits/terms before trying another key.')
     }

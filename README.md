@@ -35,12 +35,12 @@ One backend handles authorization, execution and receipts across the dashboard, 
 | --- | --- | --- |
 | Base | ETH, USDC | x402 |
 | Ethereum | ETH, USDC | x402 |
-| Tempo | pathUSD | MPP |
+| Tempo | OUSD, USDC.e, pathUSD | MPP charge |
 | Solana | SOL, USDC | x402 |
 | Base Sepolia | ETH, USDC | x402 |
 | Ethereum Sepolia | ETH, USDC | x402; requires a Sepolia-enabled seller/facilitator |
 | Arc Testnet | USDC | x402 |
-| Tempo Testnet | alphaUSD | MPP |
+| Tempo Testnet | OUSD, USDC.e, pathUSD, alphaUSD | MPP charge |
 | Solana Devnet | SOL, USDC | x402 |
 
 Base mainnet is the default network. Enable testnets in agent settings to select them. Mainnet and testnets have separate budget usage; balance totals and profile spending include mainnet only. ENSv2 identity writes use Ethereum Sepolia; Uniswap currently uses Base Sepolia only. Enabling a network does not automatically enable a plugin or expand an existing restricted credential.
