@@ -1,3 +1,4 @@
+import type { DiscoverySearchResult, DiscoveryDescription } from '@agentis-hq/core/discovery'
 import { formatUnits } from 'viem'
 
 import { findNetwork } from '@agentis-hq/core/networks'
@@ -41,6 +42,25 @@ export function formatOutput(command: string, output: unknown, color = Boolean(p
     const agents = record.agents as { name: string; chains: { name: string; id: string }[] }[] | undefined
     if (!agents?.length) return 'Not logged in. Run agentis login.'
     return agents.map(agent => `${style(text(agent.name), '1;38;5;117')}\n${style('Chains:', '1')}\n${agent.chains.map(chain => `${text(chain.name)} (${text(chain.id)})`).join(',\n')}`).join('\n\n\n') + '\n\n'
+  }
+  if (command === 'discover') {
+    const data = output as DiscoverySearchResult | DiscoveryDescription
+    const service = 'service' in data ? data.service : undefined
+    const endpoints = 'endpoints' in data ? data.endpoints : data.service.endpoints
+    const header = service ? `${text(service.name)} (${text(service.id)}) · ${text(service.integration)}\n${text(service.description)}\nAPI: ${text(service.serviceUrl)}\nProvider: ${text(service.provider.name)} — ${text(service.provider.url)}` : 'API discovery · Mercator'
+    const entries = endpoints.map(item => {
+      const price = item.estimatedPrice
+      const estimate = price?.amountHint ?? (price?.amountDecimal ? `${price.amountDecimal} ${price.currency ?? ''}` : 'See payment offers')
+      const offers = item.paymentOffers.map(offer => {
+        const amount = offer.amountHint ?? (offer.amountAtomic && offer.decimals !== undefined && offer.decimals <= 36 ? `${formatUnits(BigInt(offer.amountAtomic), offer.decimals)} ${offer.symbol ?? offer.currency ?? ''}` : 'Live quote required')
+        return `  ${text(offer.protocol)} / ${text(offer.intent)} · ${text(offer.networkName ?? offer.network ?? 'network unknown')} · ${text(offer.symbol ?? offer.currency ?? 'token unknown')} · ${text(amount)} · ${text(offer.compatibility.status)}`
+      }).join('\n')
+      const required = item.requiredArguments ?? (Array.isArray(item.inputSchema?.required) ? item.inputSchema.required : [])
+      const properties = item.inputSchema?.properties
+      const input = service ? `\nInput fields: ${properties && typeof properties === 'object' ? Object.keys(properties).map(text).join(', ') : 'See --json schema'}${item.inputExample ? `\nExample: ${text(JSON.stringify(item.inputExample))}` : ''}` : ''
+      return `${item.rank ? `${item.rank}. ` : ''}${text(item.serviceName)} (${text(item.serviceId)})\n${text(item.method)} ${text(item.url ?? item.path)}${item.integration ? ` · ${text(item.integration)}` : ''}\n${text(item.description)}\n${service ? '' : `Estimate: ${text(estimate)}\n`}${offers ? offers + '\n' : ''}Compatibility: ${text(item.compatibility.status)} — ${text(item.compatibility.reason)}\nRequired input: ${required.length ? required.map(text).join(', ') : 'See schema'}${input}${item.completion ? '\nAsync endpoint: completion/polling contract is included in --json; discovery does not run it.' : ''}`
+    })
+    return `${header}\n\n${entries.join('\n\n') || 'No matching endpoints.'}${'partial' in data && data.partial ? '\n\nSome service details are unavailable; incomplete matches remain unknown.' : ''}\n\nCatalog estimates only, not live availability or payment approval. Use --json for full input schemas.\n`
   }
   if (command === 'wallet') {
     type Network = { chainId: string; address: string }

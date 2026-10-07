@@ -22,7 +22,7 @@ One backend handles authorization, execution and receipts across the dashboard, 
 | --- | --- |
 | **Independent agents** | Named agents with their own wallets, rules, enabled networks and plugins. |
 | **Spending controls** | Per-transaction, rolling hourly/daily and lifetime USD caps shared across an agent's networks, including fees. Recipient restrictions, approval mode and pause controls. |
-| **Payments** | Direct token transfers and paid GET requests through x402 or MPP, with recorded payment outcomes and HTTP responses. |
+| **Payments** | Direct token transfers and paid HTTP requests through x402 or MPP, including provider-sponsored Tempo gas, with recorded payment outcomes and HTTP responses. |
 | **Uniswap** | Base Sepolia swaps, scheduled purchases, manual portfolio rebalancing, gas-refill schedules and optional x402 payment-token shortfall funding. |
 | **ENS** | Owner-controlled ENSv2 subnames, network-specific payment addresses and narrowly delegated endpoint/description updates. ERC-8004 registration is part of this plugin. |
 | **Dashboard** | Agent setup, balances, API keys, approval requests, transaction history and spend analytics. |

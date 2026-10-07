@@ -20,4 +20,6 @@ const operation = await client.fetch({
 
 The SDK wraps hosted wallets, balances, policy/history reads, operations, paid fetch, grants, consent flows, Uniswap and ENS. Pending approval is a normal result with an approval URL. `operations.wait()` returns on approval-required, unknown or terminal states and never approves or resends.
 
+Public discovery is available through `client.discovery.search({ query: 'web search', limit: 3 })` and `client.discovery.describe('exa')`. These Mercator-backed catalog reads need no token and never create a payment. Price/compatibility metadata is advisory; the actual provider challenge and normal policy remain authoritative. Discovery routes must be present on the selected backend deployment.
+
 Use scoped executor grants in agent runtimes. Keep owner tokens out of browser bundles and unattended agents. The SDK performs no local signing or policy bypass.

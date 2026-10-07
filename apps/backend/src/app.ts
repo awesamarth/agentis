@@ -15,6 +15,7 @@ import { defaultProductChain, supportedNetworks } from './modules/networks'
 import { onboardingRoutes } from './modules/onboarding'
 import { profileSummary } from './modules/profile'
 import { cliLoginRoutes } from './modules/cli-login'
+import { discoveryRoutes } from './modules/discovery'
 
 export type Identity = {
   authenticate(token: string): Promise<string>
@@ -40,8 +41,11 @@ export function createApp(service: OperationService, identity: Identity, origins
     if (delegated) c.set('delegated', delegated)
     await next()
   })
-  app.use('*', bodyLimit({ maxSize: 32 * 1024 }))
-  app.use('*', cors({ origin: (origin, c) => c.req.path === '/mcp' || c.req.path.startsWith('/oauth/') || c.req.path.startsWith('/.well-known/') ? '*' : origins.includes(origin) ? origin : '', allowHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'MCP-Protocol-Version', 'Last-Event-ID'], exposeHeaders: ['WWW-Authenticate', 'MCP-Protocol-Version'], allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'] }))
+  // Paid payloads use the deployment/server request limit, not the small admin-form
+  // limit. This also covers SDK operations and MCP tool calls carrying request bodies.
+  app.use('*', async (c, next) => ['/v1/fetch', '/v1/operations', '/mcp'].some(path => c.req.path === path || c.req.path.startsWith(`${path}/`))
+    ? next() : bodyLimit({ maxSize: 32 * 1024 })(c, next))
+  app.use('*', cors({ origin: (origin, c) => c.req.path === '/mcp' || c.req.path.startsWith('/v1/discovery/') || c.req.path.startsWith('/oauth/') || c.req.path.startsWith('/.well-known/') ? '*' : origins.includes(origin) ? origin : '', allowHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'MCP-Protocol-Version', 'Last-Event-ID'], exposeHeaders: ['WWW-Authenticate', 'MCP-Protocol-Version'], allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'] }))
   app.use('*', async (c, next) => { c.header('Cache-Control', 'no-store'); await next() })
   app.onError((error, c) => {
     if (error instanceof ApiError) return c.json({ error: { code: error.code, message: error.message } }, error.status)
@@ -73,6 +77,7 @@ export function createApp(service: OperationService, identity: Identity, origins
     finally { await transport.close(); await server.close() }
   })
   const cliLogin = cliLoginRoutes(service)
+  app.route('/v1/discovery', discoveryRoutes())
   app.route('/v1/cli/logins', cliLogin.publicRoutes)
   for (const route of service.plugins.publicRoutes()) app.route(route.path, route.app)
   app.use('/v1/*', async (c, next) => {
@@ -171,7 +176,7 @@ export function createApp(service: OperationService, identity: Identity, origins
     return c.json(await agentBalance(enabled))
   })
   app.route('/v1', onboardingRoutes(service, identity))
-  app.get('/v1/capabilities', c => c.json({ defaultChain: defaultProductChain, networks: Object.fromEntries(supportedNetworks.map(network => [network.chainId, { name: network.name, testnet: network.testnet, execution: service.executor?.id === 'privy' }])), core: { transfers: !!service.executor, x402: service.executor?.id === 'privy', mpp: service.executor?.id === 'privy' }, paidFetch: { methods: ['GET'], mppIntents: ['charge'], mppModes: ['pull'], mppSponsored: false, mppAutoSwap: false, x402Networks: service.executor?.id === 'privy' ? supportedNetworks.filter(network => network.x402).map(network => network.chainId) : [], mppNetworks: service.executor?.id === 'privy' ? supportedNetworks.filter(network => network.mpp).map(network => network.chainId) : [] }, plugins: service.config, pluginCatalog: service.plugins.catalog, executor: service.executor?.id ?? null, approvalSecurity: service.executor?.id === 'anvil' ? 'local-demo-app-authorization' : service.executor?.id === 'privy' ? 'backend-policy-and-owner-approval' : 'live-execution-unavailable' }))
+  app.get('/v1/capabilities', c => c.json({ defaultChain: defaultProductChain, networks: Object.fromEntries(supportedNetworks.map(network => [network.chainId, { name: network.name, testnet: network.testnet, execution: service.executor?.id === 'privy' }])), core: { transfers: !!service.executor, x402: service.executor?.id === 'privy', mpp: service.executor?.id === 'privy' }, paidFetch: { methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], requestBodies: ['utf8', 'base64'], mppIntents: ['charge'], mppModes: ['pull'], mppSponsored: true, mppAutoSwap: false, x402Networks: service.executor?.id === 'privy' ? supportedNetworks.filter(network => network.x402).map(network => network.chainId) : [], mppNetworks: service.executor?.id === 'privy' ? supportedNetworks.filter(network => network.mpp).map(network => network.chainId) : [] }, plugins: service.config, pluginCatalog: service.plugins.catalog, executor: service.executor?.id ?? null, approvalSecurity: service.executor?.id === 'anvil' ? 'local-demo-app-authorization' : service.executor?.id === 'privy' ? 'backend-policy-and-owner-approval' : 'live-execution-unavailable' }))
   app.get('/v1/wallets', async c => {
     const principal = c.get('principal')
     let scope = eq(wallets.ownerId, principal.ownerId)

@@ -61,11 +61,22 @@ test('MPP selects a supported later offer, preserves description, and honors exp
   expect(() => selectTempoChallenge(offer(tempoTokens.pathUSD), chainId, '1000', 'OUSD')).toThrow()
 })
 
-test('MPP rejects wrong chain, over-cap, sponsorship, split payments, extra authority and sessions', () => {
-  for (const header of [offer(tempoTokens.OUSD, {}, { chainId: 42431 }), offer(tempoTokens.OUSD, {}, { feePayer: true }), offer(tempoTokens.OUSD, {}, { supportedModes: ['push'] }), offer(tempoTokens.OUSD, {}, { splits: [{ recipient: from, amount: '1' }] }), offer(tempoTokens.OUSD, { amount: '0' }), offer(tempoTokens.OUSD, { additionalCharge: '1000' }), offer().replace('intent="charge"', 'intent="session"')]) expect(() => selectTempoChallenge(header, chainId, '1000')).toThrow()
+test('MPP rejects wrong chain, over-cap, split payments, extra authority and unsupported intents', () => {
+  for (const header of [offer(tempoTokens.OUSD, {}, { chainId: 42431 }), offer(tempoTokens.OUSD, {}, { supportedModes: ['push'] }), offer(tempoTokens.OUSD, {}, { splits: [{ recipient: from, amount: '1' }] }), offer(tempoTokens.OUSD, { amount: '0' }), offer(tempoTokens.OUSD, { additionalCharge: '1000' }), offer().replace('intent="charge"', 'intent="session"')]) expect(() => selectTempoChallenge(header, chainId, '1000')).toThrow()
   expect(() => selectTempoChallenge(offer(), chainId, '999')).toThrow()
   expect(() => selectTempoChallenge(offer(), chainId, '1000', undefined, Date.now() + 100_000)).toThrow()
   expect(() => selectTempoChallenge(offer(), chainId, '1000', undefined, Date.now() - 600_000)).toThrow()
+})
+
+test('sponsored charges bind zero agent gas to the actual challenge', () => {
+  const selected = selectTempoChallenge(offer(tempoTokens.OUSD, {}, { feePayer: true }), chainId, '1000')
+  expect(selectTempoChallenge([offer(), offer(tempoTokens.usdcMainnet, {}, { feePayer: true })].join(', '), chainId, '1000', undefined, Date.now(), true).asset.symbol).toBe('USDC.e')
+  const input: OperationInput = { ...transfer, action: 'paid_fetch', maxFeeAtomic: '0', mpp: { sponsored: true, url: 'https://example.com/search', method: 'POST', body: '{"query":"test"}', challenge: Challenge.serialize(selected.challenge), maxAmountAtomic: '1000', expiresAt: selected.challenge.expires! } }
+  expect(() => operationInput.parse(input)).not.toThrow()
+  expect(() => validateMpp({ chainId } as WalletRow, input)).not.toThrow()
+  expect(() => validateMpp({ chainId } as WalletRow, { ...input, mpp: { ...input.mpp!, sponsored: false } })).toThrow()
+  expect(verifyTempoReceipt(receipt(), transfer, from, to).feeAtomic).toBe('0')
+  expect(() => verifyTempoReceipt(receipt(), transfer, from, from)).toThrow()
 })
 
 test('persisted MPP currency/recipient/amount/expiry stay exact at execution', () => {

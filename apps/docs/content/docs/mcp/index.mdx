@@ -9,12 +9,15 @@ The production endpoint is `https://api.agentis.systems/mcp`; local development 
 
 ## Tools
 
+- `agentis_discover` (public Mercator API catalog search; no payment)
+- `agentis_describe_service` (provider endpoints, schemas and advisory payment offers)
+
 - `agentis_list_wallets`
 - `agentis_balance`
 - `agentis_policy` (read-only)
 - `agentis_history`
 - `agentis_send`
-- `agentis_fetch` (x402/MPP paid GET)
+- `agentis_fetch` (x402/MPP paid HTTP, with method, headers and text/base64 bodies)
 - `agentis_get_operation`
 - `agentis_list_operations`
 - `agentis_capabilities`

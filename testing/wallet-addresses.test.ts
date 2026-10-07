@@ -25,6 +25,13 @@ test('shared EVM addresses merge case-insensitively; Solana gets its own card', 
   expect(groups[1]!.networks.map(network => network.testnet)).toEqual([false, true])
 })
 
+test('EVM cards precede Solana regardless of wallet input order', () => {
+  const wallets = [wallet('solana:mainnet', 'SolAddress'), wallet('eip155:8453')]
+  for (const input of [wallets, [...wallets].reverse()]) {
+    expect(groupWalletAddresses(input, networks).map(group => group.label)).toEqual(['EVM', 'Solana'])
+  }
+})
+
 test('different addresses, agents and Solana casing never merge', () => {
   expect(groupWalletAddresses([wallet('eip155:8453'), wallet('eip155:4217', '0xDef'), wallet('eip155:8453', '0xAbC', true, 'agent-b')], networks)).toHaveLength(3)
   expect(groupWalletAddresses([wallet('solana:mainnet', 'SolAddress'), wallet('solana:devnet', 'solAddress')], networks)).toHaveLength(2)

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { httpMethod, type HttpRequestFields } from '@agentis-hq/core/operations'
 import { parseArgs } from 'node:util'
 import { readFileSync } from 'node:fs'
 import { AgentisClient, AgentisApiError } from '@agentis-hq/sdk'
@@ -27,6 +28,7 @@ async function main() {
   validateCommand(args)
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
     help: { type: 'boolean', short: 'h' }, 'no-browser': { type: 'boolean' }, agent: { type: 'string' }, local: { type: 'boolean' }, hosted: { type: 'boolean' }, name: { type: 'string' },
+    method: { type: 'string', short: 'X' }, data: { type: 'string', short: 'd' }, 'data-file': { type: 'string' }, header: { type: 'string', short: 'H', multiple: true },
     wallet: { type: 'string' }, 'max-amount-atomic': { type: 'string' }, 'max-fee-atomic': { type: 'string' },
     from: { type: 'string' }, 'exact-output': { type: 'boolean' }, 'slippage-bps': { type: 'string' }, 'eth-percent': { type: 'string' }, 'every-minutes': { type: 'string' }, preview: { type: 'boolean' }, 'swap-funding': { type: 'boolean' },
     'minimum-output-atomic': { type: 'string' }, 'maximum-input-atomic': { type: 'string' },
@@ -36,8 +38,40 @@ async function main() {
     'max-amount': { type: 'string' }, 'per-transaction': { type: 'string' }, hourly: { type: 'string' }, daily: { type: 'string' }, total: { type: 'string' }, pause: { type: 'boolean' }, resume: { type: 'boolean' }, limit: { type: 'string' },
   } })
   const [command, subcommand, id] = positionals
-  if (command === 'identity') { await runIdentity(subcommand, id, values); return }
-  if (['swap', 'rebalance', 'dca'].includes(command ?? '')) { if (values.local) throw Error('Uniswap currently supports hosted agents only'); await runUniswap(command!, subcommand, id, values); return }
+  const requestFields = (): HttpRequestFields => {
+    if (values.data !== undefined && values['data-file'] !== undefined) throw Error('Choose --data or --data-file')
+    const headers: Record<string, string> = {}
+    for (const header of values.header ?? []) {
+      const colon = header.indexOf(':')
+      if (colon < 1) throw Error('Use --header "Name: value"')
+      const name = header.slice(0, colon).trim().toLowerCase()
+      if (Object.hasOwn(headers, name)) throw Error('Duplicate header')
+      headers[name] = header.slice(colon + 1).trim()
+    }
+    const body = values.data !== undefined ? { body: values.data } : values['data-file'] !== undefined ? { bodyBase64: readFileSync(values['data-file']).toString('base64') } : {}
+    return { ...(values.method || Object.keys(body).length ? { method: httpMethod.parse((values.method ?? 'POST').toUpperCase()) } : {}), ...(values.header ? { headers } : {}), ...body }
+  }
+  if (command === 'discover') {
+    if (Object.keys(values).some(flag => !['help', 'json', 'limit'].includes(flag))) throw Error('Discovery accepts only --limit, --json and --help; no wallet or login is needed')
+    if (values.help) {
+      console.log('agentis discover "<query>" [--limit 8] [--json]\nagentis discover describe <service-id> [--json]\nPublic Mercator catalog reads only. Queries are sent to Mercator. No provider calls or payments; use --json for full schemas.')
+      return
+    }
+    const client = new AgentisClient({ baseUrl: apiUrl() })
+    let output
+    if (subcommand === 'describe') {
+      if (positionals.length !== 3 || values.limit !== undefined) throw Error('Use agentis discover describe <service-id> [--json]')
+      output = await client.discovery.describe(id!)
+    } else {
+      if (!subcommand) throw Error('Use agentis discover "<query>" [--limit 8] [--json]')
+      output = await client.discovery.search({ query: positionals.slice(1).join(' '), ...(values.limit === undefined ? {} : { limit: Number(values.limit) }) })
+    }
+    console.log(values.json ? JSON.stringify(output, null, 2) : formatOutput('discover', output))
+    return
+  }
+  const { header: _headers, ...commandValues } = values
+  if (command === 'identity') { await runIdentity(subcommand, id, commandValues); return }
+  if (['swap', 'rebalance', 'dca'].includes(command ?? '')) { if (values.local) throw Error('Uniswap currently supports hosted agents only'); await runUniswap(command!, subcommand, id, commandValues); return }
   if (values['swap-funding'] && (values.local || command !== 'fetch')) throw Error('--swap-funding currently supports hosted fetch only')
   if (values.help && ['login', 'logout', 'whoami'].includes(command ?? '')) {
     console.log(command === 'login' ? 'agentis login [--no-browser]\nAuthorize selected agents and network wallets in your browser; store scoped executor keys locally. No owner JWT is stored.' : command === 'logout' ? 'agentis logout\nRemove local credentials. Server keys remain active until revoked in the dashboard.' : 'agentis whoami\nShow linked agents and network scopes without exposing keys.')
@@ -68,12 +102,16 @@ async function main() {
     Mainnet by default. Use base-sepolia, sepolia, arc, tempo-testnet or solana-devnet for testnets. --yes skips local confirmation only.
     Reuse identical terms and --key after uncertainty: only the receipt is checked, never a resend.
   fetch <url> --wallet <wallet-id> --max-amount-atomic <cap> --key <idempotency-key>
-    USDC x402 or Tempo MPP paid GET; Tempo also requires --max-fee-atomic (18-decimal protocol USD units).
+    Paid HTTP via x402 or Tempo MPP. --method/-X, --header/-H, --data/-d or --data-file (exact bytes).
+    Data defaults to POST; otherwise GET. Set Content-Type for the provider's body format.
+    Unsponsored Tempo charges require --max-fee-atomic; sponsored charges cost the agent zero gas.
     Tempo: --asset OUSD|USDC.e|pathUSD|alphaUSD (alphaUSD is testnet only), --fee-asset <symbol> optional.
   operations create --file <request.json> --key <idempotency-key>
   operations list|get <id>|wait <id>
   operations approve|reject <id> --hash <operation-hash>   (owner only)
   capabilities
+  discover "<query>" [--limit 8] [--json]   Public API discovery; no wallet/login/payment.
+  discover describe <service-id> [--json]  Endpoints, input schemas and payment offers.
 
 ${pluginHelp}
 ${identityHelp}`)
@@ -120,7 +158,7 @@ ${identityHelp}`)
     }
   } else if (command === 'fetch' && values.local) {
     if (!subcommand || !values.wallet || !values.chain || !values.key || (!values['max-amount'] && !values['max-amount-atomic'])) throw Error('URL, --wallet, --chain, --max-amount and --key required')
-    output = await localPaidFetch({ wallet: values.wallet, chain: values.chain, url: subcommand, key: values.key, asset: values.asset, feeAsset: values['fee-asset'], maxAmountAtomic: values['max-amount-atomic'] ?? exactAmount(values['max-amount']!, 6).toString(), maxFeeAtomic: values['max-fee-atomic'] ?? exactAmount(values['max-fee'] ?? '0.01', 18).toString() }, summary => confirmLocalSend(summary, values.yes ?? false, values.json ?? false))
+    output = await localPaidFetch({ ...requestFields(), wallet: values.wallet, chain: values.chain, url: subcommand, key: values.key, asset: values.asset, feeAsset: values['fee-asset'], maxAmountAtomic: values['max-amount-atomic'] ?? exactAmount(values['max-amount']!, 6).toString(), maxFeeAtomic: values['max-fee-atomic'] ?? (/^0+(\.0+)?$/.test(values['max-fee'] ?? '') ? '0' : exactAmount(values['max-fee'] ?? '0.01', 18).toString()) }, summary => confirmLocalSend(summary, values.yes ?? false, values.json ?? false))
   } else if (command === 'wallet' && subcommand === 'list') {
     output = await walletList(values.local ?? false, values.hosted ?? false, values.agent)
   } else if (command === 'wallet' && values.local) {
@@ -165,10 +203,10 @@ ${identityHelp}`)
       client = await forWallet(values.wallet)
       if (values['swap-funding']) {
         if (values.asset || values['fee-asset']) throw Error('Tempo token selection cannot be combined with swap funding')
-        const result = await client.uniswap.fetch({ url: subcommand, walletId: values.wallet, maxAmountAtomic: values['max-amount-atomic'] }, { idempotencyKey: values.key })
+        const result = await client.uniswap.fetch({ ...requestFields(), url: subcommand, walletId: values.wallet, maxAmountAtomic: values['max-amount-atomic'] }, { idempotencyKey: values.key })
         console.log(values.json ? JSON.stringify(result, null, 2) : result.funding ? planText(result.funding) : formatOutput('operations', result.payment)); return
       }
-      const operation = await client.fetch({ url: subcommand, walletId: values.wallet, asset: values.asset, feeAsset: values['fee-asset'], maxAmountAtomic: values['max-amount-atomic'], ...(values['max-fee-atomic'] ? { maxFeeAtomic: values['max-fee-atomic'] } : {}) }, { idempotencyKey: values.key })
+      const operation = await client.fetch({ ...requestFields(), url: subcommand, walletId: values.wallet, asset: values.asset, feeAsset: values['fee-asset'], maxAmountAtomic: values['max-amount-atomic'], ...(values['max-fee-atomic'] ? { maxFeeAtomic: values['max-fee-atomic'] } : {}) }, { idempotencyKey: values.key })
       output = operation.status === 'queued' ? await client.operations.wait(operation.id, { timeoutMs: 120_000 }) : operation
     }
     else if (command === 'capabilities') output = await client.capabilities()

@@ -2,6 +2,8 @@
 
 This directory contains focused checks and local protocol fixtures. Run `bun run check:offline` from the repository root for the curated regression suite: catalog/transfer validation, display pricing, grouped wallet addresses, balance-request deduplication, local custody/policies, scoped reads, settlement headers, fee sizing, Tempo multi-token/MPP boundaries and cryptographic price verification. Its standalone Tempo signing check also exercises the installed MPP client against fake RPC/signing. It builds workspace packages, uses disposable wallet fixtures and mocked or loopback HTTP, and needs no database, credentials or funded wallets.
 
+`bun test testing/discovery.test.ts` covers Mercator catalog normalization, gateway URL prefixes, advisory compatibility, partial failures and public SDK/CLI/MCP reads using injected/loopback fixtures. No credentials, wallets, database, live provider or payment calls are needed.
+
 The suite names its checks explicitly. Do not replace it with an indiscriminate run of this directory: other scripts include live provider probes and recovery tools.
 
 Current checks cover hosted/local wallet behavior, CLI consent, scoped reads, remote MCP OAuth, Uniswap planning/execution, x402 settlement and provider probes. Several scripts require private environment variables, a dedicated local Postgres instance or funded testnet wallets; inspect a script before running it.

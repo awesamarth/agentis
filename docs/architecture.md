@@ -31,7 +31,7 @@ Policies include per-transaction, rolling hourly/daily and lifetime USD limits a
 
 ## Networks and payments
 
-Hosted and local flows support Base Sepolia, Ethereum Sepolia, Arc Testnet, Tempo Testnet and Solana Devnet as documented in the root README. Direct transfers, x402 paid GET requests and Tempo MPP requests use the common lifecycle.
+Hosted and local flows support Base Sepolia, Ethereum Sepolia, Arc Testnet, Tempo Testnet and Solana Devnet as documented in the root README. Direct transfers, x402 paid HTTP requests and Tempo MPP requests use the common lifecycle.
 
 Uniswap provides Base Sepolia swaps, rebalancing, DCA, gas refill and optional x402 shortfall funding. ENS provides Sepolia ENSv2 identity, multichain payment records and internal ERC-8004 registration. Plugin IDs are validated by the shared core contract; the database stores a JSON array without hardcoding every allowed combination.
 

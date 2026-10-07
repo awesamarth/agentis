@@ -9,7 +9,7 @@ import { address, getCompiledTransactionMessageDecoder, decompileTransactionMess
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS, getTransferCheckedInstructionDataEncoder } from '@solana-program/token'
 import { getSetComputeUnitLimitInstruction, getSetComputeUnitPriceInstruction } from '@solana-program/compute-budget'
 import { PublicKey } from '@solana/web3.js'
-import { x402Payment, type FetchRequest, type OperationInput, type Operation, type PaidHttpResponse } from '@agentis-hq/core/operations'
+import { x402Payment, paymentRequest, httpFields, type FetchRequest, type OperationInput, type Operation, type PaidHttpResponse } from '@agentis-hq/core/operations'
 import type { WalletRow } from '../db/schema'
 import { solanaConnection } from './solana'
 import { requireNetwork, networkByKey } from '@agentis-hq/core/networks'
@@ -27,7 +27,7 @@ const equalBytes = (a: ArrayLike<number>, b: ArrayLike<number>) => Buffer.from(a
 export async function discoverSvm(input: FetchRequest, chainId = networkByKey('solana')!.chainId): Promise<OperationInput> {
   const { networkId, solanaUsdc } = svmNetwork(chainId)
   let response
-  try { response = await paymentHttp({ url: input.url, method: 'GET', headers: {} }, {}, origins()) }
+  try { response = await paymentHttp(paymentRequest(input), {}, origins()) }
   catch { fail(400, 'paid_fetch_unavailable', 'Paid URL was blocked or unavailable; no payment was created') }
   if (response.status !== 402 || !response.headers['payment-required']) fail(400, 'x402_required', 'Expected an x402 payment challenge')
   let challenge
@@ -35,7 +35,7 @@ export async function discoverSvm(input: FetchRequest, chainId = networkByKey('s
   if (challenge.x402Version !== 2 || !Array.isArray(challenge.accepts)) fail(400, 'invalid_challenge', 'Expected x402 v2')
   const selected = challenge.accepts.find(r => r.network === networkId && r.scheme === 'exact' && r.asset === solanaUsdc && typeof r.extra?.feePayer === 'string')
   if (!selected) fail(400, 'unsupported_payment', 'Expected sponsored USDC payment on the selected Solana network')
-  const payment = x402Payment.parse({ url: input.url, maxAmountAtomic: input.maxAmountAtomic, requirements: { ...selected, extra: { feePayer: selected.extra!.feePayer, ...(selected.extra!.memo ? { memo: selected.extra!.memo } : {}) } } })
+  const payment = x402Payment.parse({ ...httpFields(input), url: input.url, maxAmountAtomic: input.maxAmountAtomic, requirements: { ...selected, extra: { feePayer: selected.extra!.feePayer, ...(selected.extra!.memo ? { memo: selected.extra!.memo } : {}) } } })
   if (BigInt(selected.amount) > BigInt(input.maxAmountAtomic) || BigInt(selected.amount) > (1n << 64n) - 1n) fail(409, 'price_limit', 'Seller price exceeds the payment ceiling')
   return { walletId: input.walletId, action: 'paid_fetch', chainId: networkId, asset: `spl:${solanaUsdc}`, to: address(selected.payTo), amountAtomic: selected.amount, maxFeeAtomic: '0', reason: input.reason ?? '', payment }
 }
@@ -43,6 +43,7 @@ export function validateSvm(wallet: WalletRow, input: OperationInput) {
   const { networkId, solanaUsdc } = svmNetwork(input.chainId)
   const p = input.payment
   if (!p || input.mpp || input.action !== 'paid_fetch' || wallet.chainId !== networkId || input.chainId !== networkId || input.asset !== `spl:${solanaUsdc}` || input.maxFeeAtomic !== '0' || p.requirements.network !== networkId || p.requirements.asset !== solanaUsdc || p.requirements.scheme !== 'exact' || p.requirements.payTo !== input.to || p.requirements.amount !== input.amountAtomic || BigInt(input.amountAtomic) > BigInt(p.maxAmountAtomic) || !('feePayer' in p.requirements.extra) || p.requirements.extra.feePayer === wallet.address || input.to === wallet.address) throw new Error('Solana payment terms differ from approval')
+  paymentRequest(p)
   return p.requirements.extra
 }
 type SignedPayment = { input: OperationInput; payer: string; source: string; destination: string; fromSlot: string; message: string; payerSignature: string; payload: PaymentPayload }
@@ -97,7 +98,7 @@ export function createPrivySvm(privy: PrivyClient, authorizationKey: string, ins
     async broadcast(serialized: string, savePaymentHash?: SavePaymentHash): Promise<PaidHttpResponse> {
       const stored: SignedPayment = JSON.parse(serialized.slice(9))
       const header = encodePaymentSignatureHeader(stored.payload)
-      const response = await paymentHttp({ url: stored.input.payment!.url, method: 'GET', headers: {} }, { 'PAYMENT-SIGNATURE': header }, origins(), settlementHeaders(stored.input.chainId, stored.payer, savePaymentHash))
+      const response = await paymentHttp(paymentRequest(stored.input.payment!), { 'PAYMENT-SIGNATURE': header }, origins(), settlementHeaders(stored.input.chainId, stored.payer, savePaymentHash))
       const body = Buffer.from(response.bodyBase64, 'base64'), wire = (stored.payload.payload as { transaction: string }).transaction
       const reflected = [Buffer.from(header), Buffer.from(wire), Buffer.from(wire, 'base64'), Buffer.from(stored.payerSignature)].some(value => body.includes(value))
       return { status: reflected ? 502 : response.status, headers: { 'content-type': reflected ? 'text/plain' : response.headers['content-type'] ?? 'application/octet-stream' }, bodyBase64: reflected ? Buffer.from('Upstream returned payment credentials; response withheld').toString('base64') : response.bodyBase64 }

@@ -117,7 +117,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
     async broadcast(serialized, savePaymentHash) {
       if (serialized.startsWith('x402:')) return x402.broadcast(serialized, savePaymentHash)
       if (serialized.startsWith('svm-x402:')) return svm.broadcast(serialized, savePaymentHash)
-      if (serialized.startsWith('mpp:')) return mpp.broadcast(serialized)
+      if (serialized.startsWith('mpp:')) return mpp.broadcast(serialized, savePaymentHash)
       if (serialized.startsWith('solana:')) return broadcastSolanaTransfer(serialized.slice(7))
       const signedTransaction = serialized as TransactionSerialized
       const tx = serialized.startsWith('0x76') ? TxEnvelopeTempo.deserialize(serialized as `0x76${string}`) : parseTransaction(signedTransaction)
@@ -131,6 +131,10 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
       if (input.action === 'paid_fetch' && !input.mpp) {
         if (!signedTransaction) throw new Error('Persisted payment required')
         return requireNetwork(input.chainId).family === 'solana' ? svm.receipt(signedTransaction, input, transactionHash) : x402.receipt(signedTransaction, input, transactionHash)
+      }
+      if (input.mpp) {
+        if (!signedTransaction) throw Error('Persisted Tempo payment required')
+        return mpp.receipt(signedTransaction, input, transactionHash)
       }
       if (!transactionHash) throw new Error('Transaction hash required')
       if (requireNetwork(input.chainId).family === 'solana') return solanaReceipt(transactionHash, input)

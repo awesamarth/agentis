@@ -6,7 +6,7 @@ import { authorizationTypes } from '@x402/evm'
 import { getAddress, parseAbi, parseAbiItem, parseEventLogs, erc20Abi, recoverTypedDataAddress, type Hex } from 'viem'
 import { PrivyClient } from '@privy-io/node'
 import type { FetchRequest, OperationInput, Operation, PaidHttpResponse } from '@agentis-hq/core/operations'
-import { x402Payment } from '@agentis-hq/core/operations'
+import { x402Payment, paymentRequest, httpFields } from '@agentis-hq/core/operations'
 import type { WalletRow } from '../db/schema'
 import { evmClient, requireNetwork, defaultProductChain } from './networks'
 import { paymentHttp } from './payment-http'
@@ -24,15 +24,15 @@ const usedEvent = parseAbiItem('event AuthorizationUsed(address indexed authoriz
 export async function discoverX402(input: FetchRequest, network = defaultProductChain): Promise<OperationInput> {
   const rail = evmRail(network)
   let response
-  try { response = await paymentHttp({ url: input.url, method: 'GET', headers: {} }, {}, origins()) }
+  try { response = await paymentHttp(paymentRequest(input), {}, origins()) }
   catch { fail(400, 'paid_fetch_unavailable', 'Paid URL was blocked or unavailable; no payment was created') }
-  if (response.status !== 402 || !response.headers['payment-required']) fail(400, 'x402_required', 'Expected an x402 v2 payment challenge; only paid GET requests are enabled')
+  if (response.status !== 402 || !response.headers['payment-required']) fail(400, 'x402_required', 'Expected an x402 v2 payment challenge')
   let challenge
   try { challenge = decodePaymentRequiredHeader(response.headers['payment-required']) } catch { fail(400, 'invalid_challenge', 'Invalid x402 challenge') }
   if (challenge.x402Version !== 2 || !Array.isArray(challenge.accepts)) fail(400, 'invalid_challenge', 'Expected x402 v2')
   const selected = challenge.accepts.find(r => r.network === network && r.scheme === 'exact' && r.asset.toLowerCase() === rail.token && r.extra?.name === rail.domainName && r.extra?.version === rail.domainVersion && (!r.extra.assetTransferMethod || r.extra.assetTransferMethod === 'eip3009'))
   if (!selected) fail(400, 'unsupported_payment', 'Expected a supported USDC payment on the selected wallet network' )
-  const payment = x402Payment.parse({ url: input.url, maxAmountAtomic: input.maxAmountAtomic, requirements: { ...selected, extra: { name: rail.domainName, version: rail.domainVersion } } })
+  const payment = x402Payment.parse({ ...httpFields(input), url: input.url, maxAmountAtomic: input.maxAmountAtomic, requirements: { ...selected, extra: { name: rail.domainName, version: rail.domainVersion } } })
   if (BigInt(payment.requirements.amount) > BigInt(input.maxAmountAtomic)) fail(409, 'price_limit', 'Seller price exceeds your payment ceiling')
   return { walletId: input.walletId, action: 'paid_fetch', chainId: network, asset: rail.asset, to: getAddress(selected.payTo), amountAtomic: (BigInt(selected.amount) * rail.scale).toString(), maxFeeAtomic: '0', reason: input.reason ?? '', payment }
 }
@@ -42,6 +42,7 @@ export function validateX402(wallet: WalletRow, input: OperationInput) {
   const rail = evmRail(input.chainId), network = rail.network
   if (!p || !('name' in p.requirements.extra) || p.requirements.extra.name !== rail.domainName || p.requirements.extra.version !== rail.domainVersion) throw Error('Payment authorization domain does not match the network')
   if (input.action !== 'paid_fetch' || wallet.chainId !== network || input.chainId !== network || input.asset.toLowerCase() !== rail.asset || !p || p.requirements.network !== network || p.requirements.scheme !== 'exact' || p.requirements.asset.toLowerCase() !== rail.token || p.requirements.payTo.toLowerCase() !== input.to.toLowerCase() || BigInt(p.requirements.amount) * rail.scale !== BigInt(input.amountAtomic) || BigInt(p.requirements.amount) > BigInt(p.maxAmountAtomic) || input.maxFeeAtomic !== '0') throw new Error('Payment terms do not match the operation')
+  paymentRequest(p)
 }
 
 type SignedPayment = { input: OperationInput; payer: Hex; fromBlock: string; payload: PaymentPayload; nonce: Hex }
@@ -90,7 +91,7 @@ export function createPrivyX402(privy: PrivyClient, authorizationKey: string, in
     },
     async broadcast(serialized: string, savePaymentHash?: SavePaymentHash): Promise<PaidHttpResponse> {
       const signed = unpack(serialized)
-      const response = await paymentHttp({ url: signed.input.payment!.url, method: 'GET', headers: {} }, { 'PAYMENT-SIGNATURE': encodePaymentSignatureHeader(signed.payload) }, origins(), settlementHeaders(signed.input.chainId, signed.payer, savePaymentHash))
+      const response = await paymentHttp(paymentRequest(signed.input.payment!), { 'PAYMENT-SIGNATURE': encodePaymentSignatureHeader(signed.payload) }, origins(), settlementHeaders(signed.input.chainId, signed.payer, savePaymentHash))
       // Do not expose payment credentials echoed by an upstream. Keep binary responses otherwise.
       const signature = (signed.payload.payload as { signature: string }).signature
       const body = Buffer.from(response.bodyBase64, 'base64')

@@ -64,9 +64,32 @@ Local sends persist signed proof/hash in owner-only `wallets-v2/transactions` jo
 
 `testing/local-wallet-check.ts` covers no-money derivation/storage/CLI/network guards. `testing/local-wallet-live.ts --execute` is an explicit small testnet funding/send check, not a routine suite; ignored funding journals prevent blind funding retries. All six supported sends and same-key retries were live-confirmed; one original Base USDC preparation failure was not diagnosed, while a later attempt succeeded.
 
-Hosted transfers and paid GETs use the common backend on supported mainnets and explicit testnets. Seller/facilitator support must match the selected network. Tempo MPP supports one-shot, unsponsored pull-mode charges in its allowlisted currencies. Uniswap and ENS remain pinned to their existing testnets; core mainnet support does not imply mainnet plugin support.
+Hosted transfers and paid HTTP requests use the common backend on supported mainnets and explicit testnets. Seller/facilitator support must match the selected network. Tempo MPP supports one-shot pull-mode charges with agent-paid or provider-sponsored gas in its allowlisted currencies. Uniswap and ENS remain pinned to their existing testnets; core mainnet support does not imply mainnet plugin support.
 
 `wallet list` shows both hosted and local wallets; `--local` or `--hosted` filters to one type (mutually exclusive). Hosted entries include only enabled wallets. Without a login, the default lists local wallets and prints a hosted-login notice to stderr; `--hosted` requires authentication. API/auth errors are not silently hidden. `--json` returns `[{name, custody, agentId?, wallets: [{walletId, chainId, address}]}]`, without internal policy/setup fields. Local network entries share their named wallet's ID. Human output starts with a blank line and uses bold cyan names, explicit Local/Hosted labels, bold chain headings and two blank lines after each wallet/agent block.
+
+## Discover APIs (no wallet or login)
+
+```sh
+agentis discover "web search" --limit 3
+agentis discover describe exa
+agentis discover describe exa --json
+```
+
+Mercator-backed public catalog reads only. Search shows provider endpoints, estimated prices and advisory Agentis compatibility; describe includes input fields/examples and payment offers. `--json` includes full schemas. Queries go through Agentis to Mercator; no keys, local wallet files or session files are read. No provider calls or automatic payments occur. Use existing `fetch` separately with an explicit wallet and spending ceiling. See [discovery semantics and local deployment status](../../docs/discovery.md).
+
+## Paid request methods and bodies
+
+Both hosted and local `fetch` support `--method/-X` (GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS), repeatable `--header/-H`, and either `--data/-d` (UTF-8) or `--data-file` (exact bytes, including binary/multipart). Set the provider's Content-Type. Data defaults to POST; otherwise GET. No JSON-only restriction or 24 KiB outbound cap. Request fields are bound to approval/idempotency; changing them with the same key is rejected. Deployment request limits and existing response/transport protections still apply.
+
+```sh
+agentis fetch https://api.exa.ai/search --wallet <tempo-wallet-id> \
+  -X POST -H 'Content-Type: application/json' \
+  -d '{"query":"Tempo documentation","type":"instant","numResults":1}' \
+  --asset USDC.e --max-amount-atomic 10000 --max-fee-atomic 0 --key <unique-key>
+```
+
+This creates a payment request through normal policy/approval. A zero gas ceiling selects sponsored Tempo offers; it never authorizes an unsponsored fallback. Do not run against mainnet without spending authorization.
 
 ## Balances
 
@@ -97,7 +120,7 @@ bun packages/cli/src/index.ts wallet history --hosted --agent research-agent --l
 
 History is read-only and oldest → newest within the latest selected records (maximum 100 per authorized scope). Executor keys see payments made by any key within their currently authorized enabled wallets/networks; owners see their own account's history. The issuing key does not filter history, so re-login does not hide previous payments. Operation lookup, approval and execution permissions are unchanged. JSON remains opt-in.
 
-## Local policies, history and paid GET
+## Local policies, history and paid HTTP
 
 ```sh
 bun packages/cli/src/index.ts policy show --local --wallet personal
@@ -116,13 +139,13 @@ Both local sends and paid fetch reserve amount + maximum fees, then recheck curr
 
 Policies stay in the wallet file; the owner-only `wallets-v2/policies` ledger persists spend/reservations. Existing wallets default to active/uncapped. Tracking starts with this feature: older transactions remain visible in history but are not retroactively USD-priced. History is a compact readable list, most recent entries displayed oldest → newest; older undated journals say “Older entry”. It shows cached status; reuse the original request/key to reconcile unsettled work. JSON remains opt-in.
 
-Local paid GET uses separate official x402 and MPP adapters: Base/Arc USDC EIP-3009, Solana sponsored USDC partial signing, and Tempo MPP pull credentials in OUSD, USDC.e or pathUSD (also alphaUSD on testnet). `--max-amount` uses 6-decimal token units; `--max-amount-atomic` is also accepted. Tempo `--max-fee` defaults to 0.01 of the selected gas token; `--asset` selects a seller currency and `--fee-asset` selects an eligible fee token; `--max-fee-atomic` uses 18-decimal protocol USD. MPP uses its expiring nonce lane, distinct from direct sends' protocol lane 0.
+Local paid HTTP uses separate official x402 and MPP adapters: Base/Arc USDC EIP-3009, Solana sponsored USDC partial signing, and Tempo MPP pull credentials in OUSD, USDC.e or pathUSD (also alphaUSD on testnet). `--max-amount` uses 6-decimal token units; `--max-amount-atomic` is also accepted. Tempo `--max-fee` defaults to 0.01 of the selected gas token; `--asset` selects a seller currency and `--fee-asset` selects an eligible fee token; `--max-fee-atomic` uses 18-decimal protocol USD. MPP uses its expiring nonce lane, distinct from direct sends' protocol lane 0.
 
 Local credentials/proofs are saved before submission; x402 settlement hashes are saved when headers arrive and checked against exact on-chain payment terms. Missing hashes use nonce/token-account history recovery; no automatic payment resend or expired-proof release. HTTP success and chain settlement are separate. Binary responses are retained; small text/JSON bodies render readably. The shared transport pins public DNS, forbids redirects/embedded credentials and bounds time/body size. Explicit test fixture access requires `AGENTIS_PAID_FETCH_LOCAL_ORIGINS=http://127.0.0.1:3010`; production private-URL exceptions remain disabled.
 
 Earlier testnet checks of the four local paid rails returned HTTP 200 with confirmed settlement; this does not establish live verification of the new Tempo token matrix or mainnets. `testing/local-policy-check.ts` exercises fee-inclusive caps, concurrency, pause/`--yes`, signing-time rechecks, failure fees, unknown retention and rolling/total semantics without money. HTTP-failure-after-payment and interruption recovery were not live-tested locally. Plugins remain deferred.
 
-## Hosted x402 paid GET
+## Hosted x402 paid HTTP
 
 Use `agentis login`, or create an API key on the agent’s dashboard page and set `AGENTIS_TOKEN` privately (never as a CLI argument). Select that agent’s Base wallet from `wallet list`.
 
@@ -141,10 +164,10 @@ bun packages/cli/src/index.ts fetch 'http://127.0.0.1:3010/api/aqi?city=delhi&ra
 - Base and Arc use EIP-3009 with facilitator-paid gas. Select the corresponding agent wallet and `rail=base` or `rail=arc`. The price ceiling is in 6-decimal USDC units on both. Arc’s operation uses its existing native USDC ledger (18 decimals), with an exact bigint conversion; balances are not counted twice.
 - Solana devnet uses `rail=solana` and the agent’s Solana wallet. The facilitator pays gas; the wallet needs USDC in its associated token account. Privy’s native Solana Kit adapter only partially signs a checked transfer: fixed mint/recipient/amount, no lookup tables or extra programs, and an external fee payer. Settlement matches the exact signed message and token balance deltas, not the seller’s HTTP claim. Unresolved submissions remain reserved without resending; automatic unused-expiry release remains follow-up work.
 
-## Tempo MPP paid GET
+## Tempo MPP paid HTTP
 
 Use the same `fetch` command with the agent’s Tempo wallet and `--max-fee-atomic`. For the local fixture, use `rail=tempo`, `--max-amount-atomic 10000` (0.01 alphaUSD) and `--max-fee-atomic 10000000000000000` (at most 0.01 alphaUSD gas, expressed in 18-decimal protocol USD units). Both amount and maximum fees are reserved under the same agent budget.
 
-The MPP SDK creates a pull-mode credential using Privy’s native Viem adapter. Only a single approved transfer-with-memo in the selected allowlisted Tempo token is permitted: no swaps, splits, sponsorship, unlisted tokens or other chains. Multiple seller offers are filtered by exact token, chain, price and expiry; the chosen offer and fee token are persisted before approval. See [Tempo support and pricing](../../docs/tempo.md). The signed transaction is checked against its sender, call, gas cap and expiry, then persisted before the seller receives it. Approval expires with the challenge. Chain settlement and actual fees are recorded even if the HTTP request fails; an unresolved submission remains reserved and is never blindly resent. Automatic release of unused Tempo submissions is not implemented.
+The MPP SDK creates a pull-mode credential through an exact-transaction signing guard. Hosted sponsorship signs only the validated Tempo payload through Privy because the installed transaction formatter drops the sponsor marker. Only a single approved transfer-with-memo in the selected allowlisted Tempo token is permitted: no swaps, splits, unlisted tokens or other chains. Multiple seller offers are filtered by exact token, chain, price and expiry; the chosen offer and fee token are persisted before approval. See [Tempo support and pricing](../../docs/tempo.md). Sponsored charges bind zero agent gas before approval. The provider chooses/pays its own gas token; its final transaction is verified against the saved sender proof. Lost-response recovery uses memo logs and never resends. The signed transaction is checked against its sender, call, gas cap (if agent-paid) and expiry, then persisted before the seller receives it. Approval expires with the challenge. Chain settlement and actual fees are recorded even if the HTTP request fails; an unresolved submission remains reserved and is never blindly resent. Automatic release of unused Tempo submissions is not implemented.
 
 Manual preflight: `testing/privy-x402-preflight.ts` checks challenge/price/recipient/network/fee boundaries, private-URL rejection, and server-quorum signing using a permanently expired zero-value authorization. `--fund` explicitly tops up the selected wallet to 0.05 testnet USDC. A saved funding attempt is never blindly resent. This preflight is not an authenticated paid-fetch end-to-end test.

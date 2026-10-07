@@ -70,7 +70,7 @@ try {
   const transport = new StreamableHTTPClientTransport(new URL(resource), { requestInit: { headers: { Authorization: `Bearer ${tokens.access_token}` } } })
   mcp = new Client({ name: 'fixture', version: '1' })
   await mcp.connect(transport)
-  const tools = await mcp.listTools(); assert.equal(tools.tools.length, 12); assert(!tools.tools.some(tool => /approve|reject|export|set_policy/.test(tool.name)))
+  const tools = await mcp.listTools(); assert.equal(tools.tools.length, 14); assert(!tools.tools.some(tool => /approve|reject|export|set_policy/.test(tool.name)))
   const call = async (name: string, args: Record<string, unknown> = {}) => mcp!.callTool({ name, arguments: args })
   const unwrap = (response: Awaited<ReturnType<typeof call>>) => JSON.parse((response.content as { text: string }[])[0]!.text)
   const walletList = unwrap(await call('agentis_list_wallets'))
@@ -132,7 +132,7 @@ try {
   const nativeClient = new Client({ name: 'native-oauth-check', version: '1' })
   try {
     await nativeClient.connect(new StreamableHTTPClientTransport(new URL(resource), { authProvider: provider }))
-    assert.equal((await nativeClient.listTools()).tools.length, 12)
+    assert.equal((await nativeClient.listTools()).tools.length, 14)
     const [accessRecord] = await db.select().from(tables.oauthTokens).where(eq(tables.oauthTokens.tokenHash, createHash('sha256').update(savedTokens!.access_token).digest('hex')))
     const [connection] = await db.select().from(tables.oauthConnections).where(eq(tables.oauthConnections.id, accessRecord!.connectionId))
     assert.equal((await fetch(`${base}/v1/grants/${connection!.grantIds[0]}`, { method: 'DELETE', headers: { Authorization: 'Bearer owner-fixture' } })).status, 204)

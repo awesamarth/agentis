@@ -1,9 +1,10 @@
+import { validPaymentHeaders } from './http-request'
 import { lookup } from 'node:dns/promises'
 import { BlockList, isIP } from 'node:net'
 import { request as httpsRequest } from 'node:https'
 import { request as httpRequest } from 'node:http'
 
-export type PaymentHttpRequest = { url: string; method: string; headers: Record<string, string>; bodyBase64?: string }
+export type PaymentHttpRequest = { url: string; method: string; headers: Record<string, string>; bodyBase64?: string; body?: string }
 export type PaymentHttpResponse = { status: number; headers: Record<string, string>; bodyBase64: string }
 const privateAddresses = new BlockList()
 for (const [address, prefix] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.168.0.0', 16], ['192.0.2.0', 24], ['198.18.0.0', 15], ['198.51.100.0', 24], ['203.0.113.0', 24], ['224.0.0.0', 4], ['240.0.0.0', 4]] as const) privateAddresses.addSubnet(address, prefix, 'ipv4')
@@ -13,23 +14,22 @@ export function publicAddress(address: string) {
   const family = isIP(address)
   return family === 4 ? !privateAddresses.check(address, 'ipv4') : family === 6 && globalV6.check(address, 'ipv6') && !privateAddresses.check(address, 'ipv6')
 }
-const forbiddenHeaders = new Set(['host', 'connection', 'content-length', 'transfer-encoding', 'upgrade', 'proxy-authorization', 'proxy-connection', 'cookie', 'payment-signature', 'x-payment'])
 export function validatePaymentHeaders(headers: Record<string, string>) {
-  for (const [name, value] of Object.entries(headers)) {
-    if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name) || /[\r\n]/.test(value) || forbiddenHeaders.has(name.toLowerCase()) || (name.toLowerCase() === 'authorization' && /^Payment\s/i.test(value))) throw new Error('Unsafe or pre-signed request header')
-  }
+  if (!validPaymentHeaders(headers)) throw new Error('Unsafe or pre-signed request header')
 }
 export function paymentHttp(input: PaymentHttpRequest, paymentHeaders: Record<string, string> = {}, localOrigins: readonly string[] = [], onHeaders?: (headers: Record<string, string>) => Promise<void>): Promise<PaymentHttpResponse> {
-  return boundedHttp(input, paymentHeaders, localOrigins, onHeaders, 1_048_576)
+  // Limit raw response bytes before base64 encoding for storage/API delivery.
+  return boundedHttp(input, paymentHeaders, localOrigins, onHeaders, 10 * 1_048_576)
 }
-// The public RedStone snapshot contains all feeds (~2 MiB). This fixed-host,
-// credential-free oracle reader does not increase paid-response limits.
+// The public RedStone snapshot contains all feeds (~2 MiB). Its fixed-host,
+// credential-free reader retains a separate 4 MiB response limit.
 export const redstoneSnapshotUrl = 'https://oracle-gateway-1.a.redstone.finance/data-packages/latest/redstone-primary-prod'
 export function redstoneHttp() {
   return boundedHttp({ url: redstoneSnapshotUrl, method: 'GET', headers: {} }, {}, [], undefined, 4_194_304)
 }
 async function boundedHttp(input: PaymentHttpRequest, paymentHeaders: Record<string, string>, localOrigins: readonly string[], onHeaders: ((headers: Record<string, string>) => Promise<void>) | undefined, responseLimit: number): Promise<PaymentHttpResponse> {
   validatePaymentHeaders(input.headers)
+  if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(input.method) || (input.body !== undefined && input.bodyBase64 !== undefined) || (['GET', 'HEAD'].includes(input.method) && (input.body !== undefined || input.bodyBase64 !== undefined))) throw Error('Invalid HTTP method or body')
   const url = new URL(input.url)
   const local = process.env.NODE_ENV !== 'production' && url.protocol === 'http:' && url.hostname === '127.0.0.1' && localOrigins.includes(url.origin)
   if (url.username || url.password || url.hash || (!local && (url.protocol !== 'https:' || (url.port && url.port !== '443')))) throw new Error('Paid requests require HTTPS; redirects and embedded credentials are not supported')
@@ -41,8 +41,7 @@ async function boundedHttp(input: PaymentHttpRequest, paymentHeaders: Record<str
   ]).finally(() => clearTimeout(timer))
   if (!records.length || (!local && records.some(record => !publicAddress(record.address)))) throw new Error('Private, reserved or mixed DNS destinations are not allowed')
   const pinned = records.find(record => record.family === 4) ?? records[0]!
-  const body = input.bodyBase64 ? Buffer.from(input.bodyBase64, 'base64') : undefined
-  if (body && body.length > 24_576) throw new Error('Request body is too large')
+  const body = input.bodyBase64 !== undefined ? Buffer.from(input.bodyBase64, 'base64') : input.body !== undefined ? Buffer.from(input.body, 'utf8') : undefined
   const headers = Object.fromEntries(Object.entries(input.headers).map(([name, value]) => [name.toLowerCase(), value]))
   return new Promise((resolve, reject) => {
     let headersSaved: Promise<void> = Promise.resolve()

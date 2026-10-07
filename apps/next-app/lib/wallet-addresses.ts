@@ -21,5 +21,6 @@ export function groupWalletAddresses(wallets: readonly Wallet[], networks: reado
       group.networks.push(metadata.get(wallet.chainId) ?? { chainId: wallet.chainId, name: wallet.chainId })
     }
   }
-  return [...groups.values()]
+  const order = (label: string) => label === 'EVM' ? 0 : label === 'Solana' ? 1 : 2
+  return [...groups.values()].sort((a, b) => order(a.label) - order(b.label))
 }

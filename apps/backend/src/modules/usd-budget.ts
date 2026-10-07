@@ -10,7 +10,7 @@ export function usdCost(input: OperationInput, quote: UsdQuote, fee = input.maxF
   const value = (amount: string, price: string, decimals: number) => ceil(BigInt(amount) * BigInt(price), 10n ** BigInt(decimals) * 1_000_000_000_000n)
   return (success && input.action !== 'uniswap_approval' ? value(input.amountAtomic, quote.assetPrice, quote.assetDecimals) : 0n) + value(fee, quote.feePrice, quote.feeDecimals)
 }
-export async function quoteUsd(input: Pick<OperationInput, 'chainId' | 'asset' | 'feeAsset'>): Promise<UsdQuote> {
+export async function quoteUsd(input: Pick<OperationInput, 'chainId' | 'asset' | 'feeAsset'> & Partial<Pick<OperationInput, 'maxFeeAtomic'>>): Promise<UsdQuote> {
   const network = supportedNetworks.find(network => network.chainId === input.chainId)
   const asset = network?.assets.find(asset => input.asset.startsWith('erc20:') ? asset.id.toLowerCase() === input.asset.toLowerCase() : asset.id === input.asset)
   if (!network || !asset) throw Error('Asset has no configured USD price source')
@@ -20,7 +20,8 @@ export async function quoteUsd(input: Pick<OperationInput, 'chainId' | 'asset' |
     if (!network.testnet) throw Error('Test valuation is forbidden on mainnet')
     return { value: '1000000000000000000', expiresAt: Date.now() + 30_000 }
   }
-  const [assetPrice, feePrice] = await Promise.all([get(asset.priceId), get(feeId)])
+  const assetPrice = await get(asset.priceId)
+  const feePrice = input.maxFeeAtomic === '0' ? { value: '0', expiresAt: assetPrice.expiresAt } : await get(feeId)
   if (Math.min(assetPrice.expiresAt, feePrice.expiresAt) <= Date.now()) throw Error('USD quote expired')
   return { assetPrice: assetPrice.value, feePrice: feePrice.value, assetDecimals: asset.decimals, feeDecimals: network.decimals, expiresAt: Math.min(assetPrice.expiresAt, feePrice.expiresAt) }
 }

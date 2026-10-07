@@ -17,6 +17,7 @@
       "import": "./dist/networks.js",
       "require": "./dist/networks.cjs"
     },
+    "./discovery": { "types": "./dist/discovery.d.ts", "import": "./dist/discovery.js", "require": "./dist/discovery.cjs" },
     "./tempo": { "types": "./dist/tempo.d.ts", "import": "./dist/tempo.js", "require": "./dist/tempo.cjs" },
     "./prices": { "types": "./dist/prices.d.ts", "import": "./dist/prices.js", "require": "./dist/prices.cjs" },
     "./operations": {

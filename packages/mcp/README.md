@@ -26,12 +26,15 @@ Cloud-hosted clients cannot reach your laptop's localhost. They need a deployed 
 
 ## Tools
 
+- `agentis_discover`: search the public Mercator catalog by query/limit. No agent/wallet selection, provider call or payment.
+- `agentis_describe_service`: inspect provider/gateway endpoints, schemas, examples and advertised payment offers. Candidate compatibility and prices are advisory, not permission to spend. Use existing paid fetch separately. [Discovery semantics](../../docs/discovery.md). The MCP connection retains its normal OAuth requirement.
+
 - `agentis_list_wallets`: authorized agents, wallets and supported token metadata.
 - `agentis_balance`: scoped token balances and estimated USD totals.
 - `agentis_policy`: read shared USD limits, mode and spent/reserved amounts.
 - `agentis_history`: recent payments across issuing keys within authorized wallets/networks.
 - `agentis_send`: decimal token amounts; creates a backend transfer request.
-- `agentis_fetch`: x402 USDC or Tempo MPP charge paid GET. Tempo supports OUSD, USDC.e and pathUSD, plus testnet alphaUSD. Optional `asset` selects the payment token; `feeAsset` selects an eligible gas token. Testnet USDC.e cannot pay gas; its creation-time default is OUSD. No sessions, sponsorship or automatic swaps.
+- `agentis_fetch`: x402 USDC or Tempo MPP charge paid HTTP. `method`, `headers`, `body` (UTF-8) or `bodyBase64` preserve the provider request; no JSON-only restriction. Tempo supports OUSD, USDC.e and pathUSD, plus testnet alphaUSD. Optional `asset` selects the payment token; `feeAsset` selects an eligible gas token. Testnet USDC.e cannot pay gas; its creation-time default is OUSD. Provider-sponsored Tempo charges cost the agent zero gas. Sessions and automatic swaps are not implemented.
 - `agentis_get_operation`: status, receipt and paid HTTP response for this connection's operations.
 - `agentis_list_operations`: this connection's requests.
 - `agentis_capabilities`: execution capabilities and network/asset metadata.

@@ -12,6 +12,15 @@ agentis wallet list
 agentis wallet balance
 ```
 
+Public API discovery does not require login or a wallet:
+
+```sh
+agentis discover "web search" --limit 3
+agentis discover describe exa --json
+```
+
+This reads Mercator's catalog, with provider endpoints, input schemas, estimated prices and advisory compatibility. No payment or provider call occurs. Use existing `fetch` separately for an explicitly requested payment. These commands require a backend deployment containing discovery routes; use `AGENTIS_API_URL` for a local backend.
+
 Hosted commands cover balances, policy/history reads, transfers, paid fetches, Uniswap and ENS. Ask mode returns a dashboard approval URL; automatic mode executes only within the agent's rules.
 
 Local custody supports wallet creation, balances, policies, transfers and x402/MPP paid fetches:
@@ -21,7 +30,7 @@ agentis wallet create --local --name local-agent --chains base,ethereum,tempo,so
 agentis policy show --local --wallet local-agent
 ```
 
-Tempo supports OUSD (the new-selection default), USDC.e and pathUSD on mainnet and testnet, plus alphaUSD on testnet. Sends and MPP charge requests accept `--asset` and `--fee-asset` for separate payment/gas tokens. Testnet USDC.e cannot pay gas and defaults to OUSD fees at request creation. No betaUSD/thetaUSD, MPP sessions, sponsored charges or automatic swaps.
+Tempo supports OUSD (the new-selection default), USDC.e and pathUSD on mainnet and testnet, plus alphaUSD on testnet. Sends and MPP charge requests accept `--asset` and `--fee-asset` for separate payment/gas tokens. Testnet USDC.e cannot pay gas and defaults to OUSD fees at request creation. Tempo MPP charges support provider-sponsored gas as well as agent-paid gas. Use `--method`, repeatable `--header`, and either `--data` or `--data-file` for exact provider requests, including non-JSON formats. No betaUSD/thetaUSD or automatic swaps; MPP sessions remain unimplemented.
 
 Use `base-sepolia`, `sepolia`, `arc`, `tempo-testnet` or `solana-devnet` to select testnets explicitly.
 

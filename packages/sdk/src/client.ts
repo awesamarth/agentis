@@ -1,5 +1,6 @@
 import type { Operation, OperationInput, WalletPolicy, AuthorizationRequest, UsdLimits, GrantInput, FetchRequest, PluginId } from '@agentis-hq/core/operations'
 
+import { discoverySearchInput, discoveryServiceId, type DiscoverySearchInput, type DiscoverySearchResult, type DiscoveryDescription } from '@agentis-hq/core/discovery'
 import type { AgentIdentity, IdentityStep, EnsRecipient } from './identity'
 import type { SwapRequest, SwapQuote, SwapPlan, DcaInput, DcaSchedule, RebalancePreview } from './uniswap'
 
@@ -27,7 +28,7 @@ export type CliLoginSelection = { agentId: string; chainIds: string[] }
 export type AgentisConfig = {
   baseUrl: string
   /** Executor grant, or a fresh Privy owner access token. Never expose an owner token to an agent. */
-  token: string | (() => string | Promise<string>)
+  token?: string | (() => string | Promise<string>)
   fetch?: typeof globalThis.fetch
 }
 export class AgentisApiError extends Error {
@@ -59,6 +60,13 @@ export class AgentisClient {
     approve: (id: string, selections: CliLoginSelection[], code: string) => this.request<{ approved: true }>(`/cli/logins/${encodeURIComponent(id)}/approve`, 'POST', { selections, code, confirm: true }),
   }
   fetch = (input: FetchRequest, options: { idempotencyKey: string }) => this.request<Operation>('/fetch', 'POST', input, { 'Idempotency-Key': options.idempotencyKey }, AbortSignal.timeout(60_000))
+  discovery = {
+    search: (input: DiscoverySearchInput) => {
+      const { query, limit = 8 } = discoverySearchInput.parse(input)
+      return this.request<DiscoverySearchResult>(`/discovery/search?${new URLSearchParams({ query, limit: String(limit) })}`, 'GET', undefined, {}, AbortSignal.timeout(120_000), false)
+    },
+    describe: (serviceId: string) => this.request<DiscoveryDescription>(`/discovery/services/${encodeURIComponent(discoveryServiceId.parse(serviceId))}`, 'GET', undefined, {}, AbortSignal.timeout(40_000), false),
+  }
   capabilities = () => this.request<Record<string, unknown>>('/capabilities')
   onboarding = {
     get: () => this.request<{ settings: { networks: string[]; defaultNetwork: string; totalBudgetUsd: string | null; completedAt: string } | null; networks: Array<{ key: string; name: string; chainId: string; chainType: string; family: string; currency: string; decimals: number; defaultAsset: string; defaultFee: string; assets: Array<{ id: OperationInput['asset']; symbol: string; decimals: number; feeEligible?: boolean }>; explorer: string; executionReady: boolean; testnet: boolean }> }>('/onboarding'),

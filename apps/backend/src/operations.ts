@@ -162,7 +162,7 @@ export class OperationService {
       }
       // Bind new Tempo fees to an explicit token before approval, after idempotency
       // lookup. Older persisted operations retain their original fee-token meaning.
-      if (requireNetwork(input.chainId).family === 'tempo') input = { ...input, feeAsset: input.feeAsset ?? defaultTempoFeeAsset(input.chainId, input.asset).id }
+      if (requireNetwork(input.chainId).family === 'tempo' && !input.mpp?.sponsored) input = { ...input, feeAsset: input.feeAsset ?? defaultTempoFeeAsset(input.chainId, input.asset).id }
       if (!this.executor || wallet.provider !== this.executor.id) fail(503, 'executor_unavailable', 'This provider is not enabled for execution yet')
       if (wallet.provider === 'privy' && !wallet.serverAuthorized) fail(409, 'wallet_setup_required', 'Open this agent’s rules and save once to enable hosted execution')
       this.executor.validate(wallet, input)

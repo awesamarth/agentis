@@ -1,5 +1,8 @@
 import { z } from 'zod'
 import { networks } from './networks'
+import { httpRequestFields, validHttpBody } from './http-request'
+export { httpMethod, httpFields, paymentRequest } from './http-request'
+export type { HttpRequestFields } from './http-request'
 
 // JSON amounts never pass through Number. Limits are atomic units of the wallet's
 // configured asset, including the maximum network fee for native transfers.
@@ -8,13 +11,15 @@ export const positiveAtomic = atomic.refine(value => BigInt(value) > 0n, 'Must b
 export const chainId = z.string().regex(/^(eip155:[1-9]\d*|solana:[A-Za-z0-9]+)$/)
 export const fetchRequest = z.object({
   walletId: z.string().uuid(), url: z.url().max(4096), maxAmountAtomic: positiveAtomic,
-  maxFeeAtomic: positiveAtomic.optional(),
+  ...httpRequestFields,
+  maxFeeAtomic: atomic.optional(),
   asset: z.string().min(1).max(96).optional(),
   feeAsset: z.string().min(1).max(96).optional(),
   reason: z.string().trim().max(500).default(''),
-}).strict()
+}).strict().refine(validHttpBody, 'Choose one body encoding; GET and HEAD do not accept a body')
 export type FetchRequest = z.input<typeof fetchRequest>
 export const x402Payment = z.object({
+  ...httpRequestFields,
   url: z.url().max(4096), maxAmountAtomic: positiveAtomic,
   requirements: z.object({
     scheme: z.literal('exact'), network: z.string().refine(id => networks.some(network => network.chainId === id && network.x402), 'Unsupported x402 network').transform(id => id as `${string}:${string}`), asset: z.string(), amount: positiveAtomic,
@@ -24,7 +29,7 @@ export const x402Payment = z.object({
       z.object({ feePayer: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/), memo: z.string().max(256).optional() }).strict(),
     ]),
   }).strict(),
-}).strict()
+}).strict().refine(validHttpBody, 'Invalid HTTP request body')
 export type PaidHttpResponse = { status: number; headers: Record<string, string>; bodyBase64: string }
 export const operationInput = z.object({
   walletId: z.string().uuid(),
@@ -33,7 +38,7 @@ export const operationInput = z.object({
   swap: z.object({ planId: z.string().uuid(), tokenOut: z.enum(['ETH', 'USDC']), fee: z.union([z.literal(100), z.literal(500), z.literal(3000), z.literal(10000)]), pool: z.string().regex(/^0x[0-9a-fA-F]{40}$/), minimumOutputAtomic: positiveAtomic, exactOutput: z.boolean(), deadline: z.number().int().positive() }).strict().optional(),
   ens: z.object({ name: z.string().max(255), resolver: z.string().regex(/^0x[0-9a-fA-F]{40}$/), resolutionChainId: z.literal('eip155:11155111') }).strict().optional(),
   payment: x402Payment.optional(),
-  mpp: z.object({ url: z.url().max(4096), challenge: z.string().max(16384), maxAmountAtomic: positiveAtomic, expiresAt: z.iso.datetime() }).strict().optional(),
+  mpp: z.object({ ...httpRequestFields, sponsored: z.boolean().optional(), url: z.url().max(4096), challenge: z.string().max(16384), maxAmountAtomic: positiveAtomic, expiresAt: z.iso.datetime() }).strict().refine(validHttpBody, 'Invalid HTTP request body').optional(),
   chainId,
   asset: z.union([z.literal('native'), z.string().regex(/^(erc20:0x[0-9a-fA-F]{40}|spl:[1-9A-HJ-NP-Za-km-z]{32,44})$/)]),
   to: z.string().min(1).max(128),
@@ -41,7 +46,7 @@ export const operationInput = z.object({
   maxFeeAtomic: atomic,
   feeAsset: z.string().regex(/^erc20:0x[0-9a-fA-F]{40}$/).optional(),
   reason: z.string().trim().max(500).default(''),
-}).strict().refine(input => !input.feeAsset || networks.some(network => network.family === 'tempo' && network.chainId === input.chainId && network.assets.some(asset => asset.feeEligible !== false && asset.id.toLowerCase() === input.feeAsset!.toLowerCase())), 'Fee token is not supported on this network').refine(input => input.action === 'identity_write' ? !!input.identity && input.amountAtomic === '0' && input.asset === 'native' && input.chainId === 'eip155:11155111' && !input.swap : !input.identity && BigInt(input.amountAtomic) > 0n, 'Invalid identity action or amount').refine(input => input.action.startsWith('uniswap_') ? !!input.swap && !input.payment && !input.mpp && BigInt(input.maxFeeAtomic) > 0n : !input.swap).refine(input => input.action === 'paid_fetch' ? (!!input.payment && !input.mpp && input.maxFeeAtomic === '0') || (!!input.mpp && !input.payment && BigInt(input.maxFeeAtomic) > 0n) : !input.payment && !input.mpp && BigInt(input.maxFeeAtomic) > 0n, 'Invalid payment action or fee cap')
+}).strict().refine(input => !input.feeAsset || networks.some(network => network.family === 'tempo' && network.chainId === input.chainId && network.assets.some(asset => asset.feeEligible !== false && asset.id.toLowerCase() === input.feeAsset!.toLowerCase())), 'Fee token is not supported on this network').refine(input => input.action === 'identity_write' ? !!input.identity && input.amountAtomic === '0' && input.asset === 'native' && input.chainId === 'eip155:11155111' && !input.swap : !input.identity && BigInt(input.amountAtomic) > 0n, 'Invalid identity action or amount').refine(input => input.action.startsWith('uniswap_') ? !!input.swap && !input.payment && !input.mpp && BigInt(input.maxFeeAtomic) > 0n : !input.swap).refine(input => input.action === 'paid_fetch' ? (!!input.payment && !input.mpp && input.maxFeeAtomic === '0') || (!!input.mpp && !input.payment && (input.mpp.sponsored ? input.maxFeeAtomic === '0' : BigInt(input.maxFeeAtomic) > 0n)) : !input.payment && !input.mpp && BigInt(input.maxFeeAtomic) > 0n, 'Invalid payment action or fee cap')
 export type OperationInput = z.input<typeof operationInput>
 
 export const walletPolicy = z.object({
@@ -101,6 +106,6 @@ export type Operation = OperationInput & {
   approvalUrl: string | null
   transactionHash: string | null
   error: string | null
-  receipt: { transactionHash: string; chainId: string; blockNumber: string; feeAtomic: string; success: boolean; identity?: { agentId?: string; key?: string; value?: string }; swap?: { inputAtomic: string; outputAtomic: string; tokenOut: 'ETH' | 'USDC' }; feePayment?: { asset: string; amountAtomic: string; decimals: number } } | null
+  receipt: { transactionHash: string; chainId: string; blockNumber: string; feeAtomic: string; success: boolean; identity?: { agentId?: string; key?: string; value?: string }; swap?: { inputAtomic: string; outputAtomic: string; tokenOut: 'ETH' | 'USDC' }; feePayment?: { asset: string; amountAtomic: string; decimals: number; payer?: string }; sponsored?: boolean } | null
 }
 export const terminalStatuses = new Set<OperationStatus>(['confirmed', 'failed', 'denied', 'expired', 'rejected'])
