@@ -1,6 +1,6 @@
 {
   "name": "@agentis-hq/sdk",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Agentis SDK — scoped financial operations, approvals and receipts",
   "type": "module",
   "main": "./dist/index.js",
