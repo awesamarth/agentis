@@ -22,7 +22,7 @@ One backend handles authorization, execution and receipts across the dashboard, 
 | --- | --- |
 | **Independent agents** | Named agents with their own wallets, rules, enabled networks and plugins. |
 | **Spending controls** | Per-transaction, rolling hourly/daily and lifetime USD caps shared across an agent's networks, including fees. Recipient restrictions, approval mode and pause controls. |
-| **Payments** | Direct token transfers and paid HTTP requests through x402 or MPP, including provider-sponsored Tempo gas, with recorded payment outcomes and HTTP responses. |
+| **Payments** | Direct token transfers and paid HTTP requests through x402 or MPP, including provider-sponsored Tempo/Solana gas and agent-paid Tempo push charges, with recorded payment outcomes and HTTP responses. |
 | **Uniswap** | Base Sepolia swaps, scheduled purchases, manual portfolio rebalancing, gas-refill schedules and optional x402 payment-token shortfall funding. |
 | **ENS** | Owner-controlled ENSv2 subnames, network-specific payment addresses and narrowly delegated endpoint/description updates. ERC-8004 registration is part of this plugin. |
 | **Dashboard** | Agent setup, balances, API keys, approval requests, transaction history and spend analytics. |
@@ -36,12 +36,12 @@ One backend handles authorization, execution and receipts across the dashboard, 
 | Base | ETH, USDC | x402 |
 | Ethereum | ETH, USDC | x402 |
 | Tempo | OUSD, USDC.e, pathUSD | MPP charge |
-| Solana | SOL, USDC | x402 |
+| Solana | SOL, USDC | x402, MPP charge |
 | Base Sepolia | ETH, USDC | x402 |
 | Ethereum Sepolia | ETH, USDC | x402; requires a Sepolia-enabled seller/facilitator |
 | Arc Testnet | USDC | x402 |
 | Tempo Testnet | OUSD, USDC.e, pathUSD, alphaUSD | MPP charge |
-| Solana Devnet | SOL, USDC | x402 |
+| Solana Devnet | SOL, USDC | x402, MPP charge |
 
 Base mainnet is the default network. Enable testnets in agent settings to select them. Mainnet and testnets have separate budget usage; balance totals and profile spending include mainnet only. ENSv2 identity writes use Ethereum Sepolia; Uniswap currently uses Base Sepolia only. Enabling a network does not automatically enable a plugin or expand an existing restricted credential.
 

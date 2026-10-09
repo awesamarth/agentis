@@ -3,6 +3,8 @@ import { identityCall, identityReceipt, validateIdentityChain } from '../plugins
 import { PrivyClient } from '@privy-io/node'
 import { createPrivyX402, validateX402 } from '../modules/x402'
 import { createPrivyMpp, validateMpp } from '../modules/mpp'
+import { createPrivySolanaMpp } from '../modules/solana-mpp'
+import { validateSolanaMpp } from '@agentis-hq/core/solana-mpp'
 import { createPrivySvm, validateSvm } from '../modules/x402-solana'
 import type { WalletRpcParams } from '@privy-io/node/resources'
 import type { AuthorizationRequest, OperationInput } from '@agentis-hq/core/operations'
@@ -30,6 +32,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
   const privy = new PrivyClient({ appId, appSecret, timeout: 20_000, maxRetries: 0 })
   const x402 = createPrivyX402(privy, authorizationKey, inspectWallet)
   const mpp = createPrivyMpp(privy, authorizationKey, inspectWallet)
+  const solanaMpp = createPrivySolanaMpp(privy, authorizationKey, inspectWallet)
   const svm = createPrivySvm(privy, authorizationKey, inspectWallet)
   async function check(wallet: WalletRow, input: OperationInput) {
     const owned = await inspectWallet(wallet.providerWalletId, wallet.ownerId)
@@ -46,7 +49,16 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
       if (requireNetwork(input.chainId).enabled === false) fail(400, 'unsupported_network', 'This network is no longer available for new payments')
       if (input.identity) { if (wallet.chainId !== 'eip155:11155111') fail(400, 'unsupported_network', 'Identity writes require Ethereum Sepolia'); identityCall(input); return }
       if (input.swap) { if (wallet.chainId !== uniswap.chainId) fail(400, 'unsupported_network', 'Uniswap currently requires Base Sepolia'); uniswapCall(input, wallet.address); return }
-      if (input.action === 'paid_fetch') { if (input.mpp) validateMpp(wallet, input); else if (requireNetwork(input.chainId).family === 'solana') validateSvm(wallet, input); else validateX402(wallet, input); return }
+      if (input.action === 'paid_fetch') {
+        if (input.mpp) {
+          if (requireNetwork(input.chainId).family === 'solana') {
+            if (wallet.chainId !== input.chainId) throw Error('Solana wallet network mismatch')
+            validateSolanaMpp(input, wallet.address)
+          } else validateMpp(wallet, input)
+        } else if (requireNetwork(input.chainId).family === 'solana') validateSvm(wallet, input)
+        else validateX402(wallet, input)
+        return
+      }
       const network = requireNetwork(input.chainId)
       if (network.family === 'tempo') tempoFeeAsset(input)
       else if (input.feeAsset) fail(400, 'unsupported_asset', 'Fee token selection requires Tempo')
@@ -87,7 +99,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
     async prepare(wallet, input, _authorization, execution) {
       this.validate(wallet, input)
       if (!execution || execution.expiresAt.getTime() <= Date.now()) throw new Error('Valid operation context required')
-      if (input.action === 'paid_fetch') return input.mpp ? mpp.prepare(wallet, input, execution) : requireNetwork(input.chainId).family === 'solana' ? svm.prepare(wallet, input, execution) : x402.prepare(wallet, input, execution)
+      if (input.action === 'paid_fetch') return input.mpp ? (requireNetwork(input.chainId).family === 'solana' ? solanaMpp : mpp).prepare(wallet, input, execution) : requireNetwork(input.chainId).family === 'solana' ? svm.prepare(wallet, input, execution) : x402.prepare(wallet, input, execution)
       const request = await executor.buildRequest(wallet, input, execution.id, execution.expiresAt)
       if (request.url !== `https://api.privy.io/v1/wallets/${encodeURIComponent(wallet.providerWalletId)}/rpc` || request.headers['privy-app-id'] !== appId || Number(request.headers['privy-request-expiry']) <= Date.now()) throw new Error('Invalid or expired authorization request')
       if (!['eth_signTransaction', 'signTransaction'].includes(String(request.body.method))) throw new Error('Only transaction signing is permitted')
@@ -118,6 +130,7 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
       if (serialized.startsWith('x402:')) return x402.broadcast(serialized, savePaymentHash)
       if (serialized.startsWith('svm-x402:')) return svm.broadcast(serialized, savePaymentHash)
       if (serialized.startsWith('mpp:')) return mpp.broadcast(serialized, savePaymentHash)
+      if (serialized.startsWith('svm-mpp:')) return solanaMpp.broadcast(serialized, savePaymentHash)
       if (serialized.startsWith('solana:')) return broadcastSolanaTransfer(serialized.slice(7))
       const signedTransaction = serialized as TransactionSerialized
       const tx = serialized.startsWith('0x76') ? TxEnvelopeTempo.deserialize(serialized as `0x76${string}`) : parseTransaction(signedTransaction)
@@ -133,8 +146,8 @@ export function createPrivyExecutor(appId: string, appSecret: string, inspectWal
         return requireNetwork(input.chainId).family === 'solana' ? svm.receipt(signedTransaction, input, transactionHash) : x402.receipt(signedTransaction, input, transactionHash)
       }
       if (input.mpp) {
-        if (!signedTransaction) throw Error('Persisted Tempo payment required')
-        return mpp.receipt(signedTransaction, input, transactionHash)
+        if (!signedTransaction) throw Error('Persisted MPP payment required')
+        return (requireNetwork(input.chainId).family === 'solana' ? solanaMpp : mpp).receipt(signedTransaction, input, transactionHash)
       }
       if (!transactionHash) throw new Error('Transaction hash required')
       if (requireNetwork(input.chainId).family === 'solana') return solanaReceipt(transactionHash, input)

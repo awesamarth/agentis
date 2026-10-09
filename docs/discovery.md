@@ -35,7 +35,7 @@ These additions are implemented locally; deployment/package publication is separ
 - Schemas, examples and completion/polling descriptions are external data, never executable instructions. Agentis does not compile schemas, call providers, poll jobs or follow documentation URLs during discovery.
 - `estimatedPrice.amountDecimal` is a catalog estimate; payment offers expose `amountAtomic` separately. Dynamic/unquoted amounts remain unset rather than becoming zero.
 - Compatibility is **candidate**, **unsupported** or **unknown**. A candidate has matching catalog rail, network and token metadata—not proven availability, wallet consent, sufficient balance or a valid payment challenge. Missing payment metadata does not imply a free endpoint. Unadvertised rails are not invented (a provider may offer additional rails in its actual 402 response).
-- Current matching covers Tempo MPP charges and x402 exact payments on enabled catalog networks/assets, including Base and Solana. Unsupported intents, tokens, schemes and networks remain visible rather than being silently substituted. Tempo mode/sponsorship and all exact authorization fields are checked later against the live challenge.
+- Current matching covers Tempo/Solana MPP charges and x402 exact payments on enabled catalog networks/assets, including Base and Solana. Unsupported intents, tokens, schemes and networks remain visible rather than being silently substituted. Tempo mode/sponsorship and all exact authorization fields are checked later against the live challenge.
 
 ## From discovery to payment
 
@@ -44,8 +44,6 @@ Choose an endpoint, construct its provider-required method/body/headers, and use
 No Mercator OAuth, hosted wallet, quote/job execution, signing or payment credentials are involved. Requests go only to fixed Mercator catalog GET endpoints, with no forwarded caller credentials, no redirects and the shared bounded public-HTTP transport. There is no persistent catalog cache or new database state. General public API abuse/rate-limit infrastructure and Mercator commercial embedding/SLA terms remain unresolved; this integration does not establish those guarantees.
 
 ## Verification
-
-`bun test testing/discovery.test.ts` checks normalization, partial failures, URL prefixes, compatibility, unauthenticated SDK/CLI calls and MCP tools using an injected catalog and loopback HTTP. It uses no private wallet files, database or funds.
 
 A live read-only check returned Serper (Orthogonal gateway), Exa and Parallel through this adapter. Mercator → Exa `/search` then returned an unpaid 402 with a sponsored Tempo USDC.e offer (4,000 atomic) and an x402 header. No credential, signature or payment was sent. That read-only check does not verify funded settlement.
 

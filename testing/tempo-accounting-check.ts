@@ -43,7 +43,7 @@ try {
   const payment = await service.create(principal, body, 'separate-fees')
   assert.equal(payment.status, 'pending_approval')
   assert.equal(payment.feeAsset, body.feeAsset)
-  assert.equal(payment.usdReservedMicros, '2030000', '$2 payment + $0.03 fee-token valuation')
+  assert.equal(payment.usdReservedMicros, '2050300', '$2 payment + $0.03 maximum fees + 1% reviewed USD price headroom')
   assert.equal((await service.create(principal, body, 'separate-fees')).id, payment.id)
   await assert.rejects(service.create(principal, { ...body, feeAsset: body.asset }, 'separate-fees'), /different operation/)
   await assert.rejects(service.decide(principal, payment.id, '00'.repeat(32), true), /does not match/)
@@ -51,7 +51,7 @@ try {
   const oldError = console.error
   try { console.error = () => {}; await service.tick() } finally { console.error = oldError }
   assert.equal((await service.get(principal, payment.id)).status, 'unknown')
-  assert.equal((await service.policyView(principal, wallet!.id)).reservedMicros, '2030000')
+  assert.equal((await service.policyView(principal, wallet!.id)).reservedMicros, '2050300')
   await service.tick()
   assert.equal(prepared, 1); assert.equal(broadcast, 1, 'Unknown submission must never be resent')
   receipt = { transactionHash: hash, chainId: wallet!.chainId, blockNumber: '1', success: true, feeAtomic: '1000000000000000', feePayment: { asset: body.feeAsset, amountAtomic: '1000', decimals: 6 } }
@@ -72,6 +72,22 @@ try {
   assert.equal(prepared, 1, 'Expired approvals must never reach preparation')
   const unavailable = new OperationService(db, executor, {}, 'http://localhost:3000', async () => { throw Error('Oracle unavailable') })
   await assert.rejects(unavailable.create(principal, body, 'no-price'), /fresh USD price/)
+  const { mock } = await import('bun:test')
+  const mpp = await import('../apps/backend/src/modules/mpp')
+  mock.module('../apps/backend/src/modules/mpp', () => ({ ...mpp, discoverMpp: async () => ({ ...body, action: 'paid_fetch', mpp: { mode: 'push', url: 'https://example.com/paid', challenge: 'fixture-only', maxAmountAtomic: body.amountAtomic, expiresAt: new Date(Date.now() + 300_000).toISOString() } }) }))
+  const push = await service.fetch(principal, { walletId: wallet!.id, url: 'https://example.com/paid', maxAmountAtomic: body.amountAtomic, maxFeeAtomic: body.maxFeeAtomic, feeAsset: body.feeAsset }, 'push-response-race')
+  await service.decide(principal, push.id, push.operationHash, true)
+  executor.broadcast = async () => {
+    const [saved] = await db.select().from(tables.operations).where(eq(tables.operations.id, push.id))
+    assert.equal(saved!.signedTransaction, 'fixture-proof-not-a-transaction')
+    await service.tick() // Another worker settles before the provider finishes its body.
+    assert.equal((await service.get(principal, push.id)).status, 'confirmed')
+    return { status: 200, headers: {}, bodyBase64: Buffer.from('paid result').toString('base64') }
+  }
+  await service.tick()
+  const delivered = await service.get(principal, push.id)
+  assert.equal(delivered.status, 'confirmed', 'Late HTTP delivery must not regress settlement')
+  assert.equal(delivered.httpResponse?.bodyBase64, Buffer.from('paid result').toString('base64'), 'Keep the provider response after concurrent settlement')
   console.log('Tempo accounting passed: independent fee valuation, exact approvals, idempotency, proof-before-submit, unknown retention/no resend, settlement, defaults, expiry and unavailable prices. No real execution.')
 } finally {
   await connection.end(); await admin.unsafe(`DROP SCHEMA ${schema} CASCADE`); await admin.end()

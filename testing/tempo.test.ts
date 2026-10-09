@@ -2,9 +2,11 @@ import { test, expect } from 'bun:test'
 import { Challenge } from 'mppx'
 import { encodeEventTopics, encodeAbiParameters, erc20Abi, type TransactionReceipt } from 'viem'
 import { networkByKey, tempoTokens } from '../packages/core/src/networks'
-import { tempoAsset, tempoFeeAsset, defaultTempoFeeAsset, selectTempoChallenge, parseTempoChallenge, roundedTempoFee, verifyTempoReceipt, assertTempoBalances } from '../packages/core/src/tempo'
-import { operationInput, type OperationInput } from '../packages/core/src/operations'
+import { tempoAsset, tempoFeeAsset, defaultTempoFeeAsset, selectTempoChallenge, parseTempoChallenge, roundedTempoFee, verifyTempoReceipt, assertTempoBalances, tempoPaymentMemo } from '../packages/core/src/tempo'
+import { encode as sdkMemo } from '../node_modules/mppx/dist/tempo/Attribution.js'
+import { operationInput, paymentTransfers, recipientsAllowed, type OperationInput } from '../packages/core/src/operations'
 import { validateMpp } from '../apps/backend/src/modules/mpp'
+import { usdCost } from '../apps/backend/src/modules/usd-budget'
 import { transferTerms } from '../packages/cli/src/lib/transfer-terms'
 import type { WalletRow } from '../apps/backend/src/db/schema'
 
@@ -61,11 +63,24 @@ test('MPP selects a supported later offer, preserves description, and honors exp
   expect(() => selectTempoChallenge(offer(tempoTokens.pathUSD), chainId, '1000', 'OUSD')).toThrow()
 })
 
-test('MPP rejects wrong chain, over-cap, split payments, extra authority and unsupported intents', () => {
-  for (const header of [offer(tempoTokens.OUSD, {}, { chainId: 42431 }), offer(tempoTokens.OUSD, {}, { supportedModes: ['push'] }), offer(tempoTokens.OUSD, {}, { splits: [{ recipient: from, amount: '1' }] }), offer(tempoTokens.OUSD, { amount: '0' }), offer(tempoTokens.OUSD, { additionalCharge: '1000' }), offer().replace('intent="charge"', 'intent="session"')]) expect(() => selectTempoChallenge(header, chainId, '1000')).toThrow()
+test('MPP rejects wrong chain, over-cap, invalid splits, extra authority and unsupported intents', () => {
+  for (const header of [offer(tempoTokens.OUSD, {}, { chainId: 42431 }), offer(tempoTokens.OUSD, {}, { supportedModes: ['push'], feePayer: true }), offer(tempoTokens.OUSD, {}, { splits: [{ recipient: from, amount: '1000' }] }), offer(tempoTokens.OUSD, { amount: '0' }), offer(tempoTokens.OUSD, { additionalCharge: '1000' }), offer().replace('intent="charge"', 'intent="session"')]) expect(() => selectTempoChallenge(header, chainId, '1000')).toThrow()
   expect(() => selectTempoChallenge(offer(), chainId, '999')).toThrow()
   expect(() => selectTempoChallenge(offer(), chainId, '1000', undefined, Date.now() + 100_000)).toThrow()
   expect(() => selectTempoChallenge(offer(), chainId, '1000', undefined, Date.now() - 600_000)).toThrow()
+})
+
+test('push-only offers bind delivery mode and self-paid fees; dual-mode offers keep pull', () => {
+  const selected = selectTempoChallenge(offer(tempoTokens.OUSD, {}, { supportedModes: ['push'] }), chainId, '1000')
+  expect(selected.mode).toBe('push')
+  expect(tempoPaymentMemo(selected.challenge)).toBe(sdkMemo({ challengeId: selected.challenge.id, serverId: selected.challenge.realm }))
+  expect(selectTempoChallenge(offer(tempoTokens.OUSD, {}, { supportedModes: ['push', 'pull'] }), chainId, '1000').mode).toBe('pull')
+  expect(() => selectTempoChallenge(offer(tempoTokens.OUSD, {}, { supportedModes: ['push'] }), chainId, '1000', undefined, Date.now(), true)).toThrow()
+  const input: OperationInput = { ...transfer, action: 'paid_fetch', mpp: { mode: 'push', url: 'https://example.com/paid', challenge: Challenge.serialize(selected.challenge), expiresAt: selected.challenge.expires!, maxAmountAtomic: '1000' } }
+  expect(() => operationInput.parse(input)).not.toThrow()
+  expect(() => validateMpp({ chainId } as WalletRow, input)).not.toThrow()
+  expect(() => validateMpp({ chainId } as WalletRow, { ...input, mpp: { ...input.mpp!, mode: 'pull' } })).toThrow('mode')
+  expect(() => operationInput.parse({ ...input, maxFeeAtomic: '0', mpp: { ...input.mpp!, sponsored: true } })).toThrow()
 })
 
 test('sponsored charges bind zero agent gas to the actual challenge', () => {
@@ -73,8 +88,8 @@ test('sponsored charges bind zero agent gas to the actual challenge', () => {
   expect(selectTempoChallenge([offer(), offer(tempoTokens.usdcMainnet, {}, { feePayer: true })].join(', '), chainId, '1000', undefined, Date.now(), true).asset.symbol).toBe('USDC.e')
   const input: OperationInput = { ...transfer, action: 'paid_fetch', maxFeeAtomic: '0', mpp: { sponsored: true, url: 'https://example.com/search', method: 'POST', body: '{"query":"test"}', challenge: Challenge.serialize(selected.challenge), maxAmountAtomic: '1000', expiresAt: selected.challenge.expires! } }
   expect(() => operationInput.parse(input)).not.toThrow()
-  expect(() => validateMpp({ chainId } as WalletRow, input)).not.toThrow()
-  expect(() => validateMpp({ chainId } as WalletRow, { ...input, mpp: { ...input.mpp!, sponsored: false } })).toThrow()
+  expect(() => validateMpp({ chainId, address: from } as WalletRow, input)).not.toThrow()
+  expect(() => validateMpp({ chainId, address: from } as WalletRow, { ...input, mpp: { ...input.mpp!, sponsored: false } })).toThrow()
   expect(verifyTempoReceipt(receipt(), transfer, from, to).feeAtomic).toBe('0')
   expect(() => verifyTempoReceipt(receipt(), transfer, from, from)).toThrow()
 })
@@ -82,10 +97,26 @@ test('sponsored charges bind zero agent gas to the actual challenge', () => {
 test('persisted MPP currency/recipient/amount/expiry stay exact at execution', () => {
   const selected = selectTempoChallenge(offer(), chainId, '1000')
   const input: OperationInput = { ...transfer, action: 'paid_fetch', mpp: { url: 'https://example.com/paid', challenge: Challenge.serialize(selected.challenge), maxAmountAtomic: '1000', expiresAt: selected.challenge.expires! } }
-  const wallet = { chainId } as WalletRow
+  const wallet = { chainId, address: from } as WalletRow
   expect(() => validateMpp(wallet, input)).not.toThrow()
   for (const patch of [{ asset: `erc20:${tempoTokens.pathUSD}` }, { to: from }, { amountAtomic: '1001' }, { feeAsset: `erc20:${tempoTokens.usdcTestnet}` }]) expect(() => validateMpp(wallet, { ...input, ...patch })).toThrow()
   expect(() => validateMpp({ chainId: 'eip155:42431' } as WalletRow, input)).toThrow()
+})
+
+test('split totals, all-recipient policy and distinct settlement evidence are bound to approval', () => {
+  const selected = selectTempoChallenge(offer(tempoTokens.OUSD, {}, { splits: [{ recipient: to, amount: '200' }, { recipient: to, amount: '200' }] }), chainId, '1000')
+  const input: OperationInput = { ...transfer, action: 'paid_fetch', mpp: { url: 'https://example.com/paid', challenge: Challenge.serialize(selected.challenge), expiresAt: selected.challenge.expires!, maxAmountAtomic: '1000', splits: [{ to, amountAtomic: '200' }, { to, amountAtomic: '200' }] } }
+  expect(paymentTransfers(operationInput.parse(input)).map(item => item.amountAtomic)).toEqual(['600', '200', '200'])
+  expect(recipientsAllowed(input, [to])).toBe(true)
+  expect(recipientsAllowed({ ...input, mpp: { splits: [{ to: from, amountAtomic: '200' }] } }, [to])).toBe(false)
+  expect(usdCost(input, { assetPrice: '1000000000000000000', feePrice: '0', assetDecimals: 6, feeDecimals: 18, expiresAt: Date.now() + 1000 })).toBe(1000n)
+  expect(() => validateMpp({ chainId, address: from } as WalletRow, input)).not.toThrow()
+  expect(() => validateMpp({ chainId, address: from } as WalletRow, { ...input, mpp: { ...input.mpp!, splits: [{ to, amountAtomic: '201' }, { to, amountAtomic: '199' }] } })).toThrow('recipients')
+  const log = receipt().logs[0]!
+  const logs = [600n, 200n, 200n].map(value => ({ ...log, data: encodeAbiParameters([{ type: 'uint256' }], [value]) }))
+  expect(verifyTempoReceipt({ ...receipt(), logs }, input, from).success).toBe(true)
+  expect(() => verifyTempoReceipt({ ...receipt(), logs: logs.slice(0, 2) }, input, from)).toThrow('missing approved transfer')
+  expect(() => operationInput.parse({ ...input, mpp: { ...input.mpp!, splits: [{ to, amountAtomic: '1000' }] } })).toThrow()
 })
 
 test('fee exposure rounds up and combines with the transfer only when the token is shared', () => {

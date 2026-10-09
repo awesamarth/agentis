@@ -43,7 +43,7 @@ const solana = (key: string, testnet: boolean, genesisHash: string, mint: string
   key, name: testnet ? 'Solana Devnet' : 'Solana', family: 'solana', chainId: `solana:${genesisHash.slice(0, 32)}`, chainType: 'solana', testnet,
   currency: 'SOL', decimals: 9, priceId: 'coingecko:solana', rpcEnv, rpcUrl, genesisHash, explorer: 'https://explorer.solana.com', defaultAsset: 'SOL', defaultFee: '0.005',
   assets: [{ id: 'native', symbol: 'SOL', decimals: 9, priceId: 'coingecko:solana' }, { id: `spl:${mint}`, symbol: 'USDC', decimals: 6, priceId: 'coingecko:usd-coin' }],
-  x402: { token: mint, asset: `spl:${mint}`, scale: 1n },
+  x402: { token: mint, asset: `spl:${mint}`, scale: 1n }, mpp: true,
 })
 // Developer-owned catalog. Add networks here only when their family adapter and
 // token/rail contracts are supported. Never infer execution support from a name.

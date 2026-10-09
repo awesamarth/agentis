@@ -44,7 +44,7 @@ export function catalogOffer(offer: z.infer<typeof offerSchema>): DiscoveryPayme
   const unsupported = (reason: string) => ({ ...result, compatibility: compatibility('unsupported', reason) })
   if (!['mpp', 'x402'].includes(offer.protocol)) return unsupported('Payment protocol is not implemented.')
   if (offer.intent !== 'charge') return unsupported('Only one-shot charges are implemented.')
-  if (offer.protocol === 'mpp' && offer.method !== 'tempo') return unsupported('This MPP method is not implemented.')
+  if (offer.protocol === 'mpp' && !['tempo', 'solana'].includes(offer.method ?? '')) return unsupported('This MPP method is not implemented.')
   if (offer.protocol === 'x402' && offer.scheme !== 'exact') return offer.scheme ? unsupported('Only x402 exact payments are implemented.') : result
   if (!offer.network || !offer.currency) return result
   const network = findNetwork(offer.network)
@@ -52,8 +52,9 @@ export function catalogOffer(offer: z.infer<typeof offerSchema>): DiscoveryPayme
   const sameToken = (a: string, b: string) => network.family === 'solana' ? a === b : a.toLowerCase() === b.toLowerCase()
   let asset: (typeof network.assets)[number] | undefined
   if (offer.protocol === 'mpp') {
-    if (!network.mpp) return unsupported('MPP is not implemented on this network.')
-    asset = network.assets.find(asset => sameToken(asset.id, offer.currency!) || sameToken(asset.id, `erc20:${offer.currency}`))
+    if (!network.mpp || offer.method !== network.family) return unsupported('MPP method does not match an implemented network.')
+    const currency = network.family === 'solana' ? (offer.currency === 'sol' ? 'native' : `spl:${offer.currency}`) : `erc20:${offer.currency}`
+    asset = network.assets.find(asset => sameToken(asset.id, offer.currency!) || sameToken(asset.id, currency))
   } else {
     if (!network.x402) return unsupported('x402 is not implemented on this network.')
     if (sameToken(offer.currency, network.x402.token) || (network.x402.asset !== 'native' && sameToken(offer.currency, network.x402.asset))) asset = network.assets.find(asset => asset.id === network.x402!.asset)

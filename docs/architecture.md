@@ -27,11 +27,11 @@ authenticate → validate → reserve USD budget → approve/authorize
 
 Idempotency is scoped to the requesting principal. The same key with different terms is rejected. Signed bytes or payment proofs are persisted before submission and never returned publicly. Unknown submissions keep their reservation and are reconciled; they are not automatically resent.
 
-Policies include per-transaction, rolling hourly/daily and lifetime USD limits across an agent's enabled networks. Fees are included. Policy, plugin, grant and wallet state are rechecked immediately before execution.
+Policies include per-transaction, rolling hourly/daily and lifetime USD limits across an agent's enabled networks. New hosted requests reserve the fresh USD value of the amount plus maximum fees with 1% price headroom, rounded up to USD micros. This ceiling counts against limits, is shown for review and bound to the approval hash; it never increases the token amount or fee cap. Execution still requires fresh prices within the stored ceiling and current budgets. Settlement charges actual amount/fees at the execution quote and releases unused reservation. Existing approvals are not enlarged. Policy, plugin, grant and wallet state are rechecked immediately before execution.
 
 ## Networks and payments
 
-Hosted and local flows support Base Sepolia, Ethereum Sepolia, Arc Testnet, Tempo Testnet and Solana Devnet as documented in the root README. Direct transfers, x402 paid HTTP requests and Tempo MPP requests use the common lifecycle.
+Hosted and local flows support Base Sepolia, Ethereum Sepolia, Arc Testnet, Tempo Testnet and Solana Devnet as documented in the root README. Direct transfers, x402 paid HTTP requests and Tempo/Solana MPP requests use the common lifecycle. Solana hosted/local MPP share exact signing and settlement checks; see [supported contract](solana-mpp.md).
 
 Uniswap provides Base Sepolia swaps, rebalancing, DCA, gas refill and optional x402 shortfall funding. ENS provides Sepolia ENSv2 identity, multichain payment records and internal ERC-8004 registration. Plugin IDs are validated by the shared core contract; the database stores a JSON array without hardcoding every allowed combination.
 

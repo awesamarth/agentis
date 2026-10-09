@@ -36,7 +36,7 @@ try {
   for (const index of [0, 2]) {
     const policy = await service.policyView(principal, wallets[index]!.id)
     assert.equal(policy.environment, index === 0 ? 'mainnet' : 'testnet')
-    assert.equal(policy.reservedMicros, '600001')
+    assert.equal(policy.reservedMicros, '606002')
   }
   // Simulate receipt accounting without executing a payment.
   await db.update(tables.operations).set({ status: 'confirmed', usdSettledMicros: '100000', settledAt: new Date() }).where(eq(tables.operations.id, main.id))

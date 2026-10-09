@@ -2,7 +2,7 @@ import { resolveRecipient } from './plugins/ens/resolution'
 import { PluginRegistry } from './plugins/registry'
 import { createHash, randomBytes } from 'node:crypto'
 import { and, desc, eq, getTableColumns, inArray, lt, sql } from 'drizzle-orm'
-import { operationInput, walletPolicy, grantInput, type GrantInput, type Operation, type OperationInput } from '@agentis-hq/core/operations'
+import { operationInput, recipientsAllowed, walletPolicy, grantInput, type GrantInput, type Operation, type OperationInput } from '@agentis-hq/core/operations'
 import type { Database } from './db'
 import { grants, operations, wallets, onboarding, agents, type OperationRow, type WalletRow } from './db/schema'
 import { ApiError, fail } from './errors'
@@ -10,7 +10,7 @@ import { safeErrorDetails } from './modules/error-diagnostics'
 import type { PluginConfig } from './plugins'
 import { buildTransfer } from './modules/transfers'
 import { defaultTempoFeeAsset } from '@agentis-hq/core/tempo'
-import { quoteUsd, usdCost } from './modules/usd-budget'
+import { quoteUsd, usdCost, usdReservation } from './modules/usd-budget'
 import type { Executor } from './providers/types'
 import { fetchRequest } from '@agentis-hq/core/operations'
 import { discoverX402 } from './modules/x402'
@@ -78,7 +78,7 @@ export class OperationService {
     }
     if (wallet.chainId !== input.chainId) return 'Wrong chain for wallet'
     if (wallet.policy.budgetMode !== 'usd' && cost(input) > BigInt(wallet.policy.maxPerOperationAtomic)) return 'Per-operation limit exceeded (including fee cap)'
-    if (wallet.policy.allowedRecipients.length && !wallet.policy.allowedRecipients.some(to => input.chainId.startsWith('solana:') ? to === input.to : to.toLowerCase() === input.to.toLowerCase())) return 'Recipient is not allowed'
+    if (!recipientsAllowed(input, wallet.policy.allowedRecipients)) return 'Recipient is not allowed'
     return null
   }
 
@@ -142,8 +142,8 @@ export class OperationService {
       return row ? this.view(row) : null
     })
     if (existing) return existing
-    if (!requireNetwork(network).mpp && (request.asset || request.feeAsset)) fail(400, 'unsupported_payment', 'Token selection is currently supported only for Tempo MPP')
-    return this.createInput(principal, buildTransfer(operationInput.parse(await (requireNetwork(network).mpp ? discoverMpp(request, network) : requireNetwork(network).family === 'solana' ? discoverSvm(request, network) : discoverX402(request, network)))), idempotencyKey, requestHash)
+    if (!requireNetwork(network).mpp && (request.asset || request.feeAsset)) fail(400, 'unsupported_payment', 'Paid token selection is supported only on Tempo and Solana')
+    return this.createInput(principal, buildTransfer(operationInput.parse(await (requireNetwork(network).family === 'solana' ? discoverSvm(request, network) : requireNetwork(network).mpp ? discoverMpp(request, network) : discoverX402(request, network)))), idempotencyKey, requestHash)
   }
 
   private async createInput(principal: Principal, input: OperationInput, idempotencyKey: string, requestHash = hash(JSON.stringify(input))): Promise<Operation> {
@@ -197,7 +197,7 @@ export class OperationService {
       if (agent || (budget?.totalBudgetUsdMicros !== null && budget?.totalBudgetUsdMicros !== undefined)) {
         try { usdQuote = await this.priceQuote(input) } catch { fail(503, 'price_unavailable', 'A fresh USD price is unavailable. No payment was created.') }
         if (usdQuote.expiresAt <= Date.now()) fail(503, 'price_expired', 'USD quote expired')
-        usdReservedMicros = usdCost(input, usdQuote).toString()
+        usdReservedMicros = usdReservation(input, usdQuote).toString()
         reason ??= await this.usdBudgetReason(tx, wallet, BigInt(usdReservedMicros))
       } else if (wallet.policy.budgetMode === 'usd') fail(409, 'budget_required', 'Set a total USD budget before making payments')
       const operationHash = hash(JSON.stringify({ input, policyVersion: wallet.policyVersion, ...(usdReservedMicros !== null ? { usdReservedMicros } : {}) }))
@@ -427,7 +427,10 @@ export class OperationService {
           const httpResponse = await executor.broadcast(prepared.signedTransaction!, async transactionHash => {
             await this.db.update(operations).set({ transactionHash }).where(and(eq(operations.id, prepared.id), inArray(operations.status, ['submitting', 'unknown'])))
           })
-          await this.db.update(operations).set({ status: 'submitted', error: null, ...(httpResponse ? { httpResponse } : {}) }).where(and(eq(operations.id, prepared.id), inArray(operations.status, ['submitting', 'unknown'])))
+          // Another worker can reconcile while the paid HTTP response is in flight.
+          // Keep the result even if settlement already made the operation terminal.
+          if (httpResponse) await this.db.update(operations).set({ httpResponse }).where(eq(operations.id, prepared.id))
+          await this.db.update(operations).set({ status: 'submitted', error: null }).where(and(eq(operations.id, prepared.id), inArray(operations.status, ['submitting', 'unknown'])))
         } catch (error) {
           console.error('Operation submission failed; reconciliation required', { operationId: prepared.id, chainId: prepared.input.chainId, action: prepared.input.action, causes: safeErrorDetails(error) })
           await this.db.update(operations).set({ status: 'unknown', error: 'Submission outcome unknown; reconcile before retrying' }).where(and(eq(operations.id, prepared.id), inArray(operations.status, ['submitting', 'unknown'])))

@@ -102,9 +102,10 @@ async function main() {
     Mainnet by default. Use base-sepolia, sepolia, arc, tempo-testnet or solana-devnet for testnets. --yes skips local confirmation only.
     Reuse identical terms and --key after uncertainty: only the receipt is checked, never a resend.
   fetch <url> --wallet <wallet-id> --max-amount-atomic <cap> --key <idempotency-key>
-    Paid HTTP via x402 or Tempo MPP. --method/-X, --header/-H, --data/-d or --data-file (exact bytes).
+    Paid HTTP via x402 or Tempo/Solana MPP. --method/-X, --header/-H, --data/-d or --data-file (exact bytes).
     Data defaults to POST; otherwise GET. Set Content-Type for the provider's body format.
-    Unsponsored Tempo charges require --max-fee-atomic; sponsored charges cost the agent zero gas.
+    Hosted unsponsored MPP requires --max-fee-atomic (Tempo: 18 decimals; Solana: lamports, includes ATA rent).
+    Solana defaults to USDC; use --asset SOL for native MPP. Sponsored charges cost the agent zero gas.
     Tempo: --asset OUSD|USDC.e|pathUSD|alphaUSD (alphaUSD is testnet only), --fee-asset <symbol> optional.
   operations create --file <request.json> --key <idempotency-key>
   operations list|get <id>|wait <id>
@@ -158,7 +159,10 @@ ${identityHelp}`)
     }
   } else if (command === 'fetch' && values.local) {
     if (!subcommand || !values.wallet || !values.chain || !values.key || (!values['max-amount'] && !values['max-amount-atomic'])) throw Error('URL, --wallet, --chain, --max-amount and --key required')
-    output = await localPaidFetch({ ...requestFields(), wallet: values.wallet, chain: values.chain, url: subcommand, key: values.key, asset: values.asset, feeAsset: values['fee-asset'], maxAmountAtomic: values['max-amount-atomic'] ?? exactAmount(values['max-amount']!, 6).toString(), maxFeeAtomic: values['max-fee-atomic'] ?? (/^0+(\.0+)?$/.test(values['max-fee'] ?? '') ? '0' : exactAmount(values['max-fee'] ?? '0.01', 18).toString()) }, summary => confirmLocalSend(summary, values.yes ?? false, values.json ?? false))
+    const network = localNetworks[parseChains(values.chain)[0]!]!
+    const selected = Object.values(network.assets).find(token => token.symbol === values.asset || token.id === values.asset || (values.asset === 'sol' && token.id === 'native'))
+    const decimals = network.family === 'solana' ? (selected?.decimals ?? 6) : 6
+    output = await localPaidFetch({ ...requestFields(), wallet: values.wallet, chain: values.chain, url: subcommand, key: values.key, asset: values.asset, feeAsset: values['fee-asset'], maxAmountAtomic: values['max-amount-atomic'] ?? exactAmount(values['max-amount']!, decimals).toString(), maxFeeAtomic: values['max-fee-atomic'] ?? (/^0+(\.0+)?$/.test(values['max-fee'] ?? '') ? '0' : exactAmount(values['max-fee'] ?? network.defaultFee, network.decimals).toString()) }, summary => confirmLocalSend(summary, values.yes ?? false, values.json ?? false))
   } else if (command === 'wallet' && subcommand === 'list') {
     output = await walletList(values.local ?? false, values.hosted ?? false, values.agent)
   } else if (command === 'wallet' && values.local) {

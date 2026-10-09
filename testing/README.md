@@ -1,16 +1,20 @@
-# Focused integration checks
+# Testing
 
-This directory contains focused checks and local protocol fixtures. Run `bun run check:offline` from the repository root for the curated regression suite: catalog/transfer validation, display pricing, grouped wallet addresses, balance-request deduplication, local custody/policies, scoped reads, settlement headers, fee sizing, Tempo multi-token/MPP boundaries and cryptographic price verification. Its standalone Tempo signing check also exercises the installed MPP client against fake RPC/signing. It builds workspace packages, uses disposable wallet fixtures and mocked or loopback HTTP, and needs no database, credentials or funded wallets.
+**New tests: only a small number of feature-relevant E2E tests.** No new unit/helper suites or mocked test matrices. Hosted payment E2E means the real backend, owner approval/policy, real Privy signing, chain settlement and provider result—not a local-key wallet or fake custody adapter. If blocked, report it; do not substitute custody or claim verification.
 
-`bun test testing/discovery.test.ts` covers Mercator catalog normalization, gateway URL prefixes, advisory compatibility, partial failures and public SDK/CLI/MCP reads using injected/loopback fixtures. No credentials, wallets, database, live provider or payment calls are needed.
+## Retained safety regressions
 
-The suite names its checks explicitly. Do not replace it with an indiscriminate run of this directory: other scripts include live provider probes and recovery tools.
+`bun run check:offline` builds workspace packages and runs existing checks for wrong-chain/token rejection, exact payment approvals/signing, fee/budget limits, oracle signature/freshness, HTTP bytes/settlement headers, custody-file protections and scoped access. It needs no database, private credentials or funded wallets. These regressions are supplementary, not hosted E2E evidence; routine changes need only relevant checks, not the whole suite.
 
-Current checks cover hosted/local wallet behavior, CLI consent, scoped reads, remote MCP OAuth, Uniswap planning/execution, x402 settlement and provider probes. Several scripts require private environment variables, a dedicated local Postgres instance or funded testnet wallets; inspect a script before running it.
+Display/grouping/cache, transfer-helper, mocked discovery and standalone ENS fee-sizing tests were removed. `bun run check` remains the build/typecheck command.
 
-Local seller fixtures:
+## Separate checks and fixtures
 
-- `x402-server/`: x402 fixture.
-- `mpp-server/`: Solana MPP fixture.
+- Database-backed CLI login, MCP/OAuth, network accounting and Tempo accounting checks use isolated local schemas; inspect their requirements before running.
+- `solana-mpp-local-check.ts [--splits]`: disposable local CLI + Surfpool Devnet fork; **not real Privy or public Solana verification**. See [Solana MPP](../docs/solana-mpp.md).
+- `tempo-splits-live-check.ts --testnet [--push]`: faucet-funded disposable local keys + official SDK seller on public Moderato; **not hosted Privy verification**. Push checks include POST, HTTP success/post-payment failure and same-key no-resend. This script remains testnet-only.
+- `tempo-readonly-check.ts`: explicit live read-only RPC/oracle/unpaid-offer probe, run from `apps/backend`; never signs/submits and is not part of the offline suite.
+- `hosted-mpp-seller.ts --serve-mainnet` (from `apps/backend`): controlled official-SDK Tempo/Solana seller on loopback port 19042 for real hosted Privy/mainnet E2E. It never signs for the agent or creates/approves operations; receiver keys stay in ignored `.agentis-local/`. Enable only this exact origin in the local API/worker transport allowlist. Hosted mainnet Tempo self-paid pull/push and sponsored pull splits passed. Solana self-paid/sponsored USDC splits and SOL single charges also passed, including HTTP results, independent chain checks and same-key no-resend. The receiver can sponsor fees with its own key/funds; it never receives the Agentis payer key. See `docs/tempo.md` and `docs/solana-mpp.md` for evidence and remaining gaps.
+- `x402-server/` and `mpp-server/`: local seller fixtures.
 
-Use `bun run check` from the repository root for package builds and TypeScript checks. Database-backed CLI login, MCP/OAuth, network-accounting and `tempo-accounting-check.ts` checks remain separate and use isolated local fixtures. `tempo-readonly-check.ts` is an explicit live read-only probe (run from `apps/backend`); it reads token/RPC/oracle metadata and unpaid seller offers, never signs or submits. Do not include it in the offline suite. Run live scripts only with explicit approval and testnet funds. Never point them at mainnet or a stale production database.
+Never indiscriminately run this directory: it contains live/funded scripts and private recovery tools. Mainnet test spending is authorized only for hosted Privy `testing-another-agent`, with existing policies and owner approvals; see [AGENTS.md](../AGENTS.md). Authorization is not an instruction to initiate payments. Never point isolated checks at production/stale database snapshots, use unrelated wallets or run private recovery scripts as tests.

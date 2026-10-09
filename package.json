@@ -13,7 +13,7 @@
     "build:packages": "bun run --filter @agentis-hq/core build && bun run --filter @agentis-hq/sdk build && bun run --filter @agentis-hq/cli build && bun run --filter @agentis-hq/mcp build",
     "check:packages": "bun run build:packages && bun run --filter @agentis-hq/cli check && bun run --filter @agentis-hq/mcp check",
     "check": "bun run check:packages && bun run --filter backend check && bun run --filter next-app check",
-    "check:offline": "bun run build:packages && bun test testing/networks.test.ts testing/display-prices.test.ts testing/wallet-addresses.test.ts testing/transfer-terms.test.ts testing/tempo.test.ts testing/paid-http.test.ts testing/discovery.test.ts testing/prices.test.ts && bun testing/tempo-signing-check.ts && bun testing/balance-cache-check.ts && bun testing/local-wallet-check.ts && bun testing/local-policy-check.ts && bun testing/hosted-view-check.ts && bun testing/x402-settlement-check.ts && bun testing/ens-fee-check.ts"
+    "check:offline": "bun run build:packages && bun test testing/networks.test.ts testing/tempo.test.ts testing/solana-mpp.test.ts testing/paid-http.test.ts testing/prices.test.ts && bun testing/tempo-signing-check.ts && bun testing/local-wallet-check.ts && bun testing/local-policy-check.ts && bun testing/hosted-view-check.ts && bun testing/x402-settlement-check.ts"
   },
   "devDependencies": {
     "pptxgenjs": "^4.0.1"

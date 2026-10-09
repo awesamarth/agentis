@@ -1,122 +1,69 @@
 # Agentis — working context
 
-Current snapshot, not a diary. Keep implemented, verified and pending work distinct. Historical detail belongs in Git.
+Current snapshot, not a diary. Distinguish implemented code, verified execution and deployment. Historical detail belongs in Git; protocol detail lives in the linked docs.
 
-## Working agreement
+## Working agreement and authority
 
-- Follow the owner's next small request; no unsolicited rewrites or speculative compatibility layers.
-- Never push, publish or deploy unless explicitly asked.
-- Do not use subagents or run browser checks unless the owner lifts the restriction.
-- Prefer Bun 1.3.14 and installed libraries/exact local types. Validate proportionately with targeted builds/typechecks.
-- Preserve unrelated dirty files and private local data. Never print secrets, keys, tokens or credential-bearing URLs.
-- Testnet/local only. Mainnet spending is not authorized.
+- Follow the owner's current request; no unsolicited rewrites, speculative frameworks or compatibility layers. Never commit, push, publish or deploy unless asked.
+- **Mainnet test spending is authorized for hosted Privy agent `testing-another-agent` (`9e57572c-0ba0-4970-92bb-bee69e8b873d`).** This supersedes older testnet-only wording in skills/docs for this agent. Existing budgets, scopes and owner approvals still apply; this is not authority to self-approve, change policies, expand grants, spend from other agents or initiate unsolicited tests. Follow the owner's next instruction before executing payments.
+- **Hosted payment verification means backend → real Privy signing → chain settlement → provider result where applicable.** Local backend hosting is fine; CLI `--local` is different custody. Local-key wallets, chain forks and fake Privy/RPC tests are supplementary, never substitutes for hosted end-to-end verification. If blocked, report the blocker and leave verification pending rather than switching custody. Never label subset coverage as full protocol support.
+- No subagents or browser checks unless explicitly authorized for the task. Prefer Bun 1.3.14 and installed libraries/exact types. **New tests: only a small number of feature-relevant E2E tests. Do not add unit/helper tests or mocked test matrices.** Existing critical signing, authorization, accounting, oracle and HTTP regressions remain supplementary; do not grow them into broad suites.
+- Preserve unrelated dirty files/private data. Never print secrets, keys, tokens, signed bytes or credential-bearing URLs; never blanket reset/clean. Do not create agents or change unrelated paused states without consent.
 
-## Product and authority
+## Product and execution
 
-Agentis provides independent agent wallets, shared USD budgets, approvals and receipts through one backend/database/worker. Dashboard, SDK, CLI and remote MCP use the same operation pipeline.
+Agentis provides independent agent wallets, shared USD budgets, approvals and receipts through one backend/database/worker. Dashboard, SDK, CLI and remote MCP share the hosted operation pipeline.
 
-- Developer-owned catalog: `packages/core/src/networks.ts`. Source defaults to Base mainnet; mainnet Base/Ethereum/Tempo/Solana and opt-in Base Sepolia/Ethereum Sepolia/Arc/Tempo Testnet/Solana Devnet. No user-defined networks. Retire entries with `enabled: false`, preserving reconciliation/history metadata. New execution families still need explicit adapters; see `docs/networks.md`.
-- Per-agent limits: transaction, rolling hourly/daily and lifetime USD, including fees across enabled networks. Mainnet and testnet usage are separated, with the same configured limits applied independently. Null is uncapped; zero blocks.
-- Modes: `ask`, `automatic`, `paused`. Agents cannot approve themselves.
-- Hosted custody uses Privy. Current wallets use an accepted 1-of-2 user + server authorization-key quorum. Agentis enforces spending rules in its backend; do not claim independent Privy policy enforcement.
-- Owner auth is a Privy access JWT. Executor grants are agent/wallet scoped and cannot manage rules, issue keys, export wallets or approve payments.
-- Local CLI wallets are a separate plaintext, filesystem-protected custody model. Anyone with the key file can bypass CLI policy.
+- Per-agent transaction, rolling hourly/daily and lifetime USD limits include fees across enabled networks. Mainnet/testnet usage is separate under the same configured limits; null is uncapped, zero blocks. Modes: `ask`, `automatic`, `paused`; agents cannot approve themselves.
+- Hosted custody: Privy, accepted 1-of-2 user + server authorization-key quorum. Agentis enforces policy in its backend; do not claim independent Privy policy enforcement. Owner auth is a Privy access JWT; scoped executor grants cannot manage rules, issue keys, export wallets or approve payments. Local CLI custody is separate plaintext/filesystem-protected custody; key-file holders can bypass local policy.
+- Lifecycle: **authenticate → validate → reserve budget → approve/authorize → persist proof → submit → reconcile → receipt**. Validate chain, asset, every recipient/call/instruction, amount and fee cap with bigint atomic amounts/decimal strings. Fresh fail-closed USD quotes reserve amount + maximum fees with 1% price headroom in the displayed/hash-bound USD ceiling for new hosted requests; headroom counts against limits, never enlarges existing approvals or token/fee caps, and settlement charges only actual amount/fees. Preserve owner locks, transactional idempotency, exact expiring approvals and execution-time scope/policy/plugin checks.
+- Persist signed bytes/hash before any submission; never expose them. Unknown submissions retain reservations and reconcile without blind resending/re-signing. Pause/revocation cannot undo submitted transactions. Payment settlement and HTTP success are distinct; no automatic paid-request/result retry.
+- Paid HTTP: GET/HEAD/POST/PUT/PATCH/DELETE/OPTIONS, exact UTF-8/base64 bodies and provider headers, bound to approval/idempotency and preserved on replay; GET/HEAD have no body. No JSON-only restriction or 24 KiB outbound cap (deployment limits still apply). Responses: 10 MiB raw before base64, 20-second deadline. Preserve SSRF/DNS pinning, redirect, timeout, size and credential-header protections.
 
-## Execution invariants
+## Implemented scope
 
-`authenticate → validate → reserve budget → approve/authorize → persist proof → submit → reconcile → receipt`
+- **Catalog:** `packages/core/src/networks.ts`; Base mainnet default; Base/Ethereum/Tempo/Solana mainnet and opt-in Base Sepolia/Ethereum Sepolia/Arc/Tempo Testnet/Solana Devnet. No user-defined networks. Retire with `enabled: false`, preserving history/reconciliation metadata; new execution families need adapters. Testnet toggle controls selection; disabled wallets are excluded before balance/RPC reads. See `docs/networks.md`.
+- **Tempo assets/prices:** OUSD/USDC.e/pathUSD on both environments, alphaUSD testnet only; no betaUSD/thetaUSD. New selections default OUSD. Payment/fee tokens are independently approval-bound; testnet USDC.e cannot pay fees and defaults to OUSD fees. Preserve historical implicit fee identity. Spending uses fresh signed/quorum-verified RedStone pathUSD/canonical-USDC and direct timestamped CoinGecko quotes for configured CoinGecko assets (including SOL/USDC/ETH/OUSD), no mirror or stale/$1 fallback; USDC pricing does not establish bridge solvency. Oracle reader has a separate 4 MiB bound. See `docs/tempo.md`.
+- **Tempo MPP charges:** persist one exact offer; self-paid/sponsored pull, agent-paid push-only offers, same-token splits. Dual-mode offers prefer pull; mode is approval-bound, absent historical mode means pull. Push persists proof/hash, broadcasts once, verifies settlement, then delivers hash credentials. Splits bind every recipient/call/memo and distinct transfer evidence; count total once. Sponsored agent fees are zero; verify final sponsor hash against saved sender proof, with memo-log recovery. Privy's formatter drops the sponsor marker: hosted sponsorship uses only a locally validated sender payload through scoped raw-hash signing, never an unrestricted SDK signer. RPC null sponsor-signature normalization is implemented. Sessions/subscriptions/zero-amount proofs and auto-swaps/bridges are not implemented.
+- **Solana MPP:** pinned `@solana/mpp@0.5.2`; SOL/catalog-USDC pull charges and same-asset splits, sponsored/self-paid fees/ATA rent. USDC default; explicit SOL and fees use 9 decimals. Shared hosted/local guards bind genesis, exact message/instructions, per-operation memo and fees; reserve rent per distinct recipient ATA and settle actual debit. Verify split recipient deltas and recover final sponsored signatures without resend. Existing Solana x402 remains; no Solana push, sessions, subscriptions, arbitrary mints or Token-2022. See `docs/solana-mpp.md`.
+- **Balances/accounting:** mainnet-only USD balance/profile totals, separate testnet balances/activity; 120-second display cache with display-only USDC=$1, never spending authorization. Owner cards share one request; Alchemy Portfolio batches Base/Arc/Ethereum Sepolia, direct Tempo/Solana RPC, explicit partial results. Base transfers estimate serialized L1 fees with 2× headroom—not an on-chain ceiling. Hash-first reconciliation and fee-inclusive budgets remain shared.
+- **Local CLI:** v4 wallet format; reject old aliases without modifying private files or reinterpreting testnet consent as mainnet consent. Hosted/local views, browser login, balances, sends, policy/history, paid fetch, operations, Uniswap and ENS supported.
+- **SDK/MCP/dashboard:** SDK is a thin hosted client including administration/consent/plugins; old `@agentis-hq/sdk/server` seller helpers removed. Remote `/mcp` uses OAuth + PKCE, explicit agent/network consent and live grant checks; no approval, policy-edit or key-export tools. Dashboard covers onboarding, balances, rules, approvals, keys, plugins, activity and analytics; activity cards now show created time/local timezone and grouped details, with detailed approval views retained.
+- **Mercator discovery:** public `/v1/discovery/search` and `/v1/discovery/services/:serviceId`, SDK `client.discovery`, CLI `discover`/`discover describe`, MCP `agentis_discover`/`agentis_describe_service`. Static catalog enrichment preserves gateway prefixes; compatibility labels are advisory, actual provider challenges authoritative. No wallet access, automatic provider probes/payments, jobs, delegation or DB state. See `docs/discovery.md`.
+- **Result handling:** return/persist provider JSON, links, job IDs or `bodyBase64`; the harness handles files/links. Operation polling is not provider-job polling. No automatic media storage/viewer, streaming or async-job completion; no speculative infrastructure or broad recovery rewrite.
 
-- Validate network, asset, recipient, calldata/instructions, amount and maximum fees. Use bigint atomic amounts and decimal strings.
-- Use fresh USD prices and fail closed on missing/stale quotes. Reserve amount plus maximum fees and settle actual amount/fees.
-- Preserve owner locks, transactional idempotency, expiring exact approvals and execution-time scope/policy/plugin checks.
-- Persist signed bytes/hash before submission; never expose them. Unknown submissions retain reservations and reconcile—never blindly resend.
-- Pausing/revoking cannot undo submitted transactions.
-- Paid HTTP supports normal API methods (GET/HEAD/POST/PUT/PATCH/DELETE/OPTIONS), exact UTF-8 or base64 bodies and provider headers. Method, headers and body are bound to approval/idempotency and preserved across challenge/payment requests. No JSON-only restriction or 24 KiB outbound cap; deployment request limits still apply. Paid responses allow 10 MiB of raw bytes before base64 encoding; the 20-second HTTP deadline remains. Preserve SSRF, DNS pinning, redirect, timeout, response-size and credential-header protections.
+## Plugins
 
-## Implemented
+- Per-agent `apps/backend/src/plugins/`; `plugins/registry.ts` owns metadata/routes/policy reasons/disable hooks/ticks; IDs in `packages/core/src/operations.ts`, dashboard registry in `apps/next-app/components/plugins/registry.tsx`. All execution uses core policy/approval/signing/reconciliation; no unrestricted plugin signers. Leave disabled future placeholders in `apps/backend/src/plugins.ts` alone.
+- `plugins/uniswap/`: Base Sepolia V3 quote/swap, exact allowance, manual rebalance, DCA, gas refill and optional Base x402 USDC-shortfall funding. `plugins/ens/`: ENSv2 subnames, explicit multichain records, narrow endpoint/description delegation and internal ERC-8004 (never a separate plugin).
+- Plugins remain on their existing testnets. Mainnet ENS sends require recipient addresses; catalog mainnet support does not imply mainnet plugin support. ENS identity setup is owner-accepted as done; do not reopen polishing it.
 
-### Core payments
+## Evidence and release status
 
-- Hosted/local transfer, x402 and Tempo MPP network routing is catalog-driven. Tempo allowlist: OUSD/USDC.e/pathUSD on both environments, plus alphaUSD only on testnet; no betaUSD/thetaUSD. OUSD defaults for new selections. Payment and fee tokens are independently bound to approval; testnet USDC.e is not fee-eligible and defaults to OUSD fees at creation. Older implicit fee semantics remain unchanged. See `docs/tempo.md`.
-- Tempo pricing: signature/quorum-verified fresh RedStone pathUSD/canonical-USDC packages and direct CoinGecko Open USD quotes; no stale-price/$1 spending fallback. USDC pricing does not establish bridge solvency. MPP selects and persists one exact supported offer; pull-mode charge supports self-paid or provider-sponsored gas. Sponsorship reserves/settles zero agent gas; final sponsored hashes are checked against the saved sender proof, including lost-response log recovery. The installed Privy formatter omits the sponsor marker, so the backend signs only a validated Tempo sender payload through the scoped Privy raw-hash primitive, never exposing it to the SDK. Sessions/subscriptions, push-only offers and splits remain compatibility gaps—not proof of complete Tempo support. Auto-swaps/bridging remain excluded.
-- Mainnet support and Tempo hardening are implemented locally. One owner-approved hosted Tempo mainnet image-generation payment is live-verified below; this is not full token/fee/provider coverage or proof of deployment.
-- Onboarding/settings have an Enable testnets toggle; disabling it removes testnets from the selection. Disabled wallets are filtered before balance/RPC reads.
-- Mainnet-only USD balance/profile totals; testnet token balances and activity stay separate. Display responses/prices cache for 120 seconds, with display-only USDC=$1. Spending prices remain fresh and fail-closed.
-- Local wallet format is v4. Older aliases are rejected without modifying private files, rather than silently treating former testnet consent as mainnet consent.
-- Base transfer preparation includes the serialized transaction’s estimated L1 fee with 2× headroom. This is a conservative estimate, not an on-chain ceiling on future L1 fee movement.
-- Hash-first reconciliation, fee-inclusive USD accounting and same-key idempotent retries.
-- Production frontend: `https://www.agentis.systems`; backend: `https://api.agentis.systems`.
-- Railway service is `backend`; leave Hermes untouched and always pass `--service backend`.
+- Previous release baseline: **`9477426`**, Mercator discovery + sponsored Tempo paid HTTP. This change set adds Solana MPP, Tempo/Solana splits, Tempo push, execution/consent/pricing fixes and activity UI updates. Hosted live evidence below uses the local backend; production deployment has not been independently verified. Builds/typechecks and focused checks pass; activity UI has not been browser-verified.
+- **Real hosted Privy mainnet evidence:** `testing-another-agent`, local backend → owner approval → sponsored Tempo pull → fal FLUX Schnell, 0.003 USDC.e, zero agent gas, confirmed payment + HTTP 200/image URL, then caller downloaded/viewed the image. Operation `e71f57a1-0bf5-4dea-a0f5-ab2dfae4a5d2`; transaction/details in `docs/tempo.md`. This proves that flow, not splits/push, every token/fee/provider combination or deployment.
+- **Hosted Privy mainnet Tempo split/push evidence:** USDC.e self-paid pull, self-paid push and sponsored pull splits confirmed through the local backend + official SDK seller: 0.001 USDC.e each, agent fees 0.000045/0.000041/0 respectively. HTTP 200, exact POST and ordered 750/100/150 atomic transfers (repeated affiliate); same-key replay made no seller request/payment. See `docs/tempo.md`. Owner set `testing-another-agent` to automatic within existing limits. Other payment/fee tokens and provider combinations remain unverified.
+- **Hosted Privy mainnet Solana evidence:** USDC splits (self-paid/sponsored) and SOL single charges (self-paid/sponsored) all confirmed + HTTP 200 through the local backend and official SDK seller, with independent finalized public-RPC checks and same-key no-resend. Four charges totaled 0.002 USDC + 0.004986882 SOL including fees/rent; sponsored agent fees were zero. See `docs/solana-mpp.md`. Fresh finalized signing lifetimes fix discovery expiry and seller preflight mismatch without changing terms or re-signing saved proofs. One unresolved attempt was manually expired without charge only after two RPCs proved absence and its original blockhash was 1,500+ finalized blocks old/invalid; automatic expiry release remains pending. SOL splits, sponsored creation of new ATAs, and additional providers/failure cases still have only local/fake-custody coverage.
+- **Supplementary checks:** token/fee/oracle/HTTP/signing boundaries, policy/budgets, idempotency, mainnet/testnet separation and uncertain submissions; fake hosted push tests cover persisted proof, RPC failure, revert and lost HTTP; isolated DB check preserves late HTTP results after concurrent settlement. Read-only probes verified Tempo token contracts/fee eligibility, fresh mainnet prices, unpaid USDC.e/pathUSD offers and Exa POST discovery. None proves the remaining funded hosted token/fee matrix.
+- **Earlier live evidence:** hosted/local transfers, Base/Arc/Solana x402, Tempo MPP, production Arc send, one Base Sepolia Uniswap swap, ENS namespace/records/delegation and ERC-8004. Owner verified production ChatGPT web MCP connection/payment, revocation and non-consented-wallet rejection. Mercator live search/describe → unpaid Exa 402 and the hosted fal flow above verified.
 
-### Plugins
+## Pending and deferred
 
-Plugins are per-agent and live under `apps/backend/src/plugins/`. `plugins/registry.ts` is the single backend registration point for metadata, routes, policy reasons, disable hooks and worker ticks; shared IDs come from `packages/core/src/operations.ts`. Dashboard metadata/rendering is centralized in `components/plugins/registry.tsx`.
+- Prioritize **Tempo, Base, Solana**; complete Tempo support is the goal, not subset compatibility. New hosted verification and remaining funded Tempo token/fee/provider matrix come before readiness claims. Tempo subscriptions remain unimplemented: establish exact SDK/on-chain future-spend/revocation authority, cancellation, pause/limit changes and shared-budget enforcement before implementation. Monad is out of scope.
+- Pending live plugin checks: ENS agent-signed record update/payment-to-name; additional scheduled/funding Uniswap execution. Recovery backlog: provably-unused expired Tempo/Solana reservation release, stronger unknown-submission recovery/operator tooling. Product infrastructure: rate limits, pagination, webhooks; Mercator commercial embedding/SLA/rate limits unverified.
+- **AgentCard/cards:** not started, future work—not a shipped rail. Evaluate exact custody/approval/credentials/availability/integration contracts, including AgentCard vs Link and core rail vs optional plugin. Link Financial Insights is separate optional data integration, deferred.
+- **Fiat funding deferred by owner:** owner-only core flows, not plugins. Privy + Meld/Onramp Money leads India/INR onramp research; needs Meld KYB, Privy React upgrade and live regional checks. Real providers fund mainnet—never substitute testnet wallets. Offramp later; Privy/Bridge does not document INR payout rails.
+- **Exploratory integrations, not implementation approval:** Muse and ChatGPT plugins (existing ChatGPT custom MCP already verified); Monid requires exact x402/MPP contract research. Official Meta Muse material establishes Link's built-in agent wallet, not a public connector platform.
+- **Exploratory paid-data products:** agent-commerce detector/index (MCP/OpenAPI/llms.txt/UCP/x402/MPP/auth/networks/assets/live status); country-specific sports viewing (official broadcaster/stream links, language, price, replay); game availability (stores/regions/prices/platforms/subscriptions/cloud/cross-play/cross-save/delistings, possible discovery/backlog app). Prefer useful public website + developer API + optional MPP/x402; research data acquisition, legality, freshness, demand and maintenance before choosing.
+- Do not reopen Privy user-JWT exchange, existing-wallet migration, Umbra or hosted bot work without explicit instruction.
 
-- `plugins/uniswap/`: Base Sepolia V3 quote/swap, exact allowance, manual rebalance targets, DCA, gas refill and optional Base x402 USDC shortfall funding.
-- `plugins/ens/`: ENSv2 subname setup, explicit multichain payment records, narrow endpoint/description delegation and internal ERC-8004 registration. ERC-8004 is never a separate plugin.
-- `apps/backend/src/plugins.ts` currently keeps disabled future-plugin configuration placeholders; leave it alone until those integrations are implemented.
+## Runtime, validation and files
 
-All plugin execution still goes through Agentis policy, approval, signing and reconciliation. Plugins never receive unrestricted signer/key access.
-
-### Interfaces
-
-- CLI supports browser login, hosted/local wallet views, balances, sends, policy/history, paid fetch, operations, Uniswap and ENS.
-- SDK is a thin backend client for hosted operations, administration, consent, Uniswap and ENS. Old seller-side `@agentis-hq/sdk/server` helpers were removed.
-- Mercator discovery is implemented locally as public `/v1/discovery/search` and `/v1/discovery/services/:serviceId`, SDK `client.discovery`, CLI `discover` / `discover describe`, and MCP `agentis_discover` / `agentis_describe_service`. Static catalog search enriches URLs/offers, preserves gateway prefixes and labels advisory compatibility. No wallet access, provider probes, jobs, delegation, payments or DB state. Focused mocked SDK/CLI/MCP checks pass; live Mercator search/describe → unpaid Exa 402 verified. Mercator → fal image generation with an owner-approved Tempo payment is also verified below. Deployment/publication remain separate. See `docs/discovery.md`.
-- Remote MCP is mounted at `/mcp` with OAuth + PKCE, explicit agent/network consent and live grant checks. It exposes no approval, policy-edit or key-export tools.
-- Dashboard supports onboarding, balances, rules, approvals, access keys, plugins, activity and profile analytics. Owner balance cards share one backend request; balance display uses Alchemy Portfolio batching for Base/Arc/Ethereum Sepolia, direct RPC reads for Tempo/Solana, short in-memory caching and explicit partial results. Display estimates never authorize spending.
-
-## Verified vs pending
-
-Verified with real testnet activity: hosted/local transfers, Base/Arc/Solana x402, Tempo MPP, production Arc send, one Base Sepolia Uniswap swap, ENS namespace/records/delegation and ERC-8004 registration. Owner considers ENS identity setup done; do not keep it as the next polishing task. Separate agent-signed record-update and payment-to-name live checks remain pending below. Owner verified production ChatGPT web MCP connection/payment, revocation and non-consented wallet rejection. Focused fake-signer and local checks cover authorization, budgets, scheduling and MCP OAuth.
-
-Tempo hardening verification: offline token/fee/MPP/oracle regressions, the installed MPP client with fake RPC/signing, and isolated approval/accounting/unknown-submission checks pass. Live read-only probes verified all listed Tempo token contracts/fee eligibility, fresh mainnet price sources, and unpaid USDC.e/pathUSD seller offers. New focused checks cover exact HTTP bodies/methods, sponsored signing, final-hash proof verification and lost-response recovery. A real unpaid Exa POST now passes Agentis MPP discovery with sponsored gas and zero agent fee. These read-only checks alone do not establish funded settlement.
-
-Owner-authorized mainnet verification: local backend + hosted Privy `testing-another-agent`, Mercator discovery → fal FLUX Schnell POST → owner approval → sponsored Tempo USDC.e payment → confirmed receipt and HTTP 200. Operation `e71f57a1-0bf5-4dea-a0f5-ab2dfae4a5d2`, transaction `0x6415e9650e91e80f5f787fea7702db10d618090ff789490a685912308759667d`: 0.003 USDC.e, zero agent gas. Provider returned 386-byte JSON with an image URL; the caller separately downloaded/viewed the 512×512 JPEG (299,833 bytes). No automatic image storage/viewer or async provider-job completion is implemented. Earlier attempts expired unused or failed before signing due to stale/disabled local worker setup. No additional mainnet spending is authorized by this completed test.
-
-Still pending:
-
-- Broader live mainnet execution/paid-API verification remains pending beyond the single hosted sponsored USDC.e/fal test above. Deployment and funded tests of the remaining Tempo token/fee matrix remain pending. Further mainnet spending requires fresh owner authorization. Unit checks, local wallet/policy checks, isolated mainnet/testnet accounting and MCP/OAuth checks pass; no browser checks run.
-- Plugins remain pinned to their existing testnets and their implementations were not changed. Mainnet ENS sends require recipient addresses; mainnet plugin support is not part of this work.
-- ENS agent-signed record update and payment-to-name live verification.
-- Additional live scheduled/funding Uniswap execution.
-- Automatic release for provably unused expired Tempo/Solana payments and stronger unknown-submission recovery.
-- Rate limits, pagination, webhooks and operator recovery tooling.
-- Owner-deferred fiat funding: treat onramp/offramp as owner-only core wallet flows, not plugins. Privy + Meld/Onramp Money is the leading India/INR onramp candidate, but requires Meld KYB, a Privy React SDK upgrade and live regional verification; real providers fund mainnets, so do not silently target testnet wallet counterparts. Offramp remains later because Privy/Bridge does not document INR payout rails.
-- User TODO: Muse plugin and ChatGPT plugin. Track as future work, not authorization to implement; ChatGPT's existing custom MCP connection is already verified.
-- Prioritize Tempo, Base and Solana. Owner wants complete Tempo support, not a convenient subset; never equate passing subset tests with full protocol coverage. Keep remaining intents/modes explicit. Tests should be focused, not exhaustive ceremony.
-- Owner moved Mercator discovery ahead of further Tempo work; initial discovery integration is now implemented locally (see above). AgentCard remains later and not started. No Mercator workflow execution or hosted wallet delegation. Discovery infrastructure rate limits and Mercator commercial embedding/SLA terms remain unverified.
-- Owner-tracked product TODOs, not approved implementation yet: Monid plugin (inspect its exact x402/MPP contracts first); possible Meta Muse integration (official material establishes Link’s wallet for agents is built into Muse, but not a public Muse connector platform); and a product/architecture decision between AgentCard and Link agent payments. Determine each option’s exact custody, approval, credential-handling, availability and integration contracts before deciding whether it is a core payment rail or an optional plugin. Link Financial Insights is a separate optional data integration, not part of payment core, and remains deferred.
-- Owner-tracked paid API/data-product candidates, exploratory only: (1) an agent-commerce capability detector and searchable index for MCP, OpenAPI, `llms.txt`, UCP, x402, MPP, authentication, networks/assets and live endpoint status; (2) a country-specific live-sports viewing availability database with official broadcaster/streaming links, language, price and replay information; and (3) a game-availability database covering storefronts, regional pricing, platforms, subscription catalogs, cloud gaming, cross-play/cross-save and delistings, potentially paired with a consumer discovery/backlog product. Prefer a useful public website plus developer API and optional MPP/x402 access; research data acquisition, legality, freshness, demand and maintenance cost before choosing one.
-
-Do not pursue Privy user-JWT exchange, existing-wallet migration, Umbra or hosted bot work unless explicitly reopened.
-
-## Repository map
-
-- `apps/backend/src/app.ts`, `operations.ts`, `runtime.ts`, `worker.ts`: API and execution lifecycle.
-- `apps/backend/src/modules/`: shared network/payment/accounting modules.
-- `apps/backend/src/plugins/`: integration-specific implementations.
-- `apps/backend/src/db/`, `drizzle/`: schema and explicit SQL migrations.
-- `apps/next-app/`: dashboard and owner approval/consent flows.
-- `packages/core`: shared contracts.
-- `packages/sdk`: HTTP client.
-- `packages/cli`: hosted and local CLI.
-- `packages/mcp`: remote MCP tools.
-- `testing/`: focused checks and protocol fixtures. `bun run check:offline` runs the explicit offline regression suite; database-backed and live-provider checks remain separate.
-
-## Local runtime and validation
-
-- Dashboard `3000`, API `3001`, Postgres `127.0.0.1:55432` under Compose project `agentis-rewrite`.
-- Start backend processes from `apps/backend` so its private environment loads. Explicitly set `AGENTIS_EXECUTOR=privy` for hosted testing; omission defaults to disabled. With a separate worker, API uses `AGENTIS_RUN_WORKER=false`. Complete package builds before restarting processes: API watch mode can break while `dist` is being rebuilt, and the standalone worker does not reload code automatically.
-- Core/SDK/MCP exports resolve to `dist`; run `bun run build:packages` after contract changes.
-- Standard validation: `bun run check` for builds/types and `bun run check:offline` for curated regressions. Offline checks use disposable wallet fixtures and mocked/loopback HTTP, not private credentials or funded wallets. Use narrower checks for small changes; never blindly execute all testing scripts.
-- Do not restart execution against a stale local database snapshot.
-- No browser verification unless explicitly authorized.
-
-Existing test agent: `research-agent` (`3068f575-d2d1-4ac8-a737-25841fef7fae`), ask mode. Do not create agents, move funds or alter unrelated paused states without consent.
-
-## Sensitive and unrelated local state
-
-Private: root/backend environment files, `.agentis-test-keys/`, `data/key-secrets.json`, CLI/wallet files, authorization keys and RPC credentials. `privy-server-authorization.key` is a P-256 authorization key, not a wallet private key.
-
-Preserve unrelated dirty paths, including `apps/docs/next-env.d.ts`, `testing/x402-server/index.ts`, `apps/next-app/AGENTS.md 04-33-15-918.md` and `testing/umbra-test/AGENTS.md` if present. Never blanket reset or clean the worktree.
+- Machine-local restart recipe: `.agentis-local/README.md` (excluded via `.git/info/exclude`; never commit it). Use the recorded commands, wait for Docker/Postgres readiness, and start only missing processes. Server restart does not require fresh browser/CLI login.
+- Production: `https://www.agentis.systems`, API/MCP `https://api.agentis.systems` + `/mcp`. Railway: always `--service backend`; leave Hermes untouched. Local dashboard `3000`, API `3001`, Postgres `127.0.0.1:55432`, Compose `agentis-rewrite`.
+- Start backend from `apps/backend` for private env loading; explicitly set `AGENTIS_EXECUTOR=privy` (default is disabled). Separate worker requires API `AGENTIS_RUN_WORKER=false`. Build before restarting: watch mode can break during `dist` rebuilds; standalone worker does not auto-reload. Never resume against a stale DB snapshot; inspect outstanding operations/schedules/plans before runtime changes. Keep local API test login/HOME separate from production CLI credentials.
+- Core/SDK/MCP exports use `dist`; run `bun run build:packages` after contract changes. `bun run check` builds/typechecks; `bun run check:offline` retains only existing money/security regressions (disposable fixtures/mocked/loopback). Redundant display, helper, discovery and fee-sizing tests were removed. Database/live-provider checks are separate; never blindly execute all `testing/` scripts or routinely run the whole suite. Use targeted builds/typechecks and limited real hosted E2E verification.
+- Authorized test agent is `testing-another-agent` above (owner changed it to automatic within existing limits). Other existing agent: `research-agent` (`3068f575-d2d1-4ac8-a737-25841fef7fae`); not the newly authorized mainnet payer. Recheck actual wallet/network access when needed; do not bypass approval or consent.
+- Map: backend `src/{app,operations,runtime,worker}.ts` lifecycle, `src/modules/` shared payment/accounting, `src/plugins/` integrations, `src/db/` + `drizzle/` schema/explicit migrations; `apps/next-app/` dashboard/approval/consent; `packages/{core,sdk,cli,mcp}` contracts/HTTP client/CLI/MCP; `testing/` focused checks.
+- Private: root/backend env, `.agentis-test-keys/`, `data/key-secrets.json`, CLI/wallet files, authorization keys/RPC credentials. `privy-server-authorization.key` is a P-256 authorization key, not a wallet key. Preserve private/unrelated `testing/recover-ens-submission.ts`; never include it in commits or blindly execute it.
+- Also preserve unrelated dirty `apps/docs/next-env.d.ts`, `testing/x402-server/index.ts`, `apps/next-app/AGENTS.md 04-33-15-918.md`, `testing/umbra-test/AGENTS.md` if present. `demo-stuff/` is gitignored artwork; current editable Twitter header/end-card HTML and exported PNGs live there, not in the old Solana-branded public image files.

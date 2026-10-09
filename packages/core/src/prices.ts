@@ -73,25 +73,15 @@ export function createPriceReader(http: typeof paymentHttp = input => input.url 
         if (!['pathUSD', 'USDC'].includes(feed)) throw Error('Unconfigured oracle feed')
         const data = await redstone()
         price = verifyRedstonePrice(data[feed], feed)
-      } else if (id === 'coingecko:open-usd') {
-        // Llama's OUSD mirror can lag; use CoinGecko's original observation time.
-        const response = await http({ url: 'https://api.coingecko.com/api/v3/simple/price?ids=open-usd&vs_currencies=usd&include_last_updated_at=true', method: 'GET', headers: { accept: 'application/json' } })
-        if (response.status !== 200) throw Error('OUSD price source unavailable')
-        const data = JSON.parse(Buffer.from(response.bodyBase64, 'base64').toString())['open-usd']
-        price = parseNumericPrice(data?.usd, data?.last_updated_at)
       } else {
         if (!/^coingecko:[a-z0-9-]+$/.test(id)) throw Error('Unconfigured price source')
-        const url = `https://coins.llama.fi/prices/current/${encodeURIComponent(id)}`
-        let result: Price | undefined
-        for (let attempt = 0; attempt < 2; attempt++) {
-          const response = await http({ url: attempt ? `${url}?_refresh=${Math.floor(Date.now() / 30_000)}` : url, method: 'GET', headers: { accept: 'application/json' } })
-          if (response.status !== 200) throw Error('USD price service unavailable')
-          const data = JSON.parse(Buffer.from(response.bodyBase64, 'base64').toString())
-          try { result = parsePrice(data.coins?.[id]); break }
-          catch (error) { if (attempt || !(error instanceof Error) || error.message !== 'Price is stale or future-dated') throw error }
-        }
-        if (!result) throw Error('Fresh price unavailable')
-        price = result
+        // Use the configured source directly, not a stale/unavailable mirror.
+        // Its original observation timestamp remains authoritative; no $1 fallback.
+        const coin = id.slice('coingecko:'.length)
+        const response = await http({ url: `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(coin)}&vs_currencies=usd&include_last_updated_at=true`, method: 'GET', headers: { accept: 'application/json' } })
+        if (response.status !== 200) throw Error('CoinGecko price source unavailable')
+        const data = JSON.parse(Buffer.from(response.bodyBase64, 'base64').toString())[coin]
+        price = parseNumericPrice(data?.usd, data?.last_updated_at)
       }
       cache.set(id, price)
       return price

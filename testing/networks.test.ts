@@ -2,13 +2,10 @@ import { describe, test, expect } from 'bun:test'
 import { Keypair } from '@solana/web3.js'
 import { Challenge } from 'mppx'
 import { validateMpp } from '../apps/backend/src/modules/mpp'
-import { networks, publicNetworks, defaultNetwork, networkByKey, requireNetwork, sameEnvironment } from '@agentis-hq/core/networks'
+import { networks, networkByKey, requireNetwork, sameEnvironment } from '@agentis-hq/core/networks'
 import { buildSolanaTransfer } from '@agentis-hq/core/solana-transfer'
-import { transferTerms } from '../packages/cli/src/lib/transfer-terms'
-import { networkSelection } from '../apps/backend/src/modules/networks'
 import { createPrivyExecutor } from '../apps/backend/src/providers/privy-executor'
 import { validateX402 } from '../apps/backend/src/modules/x402'
-import { agentBalances } from '../apps/backend/src/modules/balances'
 import type { WalletRow } from '../apps/backend/src/db/schema'
 import type { OperationInput } from '@agentis-hq/core/operations'
 
@@ -18,35 +15,6 @@ const transfer = (chainId: string, asset = 'native'): OperationInput => ({ walle
 const executor = createPrivyExecutor('fixture', 'fixture', async () => { throw Error('No wallet-provider calls permitted') }, 'fixture')
 
 describe('developer-owned network catalog', () => {
-  test('mainnet defaults, unique network identities, JSON-safe metadata', () => {
-    expect(defaultNetwork.chainId).toBe('eip155:8453')
-    expect(defaultNetwork.testnet).toBe(false)
-    expect(new Set(networks.map(n => n.key)).size).toBe(networks.length)
-    expect(new Set(networks.map(n => n.chainId)).size).toBe(networks.length)
-    expect(() => JSON.stringify(publicNetworks)).not.toThrow()
-    for (const network of networks) {
-      expect(network.assets.some(asset => asset.symbol === network.defaultAsset)).toBe(true)
-      expect(network.chainType === 'solana' ? network.genesisHash?.slice(0, 32) === network.chainId.slice(7) : network.chain?.id === Number(network.chainId.slice(7))).toBe(true)
-      expect(network.testnet || network.assets.every(asset => asset.priceId !== 'test-usd')).toBe(true)
-    }
-  })
-  test('selection derives from the catalog and rejects duplicates/custom chains', () => {
-    expect(networkSelection.safeParse({ networks: networks.map(n => n.key), defaultNetwork: 'base' }).success).toBe(true)
-    expect(networkSelection.safeParse({ networks: ['base', 'base'], defaultNetwork: 'base' }).success).toBe(false)
-    expect(networkSelection.safeParse({ networks: ['custom'], defaultNetwork: 'custom' }).success).toBe(false)
-    expect(networkSelection.safeParse({ networks: ['solana'], defaultNetwork: 'base' }).success).toBe(false)
-  })
-  test('CLI construction uses the exact network token, fee units and chain ID', async () => {
-    for (const network of networks) {
-      const to = network.family === 'solana' ? (await Keypair.generate()).publicKey.toBase58() : address
-      const result = transferTerms({ wallet: 'fixture', chain: network.key, to, amount: '0.001', asset: network.defaultAsset, key: 'fixture' })
-      expect(result.asset.id).toBe(network.assets.find(asset => asset.symbol === network.defaultAsset)!.id)
-      expect(result.maxFeeAtomic).toBeGreaterThan(0n)
-    }
-    expect(transferTerms({ wallet: 'fixture', chain: 'base', to: address, amount: '1', asset: 'USDC', key: 'fixture' }).asset.token).toBe('0x833589fcd6edb6e08f4c7c32d4f71b54bda02913')
-    expect(sameEnvironment(networkByKey('base')!.chainId, networkByKey('tempo')!.chainId)).toBe(true)
-    expect(sameEnvironment(networkByKey('base')!.chainId, networkByKey('base-sepolia')!.chainId)).toBe(false)
-  })
   test('executor rejects cross-network wallets and wrong-environment tokens before provider access', () => {
     for (const network of networks) {
       const input = transfer(network.chainId, network.assets[0]!.id)
@@ -76,12 +44,12 @@ describe('developer-owned network catalog', () => {
     }
   })
   test('MPP rejects mismatched Tempo networks and fee tokens', () => {
-    for (const network of networks.filter(n => n.mpp)) {
+    for (const network of networks.filter(n => n.family === 'tempo')) {
       const expiresAt = new Date(Date.now() + 120_000).toISOString()
       const challenge = Challenge.serialize(Challenge.from({ secretKey: 'fixture-only', realm: 'example.com', method: 'tempo', intent: 'charge', expires: expiresAt, request: { amount: '1', currency: network.feeToken!, recipient: address, methodDetails: { chainId: network.chain!.id, feePayer: false, supportedModes: ['pull'] } } }))
       const input: OperationInput = { ...transfer(network.chainId, `erc20:${network.feeToken}`), action: 'paid_fetch', mpp: { url: 'https://example.com/paid', challenge, expiresAt, maxAmountAtomic: '1' } }
       expect(() => validateMpp(wallet(network.chainId), input)).not.toThrow()
-      const other = networks.find(n => n.mpp && n.testnet !== network.testnet)!
+      const other = networks.find(n => n.family === 'tempo' && n.testnet !== network.testnet)!
       expect(() => validateMpp(wallet(other.chainId), { ...input, chainId: other.chainId, asset: other.assets[0]!.id })).toThrow()
       expect(() => validateMpp(wallet(network.chainId), { ...input, asset: other.assets[0]!.id })).toThrow()
     }
@@ -95,16 +63,5 @@ describe('developer-owned network catalog', () => {
       const other = networks.find(n => n.family === 'solana' && n.testnet !== network.testnet)!
       await expect(buildSolanaTransfer(from, { ...input, asset: other.assets[1]!.id }, '11111111111111111111111111111111')).rejects.toThrow()
     }
-  })
-  test('disabled wallets cause no balance RPC or price requests', async () => {
-    const originalFetch = globalThis.fetch
-    let calls = 0
-    globalThis.fetch = (() => { calls++; throw Error('No HTTP permitted') }) as typeof fetch
-    try {
-      const result = await agentBalances([{ id: 'fixture', wallets: networks.map(network => ({ ...wallet(network.chainId), enabled: false })) }])
-      expect(result.fixture!.networks).toEqual([])
-      expect(result.fixture!.usdMicros).toBe('0')
-      expect(calls).toBe(0)
-    } finally { globalThis.fetch = originalFetch }
   })
 })

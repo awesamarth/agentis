@@ -2,6 +2,7 @@ import type { DiscoverySearchResult, DiscoveryDescription } from '@agentis-hq/co
 import { formatUnits } from 'viem'
 
 import { findNetwork } from '@agentis-hq/core/networks'
+import { paymentTransfers, type OperationInput } from '@agentis-hq/core/operations'
 
 export const namedChain = (id: string) => ({ name: findNetwork(id)?.name ?? id, id })
 // External names, reasons and response data must not inject terminal controls.
@@ -88,5 +89,6 @@ export function formatOutput(command: string, output: unknown, color = Boolean(p
     }).join('\n\n')}${note}`
   }
   if (Array.isArray(output) && !output.length) return 'No results.'
+  if (record.action === 'paid_fetch' && (record as OperationInput).mpp?.splits?.length) return fields({ ...record, transfers: paymentTransfers(record as OperationInput) })
   return fields(output)
 }

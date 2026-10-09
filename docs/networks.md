@@ -14,7 +14,7 @@ Enable a payment rail only when its exact contracts are supported:
 
 A new network using an existing adapter is primarily configuration. A new execution family, token standard or payment protocol still needs explicit validation, signing and reconciliation code. Never infer those capabilities from a network name.
 
-Mainnet aliases are `base`, `ethereum`, `tempo` and `solana`. Testnet aliases are `base-sepolia`, `sepolia`, `arc`, `tempo-testnet` and `solana-devnet`. Mainnet and testnet budgets use the same configured limits but independent usage. Display estimates never authorize spending.
+Mainnet aliases are `base`, `ethereum`, `tempo` and `solana`. Testnet aliases are `base-sepolia`, `sepolia`, `arc`, `tempo-testnet` and `solana-devnet`. Mainnet and testnet budgets use the same configured limits but independent usage. Display estimates never authorize spending. Configured `coingecko:*` spending feeds use CoinGecko's direct timestamped prices, not the Llama mirror; stale/missing observations still fail closed.
 
 ## Retire a network
 
@@ -25,7 +25,7 @@ A retired network does not revoke already-issued signatures or undo submitted pa
 ## Validate
 
 - `bun run check`
-- `bun test testing/networks.test.ts testing/display-prices.test.ts`
+- `bun test testing/networks.test.ts` — retained wrong-chain/token and retired-network guards.
 - `bun testing/local-wallet-check.ts`
 - `bun testing/local-policy-check.ts`
 - `bun testing/hosted-view-check.ts`

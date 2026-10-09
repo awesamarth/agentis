@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
+import { grantInput } from '@agentis-hq/core/operations'
 import { randomBytes, createHash } from 'node:crypto'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { agents, grants, wallets, oauthClients, oauthRequests, oauthConnections, oauthTokens } from '../db/schema'
@@ -7,7 +8,7 @@ import { fail } from '../errors'
 import { hash, type OperationService, type Principal } from '../operations'
 
 const id = z.string().uuid()
-const selection = z.array(z.object({ agentId: id, chainIds: z.array(z.string().min(1).max(100)).min(1).max(5).refine(chains => new Set(chains).size === chains.length) }).strict()).min(1).max(20).refine(rows => new Set(rows.map(row => row.agentId)).size === rows.length)
+const selection = z.array(z.object({ agentId: id, chainIds: grantInput.shape.chainIds.unwrap() }).strict()).min(1).max(20).refine(rows => new Set(rows.map(row => row.agentId)).size === rows.length)
 const opaque = () => randomBytes(32).toString('base64url')
 const date = (ms: number) => new Date(Date.now() + ms)
 const validUrl = (value: string) => {

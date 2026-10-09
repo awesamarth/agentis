@@ -16,6 +16,7 @@ import { requireNetwork, networkByKey } from '@agentis-hq/core/networks'
 import { paymentHttp } from './payment-http'
 import { settlementHeaders, type SavePaymentHash } from './x402-settlement'
 import { fail } from '../errors'
+import { solanaMppAsset, solanaMppTerms } from '@agentis-hq/core/solana-mpp'
 
 const origins = () => (process.env.AGENTIS_PAID_FETCH_LOCAL_ORIGINS ?? '').split(',').filter(Boolean)
 function svmNetwork(chainId: string) {
@@ -29,7 +30,13 @@ export async function discoverSvm(input: FetchRequest, chainId = networkByKey('s
   let response
   try { response = await paymentHttp(paymentRequest(input), {}, origins()) }
   catch { fail(400, 'paid_fetch_unavailable', 'Paid URL was blocked or unavailable; no payment was created') }
-  if (response.status !== 402 || !response.headers['payment-required']) fail(400, 'x402_required', 'Expected an x402 payment challenge')
+  const asset = solanaMppAsset(chainId, input.asset)
+  if (input.feeAsset) fail(400, 'unsupported_fee_asset', 'Solana network fees are paid in SOL')
+  if (response.status === 402 && response.headers['www-authenticate'] && (!response.headers['payment-required'] || asset.id !== `spl:${solanaUsdc}`)) {
+    try { return solanaMppTerms(input, chainId, response.headers['www-authenticate']) }
+    catch { fail(400, 'unsupported_payment', 'No supported Solana MPP charge within the token, network, amount, expiry and SOL fee ceiling') }
+  }
+  if (asset.id !== `spl:${solanaUsdc}` || response.status !== 402 || !response.headers['payment-required']) fail(400, 'payment_required', 'Expected a supported Solana x402 or MPP charge')
   let challenge
   try { challenge = decodePaymentRequiredHeader(response.headers['payment-required']) } catch { fail(400, 'invalid_challenge', 'Invalid x402 challenge') }
   if (challenge.x402Version !== 2 || !Array.isArray(challenge.accepts)) fail(400, 'invalid_challenge', 'Expected x402 v2')

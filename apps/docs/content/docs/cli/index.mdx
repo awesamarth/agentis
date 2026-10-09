@@ -32,6 +32,8 @@ agentis policy show --local --wallet local-agent
 
 Tempo supports OUSD (the new-selection default), USDC.e and pathUSD on mainnet and testnet, plus alphaUSD on testnet. Sends and MPP charge requests accept `--asset` and `--fee-asset` for separate payment/gas tokens. Testnet USDC.e cannot pay gas and defaults to OUSD fees at request creation. Tempo MPP charges support provider-sponsored gas as well as agent-paid gas. Use `--method`, repeatable `--header`, and either `--data` or `--data-file` for exact provider requests, including non-JSON formats. No betaUSD/thetaUSD or automatic swaps; MPP sessions remain unimplemented.
 
+Solana MPP supports SOL/USDC pull-mode charges with sponsored or agent-paid fees. USDC is the default; choose `--asset SOL` for native payments. Hosted `--max-fee-atomic` is in lamports and includes potential ATA rent; local `--max-fee` defaults to 0.005 SOL. Solana x402 remains available. Tempo/Solana MPP splits show every recipient/share and budget the charge total once. Solana rent exposure is per distinct recipient ATA. Tempo push-only offers are supported with agent-paid fees: Agentis persists proof, broadcasts, confirms settlement and sends the provider a hash credential. Dual-mode offers prefer pull; provider sponsorship stays pull-only. HTTP failure never triggers a new payment. Solana push remains unsupported; Base x402 is unchanged.
+
 Use `base-sepolia`, `sepolia`, `arc`, `tempo-testnet` or `solana-devnet` to select testnets explicitly.
 
 Local wallet files are plaintext, owner-permission-protected files. Reuse an unchanged request key after uncertainty. An unknown submission is not permission to pay again. Run `agentis --help` for exact flags.

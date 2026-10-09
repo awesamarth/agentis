@@ -25,6 +25,7 @@
       "import": "./dist/operations.js",
       "require": "./dist/operations.cjs"
     },
+    "./solana-mpp": { "types": "./dist/solana-mpp.d.ts", "import": "./dist/solana-mpp.js", "require": "./dist/solana-mpp.cjs" },
     "./solana-transfer": {
       "types": "./dist/solana-transfer.d.ts",
       "import": "./dist/solana-transfer.js",
@@ -69,6 +70,9 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@solana/mpp": "0.5.2",
+    "@solana-program/compute-budget": "0.11.0",
+    "@solana-program/system": "0.12.0",
     "@redstone-finance/protocol": "1.0.0",
     "mppx": "0.9.3",
     "viem": "2.56.3",

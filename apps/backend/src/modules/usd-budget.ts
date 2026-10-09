@@ -10,6 +10,12 @@ export function usdCost(input: OperationInput, quote: UsdQuote, fee = input.maxF
   const value = (amount: string, price: string, decimals: number) => ceil(BigInt(amount) * BigInt(price), 10n ** BigInt(decimals) * 1_000_000_000_000n)
   return (success && input.action !== 'uniswap_approval' ? value(input.amountAtomic, quote.assetPrice, quote.assetDecimals) : 0n) + value(fee, quote.feePrice, quote.feeDecimals)
 }
+// Reserve 1% price headroom up front, inside the reviewed/hash-bound USD ceiling.
+// Execution still requires fresh quotes within that ceiling and current budgets;
+// token/fee caps do not change, and settlement uses actual cost without headroom.
+export function usdReservation(input: OperationInput, quote: UsdQuote) {
+  return ceil(usdCost(input, quote) * 101n, 100n)
+}
 export async function quoteUsd(input: Pick<OperationInput, 'chainId' | 'asset' | 'feeAsset'> & Partial<Pick<OperationInput, 'maxFeeAtomic'>>): Promise<UsdQuote> {
   const network = supportedNetworks.find(network => network.chainId === input.chainId)
   const asset = network?.assets.find(asset => input.asset.startsWith('erc20:') ? asset.id.toLowerCase() === input.asset.toLowerCase() : asset.id === input.asset)

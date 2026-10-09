@@ -46,7 +46,7 @@ test('pricing failures stay closed and pending failures do not poison retries', 
   let calls = 0
   const read = createPriceReader(async () => {
     if (++calls === 1) throw Error('offline')
-    return response({ coins: { 'coingecko:ethereum': { price: 2500, timestamp: Math.floor(Date.now() / 1000), confidence: 0.99 } } })
+    return response({ ethereum: { usd: 2500, last_updated_at: Math.floor(Date.now() / 1000) } })
   })
   await expect(read('coingecko:ethereum')).rejects.toThrow('offline')
   expect((await read('coingecko:ethereum')).value).toBe('2500000000000000000000')
