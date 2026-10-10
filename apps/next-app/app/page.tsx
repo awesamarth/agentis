@@ -112,7 +112,7 @@ export default function LandingPage() {
             </p>
             <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
               <button disabled={!ready} onClick={() => authenticated ? router.push('/dashboard') : login()} className="cursor-pointer bg-black px-7 py-4 font-mono text-xs uppercase tracking-[0.16em] text-beige transition-colors hover:bg-ink focus-visible:outline-2 focus-visible:outline-offset-4 disabled:cursor-wait disabled:opacity-60">
-                {authenticated ? 'Open dashboard' : 'Get started'} <span aria-hidden="true">↗</span>
+                {authenticated ? 'Open dashboard' : 'Get started'}
               </button>
               <a href="#how-it-works" className="border border-beige-darker px-7 py-4 text-center font-mono text-xs uppercase tracking-[0.16em] transition-colors hover:border-ink focus-visible:outline-2 focus-visible:outline-offset-4">See how it works <span aria-hidden="true">↓</span></a>
             </div>
