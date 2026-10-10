@@ -175,7 +175,7 @@ The following links pin the implementation revision so line references remain st
 
 **Feedback:** [FEEDBACK.md](FEEDBACK.md). The project author has completed the [Uniswap Developer Feedback Form](https://developers.uniswap.org/hackathon-feedback).
 
-Tempo testnet `42431` was unavailable through the Trading API; its supported Tempo network was `4217`. We did not switch to mainnet. Tempo MPP payments work independently, but Uniswap-backed MPP auto-funding is not implemented. See [the integration walkthrough](docs/uniswap.md) for execution details and verification boundaries.
+Tempo testnet `42431` was unavailable through the Trading API; its supported Tempo network was `4217`. We did not switch to mainnet. Tempo MPP payments work independently, but Uniswap-backed MPP auto-funding is not implemented.
 
 ## ENSv2 integration
 

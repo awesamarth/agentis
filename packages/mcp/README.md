@@ -27,14 +27,14 @@ Cloud-hosted clients cannot reach your laptop's localhost. They need a deployed 
 ## Tools
 
 - `agentis_discover`: search the public Mercator catalog by query/limit. No agent/wallet selection, provider call or payment.
-- `agentis_describe_service`: inspect provider/gateway endpoints, schemas, examples and advertised payment offers. Candidate compatibility and prices are advisory, not permission to spend. Use existing paid fetch separately. [Discovery semantics](../../docs/discovery.md). The MCP connection retains its normal OAuth requirement.
+- `agentis_describe_service`: inspect provider/gateway endpoints, schemas, examples and advertised payment offers. Candidate compatibility and prices are advisory, not permission to spend. Use existing paid fetch separately. The MCP connection retains its normal OAuth requirement.
 
 - `agentis_list_wallets`: authorized agents, wallets and supported token metadata.
 - `agentis_balance`: scoped token balances and estimated USD totals.
 - `agentis_policy`: read shared USD limits, mode and spent/reserved amounts.
 - `agentis_history`: recent payments across issuing keys within authorized wallets/networks.
 - `agentis_send`: decimal token amounts; creates a backend transfer request.
-- `agentis_fetch`: x402 USDC or Tempo/Solana MPP charge paid HTTP. Solana defaults to USDC; `asset: 'SOL'` selects native SOL, and `maxFee` is a SOL-denominated ceiling including possible ATA rent (default 0.005). Sponsored Solana charges bind zero agent fees. Tempo/Solana MPP splits bind all recipients to policy/approval, count the total once and include each distinct Solana recipient's possible ATA rent. See [Solana MPP](../../docs/solana-mpp.md). `method`, `headers`, `body` (UTF-8) or `bodyBase64` preserve the provider request; no JSON-only restriction. Tempo supports OUSD, USDC.e and pathUSD, plus testnet alphaUSD. Optional `asset` selects the payment token; `feeAsset` selects an eligible gas token. Testnet USDC.e cannot pay gas; its creation-time default is OUSD. Provider-sponsored Tempo charges cost the agent zero gas. Tempo push-only offers require agent-paid gas; Agentis persists and confirms payment before sending the provider its hash. Dual-mode offers prefer pull. Payment and HTTP success are separate; same-key retries never automatically pay or request the provider again. Sessions and automatic swaps are not implemented.
+- `agentis_fetch`: x402 USDC or Tempo/Solana MPP charge paid HTTP. Solana defaults to USDC; `asset: 'SOL'` selects native SOL, and `maxFee` is a SOL-denominated ceiling including possible ATA rent (default 0.005). Sponsored Solana charges bind zero agent fees. Tempo/Solana MPP splits bind all recipients to policy/approval, count the total once and include each distinct Solana recipient's possible ATA rent. `method`, `headers`, `body` (UTF-8) or `bodyBase64` preserve the provider request; no JSON-only restriction. Tempo supports OUSD, USDC.e and pathUSD, plus testnet alphaUSD. Optional `asset` selects the payment token; `feeAsset` selects an eligible gas token. Testnet USDC.e cannot pay gas; its creation-time default is OUSD. Provider-sponsored Tempo charges cost the agent zero gas. Tempo push-only offers require agent-paid gas; Agentis persists and confirms payment before sending the provider its hash. Dual-mode offers prefer pull. Payment and HTTP success are separate; same-key retries never automatically pay or request the provider again. Sessions and automatic swaps are not implemented.
 - `agentis_get_operation`: status, receipt and paid HTTP response for this connection's operations.
 - `agentis_list_operations`: this connection's requests.
 - `agentis_capabilities`: execution capabilities and network/asset metadata.
@@ -60,7 +60,7 @@ The existing `mcp.agentis.systems` Worker can remain a thin HTTP proxy to the AP
 
 ## Uniswap plugin
 
-Agents with Uniswap enabled expose eight additional quote/swap/status, rebalance and DCA tools. `agentis_fetch` supports optional `swapFunding: true` for missing **Base Sepolia USDC**. Recurring setup uses a separate owner-confirmation URL, not executor privileges. See [plugin scope and commands](../../docs/uniswap.md). Tempo MPP auto-funding is not supported on the current testnet; ordinary MPP payments are unchanged.
+Agents with Uniswap enabled expose eight additional quote/swap/status, rebalance and DCA tools. `agentis_fetch` supports optional `swapFunding: true` for missing **Base Sepolia USDC**. Recurring setup uses a separate owner-confirmation URL, not executor privileges. Tempo MPP auto-funding is not supported on the current testnet; ordinary MPP payments are unchanged.
 
 ## Authorization and revocation
 

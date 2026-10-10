@@ -33,16 +33,16 @@ await catalog.discovery.search({ query: 'web search', limit: 3 })
 await catalog.discovery.describe('exa')
 ```
 
-No token required; these methods do not invoke a configured token getter or send Authorization. Mercator catalog data is advisory and cannot authorize payment. Existing `client.fetch` pays the chosen provider directly through normal policy/approval. [Discovery details and deployment status](../../docs/discovery.md).
+No token required; these methods do not invoke a configured token getter or send Authorization. Mercator catalog data is advisory and cannot authorize payment. Existing `client.fetch` pays the chosen provider directly through normal policy/approval.
 
 ## Paid HTTP
 
 `client.fetch` accepts `method` (GET/HEAD/POST/PUT/PATCH/DELETE/OPTIONS), provider `headers`, and either `body` (exact UTF-8 text) or `bodyBase64` (exact binary or multipart bytes). The default method is GET; GET/HEAD cannot carry bodies. Set Content-Type to match the provider—requests are not restricted to JSON. Method, headers and body are bound to the operation's approval and idempotency key. Caller-supplied payment credentials and unsafe transport headers are rejected.
 
-Tempo MPP charge supports agent-paid and provider-sponsored gas. `maxFeeAtomic: '0'` selects sponsored offers; the agent reserves and pays only the API charge. Sponsorship does not bypass policy/approval or authorize a new payment after uncertainty. See [Tempo contracts and remaining coverage](../../docs/tempo.md).
+Tempo MPP charge supports agent-paid and provider-sponsored gas. `maxFeeAtomic: '0'` selects sponsored offers; the agent reserves and pays only the API charge. Sponsorship does not bypass policy/approval or authorize a new payment after uncertainty.
 
 Tempo push-only offers use the same `fetch` API and require a positive fee ceiling. `operation.mpp.mode` records the selected mode; dual-mode offers prefer pull. Agentis persists signed proof before broadcasting, confirms settlement, then delivers hash credentials. Payment can succeed even when provider HTTP fails; same-key retries do not pay again or automatically re-request the result. Provider sponsorship remains pull-only.
 
-Solana MPP charges use the same `fetch` API: USDC by default, or `asset: 'SOL'` for native payments. SOL amounts and `maxFeeAtomic` use lamports (9 decimals); USDC uses 6 decimals. Agent-paid fees include possible recipient ATA rent; sponsored offers bind zero agent fees. Tempo/Solana MPP provider splits are persisted in `operation.mpp.splits`; `amountAtomic` is the entire charge, with the primary share equal to total minus splits. All recipients pass policy/approval checks; Solana ATA rent is reserved per distinct recipient. Existing Solana/Base x402 is preserved. See [Solana MPP scope and verification](../../docs/solana-mpp.md).
+Solana MPP charges use the same `fetch` API: USDC by default, or `asset: 'SOL'` for native payments. SOL amounts and `maxFeeAtomic` use lamports (9 decimals); USDC uses 6 decimals. Agent-paid fees include possible recipient ATA rent; sponsored offers bind zero agent fees. Tempo/Solana MPP provider splits are persisted in `operation.mpp.splits`; `amountAtomic` is the entire charge, with the primary share equal to total minus splits. All recipients pass policy/approval checks; Solana ATA rent is reserved per distinct recipient. Existing Solana/Base x402 is preserved.
 
 Build locally with `bun run build:packages` at repo root. Version 0.3.0 exposes the V2 API. See the [project README](https://github.com/awesamarth/agentis#readme) for networks, plugins and examples.

@@ -42,6 +42,11 @@ x402.txt
 # Local MCP config
 .mcp.json
 
+# Internal engineering/research notes — never commit (public docs are in apps/docs/)
+/internal-notes/
+/docs/
+/.agentis-local/
+
 # Local planning docs
 gtm-plan.md
 demos.md
