@@ -23,7 +23,7 @@ const pluginUi = {
   agentcard: {
     name: 'Agentcard',
     description: 'Card payments and shopping with your existing credit or debit card.',
-    detail: 'Connect your card, choose which keys can use it, and follow your agent’s Ask/Auto settings.',
+    detail: 'Connect your card and allow this agent to make purchases. Your spending limits and Ask/Auto settings still apply.',
     Logo: AgentcardLogo,
     Controls: ({ agent }: { agent: AgentisAgent }) => <CardConnections agentId={agent.id} />,
   },
