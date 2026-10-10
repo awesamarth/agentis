@@ -127,6 +127,27 @@
       "when": 1789491756003,
       "tag": "0017_scalable_agent_plugins",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789491756004,
+      "tag": "0018_card_vault_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1789491756005,
+      "tag": "0019_card_checkout_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1789491756006,
+      "tag": "0020_agentcard_plugin",
+      "breakpoints": true
     }
   ]
 }

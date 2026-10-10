@@ -11,6 +11,7 @@
     "apps/backend": {
       "name": "backend",
       "dependencies": {
+        "@agent-cards/sdk": "0.23.6",
         "@agentis-hq/core": "workspace:*",
         "@agentis-hq/mcp": "workspace:*",
         "@agentis-hq/sdk": "workspace:*",
@@ -167,6 +168,7 @@
       "name": "@agentis-hq/sdk",
       "version": "0.4.0",
       "dependencies": {
+        "@agent-cards/sdk": "0.23.6",
         "@agentis-hq/core": "workspace:*",
       },
       "devDependencies": {
@@ -198,6 +200,8 @@
   ],
   "packages": {
     "@adraffy/ens-normalize": ["@adraffy/ens-normalize@1.11.1", "", {}, "sha512-nhCBV3quEgesuf7c7KYfperqSS14T8bYuvJ8PcLJp6znkZpFc0AuW4qBtr8eKVyPPe/8RSr7sglCWPU5eaxwKQ=="],
+
+    "@agent-cards/sdk": ["@agent-cards/sdk@0.23.6", "", {}, "sha512-YtHOIJmFh80F7VOcySQWwr7xJ6MQp20bBNVI2DxCGExZBE/WweTrxFGc+VGwvA4PCadGB1kiALkmiDJEdG+IOg=="],
 
     "@agentis-hq/cli": ["@agentis-hq/cli@workspace:packages/cli"],
 

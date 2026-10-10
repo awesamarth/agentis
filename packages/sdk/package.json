@@ -12,6 +12,11 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
+    "./cards/browser": {
+      "types": "./dist/cards/browser.d.ts",
+      "import": "./dist/cards/browser.js",
+      "require": "./dist/cards/browser.cjs"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -24,6 +29,7 @@
     "dev": "tsup --watch"
   },
   "dependencies": {
+    "@agent-cards/sdk": "0.23.6",
     "@agentis-hq/core": "workspace:*"
   },
   "devDependencies": {

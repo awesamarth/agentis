@@ -17,6 +17,7 @@ import { discoverX402 } from './modules/x402'
 import { discoverMpp } from './modules/mpp'
 import { discoverSvm } from './modules/x402-solana'
 import { findNetwork, requireNetwork, sameEnvironment } from '@agentis-hq/core/networks'
+import { cardUsage } from './modules/cards/budget'
 
 export type Principal = { kind: 'owner'; ownerId: string } | { kind: 'agent'; ownerId: string; grantId: string }
 export const hash = (value: string) => createHash('sha256').update(value).digest('hex')
@@ -98,6 +99,9 @@ export class OperationService {
       if (holding || age < 3_600_000) hourly += charged
       if (holding || age < 86_400_000) daily += charged
     }
+    const cards = await cardUsage(tx, wallet.ownerId, agent?.id ?? null, requireNetwork(wallet.chainId).testnet)
+    if (cards.unpriced) return 'An unpriced card settlement blocks new spending until reconciled'
+    total += cards.total; hourly += cards.hourly; daily += cards.daily
     const limits = agent?.limits ?? { perTransaction: null, hourly: null, daily: null, total: budget?.totalBudgetUsdMicros ?? null }
     for (const [key, used] of [['perTransaction', 0n], ['hourly', hourly], ['daily', daily], ['total', total]] as const) {
       const limit = limits[key]
@@ -234,7 +238,9 @@ export class OperationService {
       if ((reserved as readonly string[]).includes(row.status)) held += BigInt(row.reserved ?? '0')
       else spent += BigInt(row.settled ?? '0')
     }
-    return { name: agent.name, agentId: agent.id, environment: requireNetwork(wallet.chainId).testnet ? 'testnet' : 'mainnet', mode: agent.mode, limits: agent.limits, allowedRecipients: agent.allowedRecipients, spentMicros: spent.toString(), reservedMicros: held.toString(), walletPolicy: wallet.policy }
+    const cards = await cardUsage(this.db, principal.ownerId, agent.id, requireNetwork(wallet.chainId).testnet)
+    spent += cards.spent; held += cards.reserved
+    return { name: agent.name, agentId: agent.id, environment: requireNetwork(wallet.chainId).testnet ? 'testnet' : 'mainnet', mode: agent.mode, limits: agent.limits, allowedRecipients: agent.allowedRecipients, spentMicros: spent.toString(), reservedMicros: held.toString(), cardAccountingBlocked: cards.unpriced, walletPolicy: wallet.policy }
   }
 
   async history(principal: Principal) {
@@ -346,8 +352,8 @@ export class OperationService {
   // One transaction prepares at most one action per wallet. Multiple workers use
   // row locks; an unresolved submission blocks that wallet's nonce lane.
   async tick() {
-    if (!this.executor) return
     await this.plugins.tick()
+    if (!this.executor) return
     const executor = this.executor
     const walletRows = await this.db.select().from(wallets).where(eq(wallets.provider, executor.id))
     for (const candidate of walletRows) {

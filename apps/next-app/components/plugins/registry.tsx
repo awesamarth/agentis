@@ -4,6 +4,12 @@ import Image from 'next/image'
 import { pluginIdValues, type AgentisAgent, type PluginId } from '@agentis-hq/sdk'
 import IdentityControls, { ensDescription } from '../IdentityControls'
 import UniswapControls from '../UniswapControls'
+import CardConnections from './agentcard/CardConnections'
+
+export function AgentcardLogo() {
+  // Official icon: https://www.agentcard.sh/apple-icon.png
+  return <Image src="/plugins/agentcard.png" width={36} height={36} alt="" className="shrink-0" />
+}
 
 export function UniswapLogo() {
   return <Image src="/plugins/uniswap.png" width={36} height={36} alt="" className="shrink-0" />
@@ -14,6 +20,13 @@ export function EnsLogo() {
 }
 
 const pluginUi = {
+  agentcard: {
+    name: 'Agentcard',
+    description: 'Card payments and shopping with your existing credit or debit card.',
+    detail: 'Connect your card, choose which keys can use it, and follow your agent’s Ask/Auto settings.',
+    Logo: AgentcardLogo,
+    Controls: ({ agent }: { agent: AgentisAgent }) => <CardConnections agentId={agent.id} />,
+  },
   uniswap: {
     name: 'Uniswap',
     description: 'Token swaps, payment funding, portfolio rebalancing and scheduled purchases.',

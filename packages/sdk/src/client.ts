@@ -2,13 +2,15 @@ import type { Operation, OperationInput, WalletPolicy, AuthorizationRequest, Usd
 
 import { discoverySearchInput, discoveryServiceId, type DiscoverySearchInput, type DiscoverySearchResult, type DiscoveryDescription } from '@agentis-hq/core/discovery'
 import type { AgentIdentity, IdentityStep, EnsRecipient } from './identity'
+import type { CardSetupStatus, CardVault, CardSession } from './cards'
+import type { CardCheckout, CardCheckoutInput, CardCheckoutPermission, CardCheckoutReplay, CardDeliveryAddress, CardPurchaseTurn } from './card-checkout'
 import type { SwapRequest, SwapQuote, SwapPlan, DcaInput, DcaSchedule, RebalancePreview } from './uniswap'
 
 export type AgentisAgent = { id: string; name: string; plugins: PluginId[]; limits: UsdLimits; mode: 'ask' | 'automatic' | 'paused'; allowedRecipients: string[]; networks: string[]; defaultNetwork: string }
 export type AgentSettings = Pick<AgentisAgent, 'name' | 'limits' | 'mode' | 'allowedRecipients'> & { plugins?: AgentisAgent['plugins']; selection: { networks: string[]; defaultNetwork: string }; enableExecution?: boolean }
 export type AgentisWallet = { id: string; agentId: string | null; agentName: string | null; agentPlugins: AgentisAgent['plugins'] | null; serverAuthorized: boolean; address: string; chainId: string; policy: WalletPolicy; policyVersion: number; enabled: boolean }
 
-export type AgentPolicyView = Pick<AgentisAgent, 'name' | 'mode' | 'limits' | 'allowedRecipients'> & { agentId: string; environment: 'mainnet' | 'testnet'; spentMicros: string; reservedMicros: string; walletPolicy: WalletPolicy }
+export type AgentPolicyView = Pick<AgentisAgent, 'name' | 'mode' | 'limits' | 'allowedRecipients'> & { agentId: string; environment: 'mainnet' | 'testnet'; spentMicros: string; reservedMicros: string; cardAccountingBlocked?: boolean; walletPolicy: WalletPolicy }
 
 export type AgentBalance = {
   usdMicros: string | null; complete: boolean; checkedAt: string
@@ -66,6 +68,39 @@ export class AgentisClient {
       return this.request<DiscoverySearchResult>(`/discovery/search?${new URLSearchParams({ query, limit: String(limit) })}`, 'GET', undefined, {}, AbortSignal.timeout(120_000), false)
     },
     describe: (serviceId: string) => this.request<DiscoveryDescription>(`/discovery/services/${encodeURIComponent(discoveryServiceId.parse(serviceId))}`, 'GET', undefined, {}, AbortSignal.timeout(40_000), false),
+  }
+  /** Agentcard plugin. Connections are owner-wide; purchase access is enabled per agent/key. */
+  cards = {
+    /** Existing executor keys can retrieve only this status/setup link, not card metadata or enrollment URLs. */
+    status: (agentId: string) => this.request<CardSetupStatus>(`/plugins/agentcard/status?${new URLSearchParams({ agentId })}`),
+    /** Vault enrollment/metadata require an owner token. Connecting alone grants no card-spending permission. */
+    vault: () => this.request<CardVault>('/plugins/agentcard', 'GET', undefined, {}, AbortSignal.timeout(45_000)),
+    connect: (options: { idempotencyKey: string; confirm: true }) => this.request<CardSession>('/plugins/agentcard/sessions', 'POST', { confirm: options.confirm }, { 'Idempotency-Key': options.idempotencyKey }, AbortSignal.timeout(45_000)),
+    session: (id: string) => this.request<CardSession>(`/plugins/agentcard/sessions/${encodeURIComponent(id)}`, 'GET', undefined, {}, AbortSignal.timeout(45_000)),
+    disconnect: (input: { confirm: true }) => this.request<{ disconnected: true; providerPermissionsRevoked: false }>('/plugins/agentcard/disconnect', 'POST', input),
+    permissions: {
+      list: (agentId: string) => this.request<CardCheckoutPermission[]>(`/plugins/agentcard/permissions?${new URLSearchParams({ agentId })}`),
+      set: (input: { grantId: string; enabled: boolean; confirm: true; scope: 'card_purchases_follow_agent_policy' }) => this.request<CardCheckoutPermission>('/plugins/agentcard/permissions', 'POST', input),
+    },
+    purchases: {
+      ask: (input: { agentId: string; ask: string; conversationId?: string; deliveryAddress?: CardDeliveryAddress }, options: { idempotencyKey: string }) => this.request<CardPurchaseTurn>('/plugins/agentcard/purchases/ask', 'POST', input, { 'Idempotency-Key': options.idempotencyKey }, AbortSignal.timeout(150_000)),
+      conversation: (id: string) => this.request<CardPurchaseTurn>(`/plugins/agentcard/purchases/conversations/${encodeURIComponent(id)}`, 'GET', undefined, {}, AbortSignal.timeout(45_000)),
+      confirm: (input: { agentId: string; conversationId: string; cartHash: string }, options: { idempotencyKey: string }) => this.request<CardCheckout>('/plugins/agentcard/purchases/confirm', 'POST', input, { 'Idempotency-Key': options.idempotencyKey }, AbortSignal.timeout(150_000)),
+      /** Only after an explicit provider approval pause with charge_status:none. Never a timeout retry. */
+      continue: (id: string) => this.request<CardCheckout>(`/plugins/agentcard/purchases/${encodeURIComponent(id)}/continue`, 'POST', { confirm: true }, {}, AbortSignal.timeout(150_000)),
+    },
+    checkouts: {
+      registry: (agentId: string) => this.request<unknown>(`/plugins/agentcard/checkouts/registry?${new URLSearchParams({ agentId })}`, 'GET', undefined, {}, AbortSignal.timeout(45_000)),
+      browserStep: (id: string, step: 'continuations' | 'duplicate-guard', body: Record<string, unknown>) => this.request<Record<string, unknown>>(`/plugins/agentcard/checkouts/${encodeURIComponent(id)}/browser-step`, 'POST', { step, body }, {}, AbortSignal.timeout(45_000)),
+      create: (input: CardCheckoutInput, options: { idempotencyKey: string }) => this.request<CardCheckout & { newlyCreated: boolean }>('/plugins/agentcard/checkouts', 'POST', input, { 'Idempotency-Key': options.idempotencyKey }),
+      list: (agentId: string) => this.request<CardCheckout[]>(`/plugins/agentcard/checkouts?${new URLSearchParams({ agentId })}`),
+      get: (id: string) => this.request<CardCheckout>(`/plugins/agentcard/checkouts/${encodeURIComponent(id)}`, 'GET', undefined, {}, AbortSignal.timeout(45_000)),
+      decide: (id: string, operationHash: string, approve: boolean) => this.request<CardCheckout>(`/plugins/agentcard/checkouts/${encodeURIComponent(id)}/decide`, 'POST', { operationHash, approve, confirm: true }),
+      execute: (id: string) => this.request<CardCheckout>(`/plugins/agentcard/checkouts/${encodeURIComponent(id)}/execute`, 'POST', undefined, {}, AbortSignal.timeout(150_000)),
+      cancel: (id: string) => this.request<CardCheckout>(`/plugins/agentcard/checkouts/${encodeURIComponent(id)}/cancel`, 'POST', undefined, {}, AbortSignal.timeout(60_000)),
+      /** Private browser replay material, not a receipt or agent prompt. Never log this response. */
+      replay: (id: string) => this.request<CardCheckoutReplay>(`/plugins/agentcard/checkouts/${encodeURIComponent(id)}/replay`),
+    },
   }
   capabilities = () => this.request<Record<string, unknown>>('/capabilities')
   onboarding = {

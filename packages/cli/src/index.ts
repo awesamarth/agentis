@@ -69,6 +69,37 @@ async function main() {
     console.log(values.json ? JSON.stringify(output, null, 2) : formatOutput('discover', output))
     return
   }
+  if (command === 'cards') {
+    if (Object.keys(values).some(flag => !['agent', 'help', 'json', ...(['request', 'ask', 'confirm'].includes(subcommand!) ? ['file', 'key'] : [])].includes(flag))) throw Error('Unsupported cards command option')
+    if (values.help) { console.log('agentis cards status|setup|list [--agent <name-or-id>] [--json]\nagentis cards ask --file <ask.json> --key <stable-key> [--agent <name-or-id>]\n  JSON: {"ask":"what to buy","conversationId":"optional previous turn id","deliveryAddress":{...}}\nagentis cards confirm --file <cart.json> --key <stable-key> [--agent <name-or-id>]\n  JSON: {"conversationId":"turn id","cartHash":"exact returned cart hash"}\nagentis cards conversation <turn-id> | get|cancel|execute|continue <checkout-id> [--agent <name-or-id>]\nagentis cards request --file <official-sdk-capture.json> --key <stable-key> [--agent <name-or-id>]\nSeparate card consent is required. Ask waits for owner approval; Auto submits within agent limits. Agentcard/bank approval may remain. Continue ONLY a documented unpaid provider-approval pause, never a timeout. Read the original checkout after uncertainty; do not blindly confirm again. Browser purchases use @agentis-hq/sdk/cards/browser.'); return }
+    if (positionals.length !== (['get', 'cancel', 'conversation', 'execute', 'continue'].includes(subcommand!) ? 3 : 2)) throw Error('Check agentis cards --help for the command arguments')
+    const linked = sessions(values.agent)
+    if (linked.length !== 1) throw Error('Select one linked agent with --agent')
+    const selected = linked[0]!.agentId ?? values.agent, cards = linked[0]!.client.cards
+    let result: unknown
+    if (subcommand === 'get' || subcommand === 'cancel') result = await cards.checkouts[subcommand](id!)
+    else if (subcommand === 'conversation') result = await cards.purchases.conversation(id!)
+    else if (subcommand === 'continue') result = await cards.purchases.continue(id!)
+    else if (subcommand === 'execute') {
+      const checkout = await cards.checkouts.get(id!)
+      if (checkout.rail !== 'purchase') throw Error('Browser purchases must be submitted by their active browser adapter')
+      result = await cards.checkouts.execute(id!)
+    } else {
+      if (!selected) throw Error('When using AGENTIS_TOKEN, supply an agent UUID with --agent')
+      if (subcommand === 'list') result = await cards.checkouts.list(selected)
+      else if (['request', 'ask', 'confirm'].includes(subcommand!)) {
+        if (!values.file || !values.key) throw Error('--file and --key are required; never use a new key after uncertainty')
+        let input
+        try { input = JSON.parse(readFileSync(values.file, 'utf8')) } catch { throw Error('Could not read valid checkout JSON; capture contents were not logged') }
+        if (input?.agentId && input.agentId !== selected) throw Error('Input agentId must match the selected agent')
+        const payload = { ...input, agentId: selected }
+        result = subcommand === 'ask' ? await cards.purchases.ask(payload, { idempotencyKey: values.key }) : subcommand === 'confirm' ? await cards.purchases.confirm(payload, { idempotencyKey: values.key }) : await cards.checkouts.create(payload, { idempotencyKey: values.key })
+      } else result = await cards.status(selected)
+    }
+    // Private provider links and browser replay material must never enter terminal/agent output.
+    console.log(JSON.stringify(result, (name, value) => name === 'providerApprovalUrl' ? undefined : value, 2))
+    return
+  }
   const { header: _headers, ...commandValues } = values
   if (command === 'identity') { await runIdentity(subcommand, id, commandValues); return }
   if (['swap', 'rebalance', 'dca'].includes(command ?? '')) { if (values.local) throw Error('Uniswap currently supports hosted agents only'); await runUniswap(command!, subcommand, id, commandValues); return }
@@ -111,6 +142,7 @@ async function main() {
   operations list|get <id>|wait <id>
   operations approve|reject <id> --hash <operation-hash>   (owner only)
   capabilities
+  cards status|setup|ask|confirm|conversation|request|list|get|cancel|execute|continue   See cards --help.
   discover "<query>" [--limit 8] [--json]   Public API discovery; no wallet/login/payment.
   discover describe <service-id> [--json]  Endpoints, input schemas and payment offers.
 

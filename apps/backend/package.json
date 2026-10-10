@@ -18,6 +18,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@agent-cards/sdk": "0.23.6",
     "@agentis-hq/core": "workspace:*",
     "@agentis-hq/mcp": "workspace:*",
     "@agentis-hq/sdk": "workspace:*",

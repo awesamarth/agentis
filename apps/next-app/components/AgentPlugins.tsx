@@ -5,7 +5,7 @@ import { usePrivy } from '@privy-io/react-auth'
 import { type AgentisAgent } from '@agentis-hq/sdk'
 import { useAgentisClient } from '@/lib/agentis'
 import PluginPicker from './PluginPicker'
-import { pluginDetails } from './plugins/registry'
+import { pluginChoices, pluginDetails } from './plugins/registry'
 
 export default function AgentPlugins({ agent }: { agent: AgentisAgent }) {
   const { user } = usePrivy()
@@ -21,9 +21,9 @@ export default function AgentPlugins({ agent }: { agent: AgentisAgent }) {
   return <section aria-labelledby="agent-plugins-title" className="space-y-4">
     <header className="flex flex-wrap items-center justify-between gap-3"><h2 id="agent-plugins-title" className="font-mono text-[0.6rem] uppercase tracking-widest text-ink-muted">Plugins</h2><div className="flex flex-wrap gap-2"><button className="border border-beige-darker px-4 py-2 text-sm hover:border-ink" onClick={open}>+ Add a plugin</button><button className="bg-black px-4 py-2 text-sm text-beige hover:bg-ink" onClick={open}>Manage</button></div></header>
     {!agent.plugins.length ? <p className="border border-beige-darker bg-[#faf7f1] p-5 text-sm text-ink-muted">No plugins added</p> : null}
-    {agent.plugins.map(id => {
+    {pluginChoices.filter(plugin => agent.plugins.includes(plugin.id)).map(({ id }) => {
       const plugin = pluginDetails(id), Logo = plugin.Logo, Controls = plugin.Controls
-      return <article key={id} className="border border-beige-darker bg-[#faf7f1] p-5"><div className="flex items-start gap-3"><Logo /><div className="min-w-0 flex-1"><h3 className="font-serif text-xl font-bold">{plugin.name}</h3><p className="mt-1 text-sm text-ink-muted">{plugin.description}</p></div></div><Controls agent={agent} /></article>
+      return <article key={id} id={`plugin-${id}`} className="border border-beige-darker bg-[#faf7f1] p-5"><div className="flex items-start gap-3"><Logo /><div className="min-w-0 flex-1"><h3 className="font-serif text-xl font-bold">{plugin.name}</h3><p className="mt-1 text-sm text-ink-muted">{plugin.description}</p></div></div><Controls agent={agent} /></article>
     })}
     <dialog ref={dialog} aria-labelledby="plugin-picker-title" onCancel={event => { if (save.isPending) event.preventDefault() }} onClick={event => {
       if (save.isPending || event.target !== event.currentTarget) return

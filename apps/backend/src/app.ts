@@ -44,7 +44,7 @@ export function createApp(service: OperationService, identity: Identity, origins
   // Paid payloads use the deployment/server request limit, not the small admin-form
   // limit. This also covers SDK operations and MCP tool calls carrying request bodies.
   app.use('*', async (c, next) => ['/v1/fetch', '/v1/operations', '/mcp'].some(path => c.req.path === path || c.req.path.startsWith(`${path}/`))
-    ? next() : bodyLimit({ maxSize: 32 * 1024 })(c, next))
+    ? next() : bodyLimit({ maxSize: c.req.path.startsWith('/v1/plugins/agentcard/checkouts') ? 256 * 1024 : 32 * 1024 })(c, next))
   app.use('*', cors({ origin: (origin, c) => c.req.path === '/mcp' || c.req.path.startsWith('/v1/discovery/') || c.req.path.startsWith('/oauth/') || c.req.path.startsWith('/.well-known/') ? '*' : origins.includes(origin) ? origin : '', allowHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'MCP-Protocol-Version', 'Last-Event-ID'], exposeHeaders: ['WWW-Authenticate', 'MCP-Protocol-Version'], allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'] }))
   app.use('*', async (c, next) => { c.header('Cache-Control', 'no-store'); await next() })
   app.onError((error, c) => {

@@ -10,6 +10,10 @@ export async function profileSummary(service: OperationService, ownerId: string)
       from operations o join wallets w on w.id = o."walletId"
       where o."ownerId" = ${ownerId} and o."settledAt" is not null
         and w."chainId" in (${sql.join(networkCatalog.filter(network => !network.testnet).map(network => sql`${network.chainId}`), sql`, `)})
+      union all
+      select c.usd_settled_micros::numeric as spend,
+        (c.settled_at at time zone 'UTC')::date as day, c.agent_id
+      from card_checkouts c where c.owner_id = ${ownerId} and c.test_mode = false and c.settled_at is not null
     ), days as (
       select generate_series((now() at time zone 'UTC')::date - 13,
         (now() at time zone 'UTC')::date, interval '1 day')::date as day

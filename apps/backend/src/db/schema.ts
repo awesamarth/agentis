@@ -1,5 +1,6 @@
 import { pgTable, uuid, text, timestamp, integer, jsonb, uniqueIndex, boolean, check } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
+import type { CardCheckoutStatus, CardPurchaseCart, CardDeliveryAddress } from '@agentis-hq/sdk'
 import type { Operation, OperationInput, OperationStatus, WalletPolicy, AuthorizationRequest, UsdQuote, UsdLimits, PluginId } from '@agentis-hq/core/operations'
 
 export const agents = pgTable('agents', {
@@ -14,6 +15,55 @@ export const agents = pgTable('agents', {
   networks: jsonb().$type<string[]>().notNull(),
   defaultNetwork: text().notNull(),
 })
+
+// Provider-tagged owner connections and shared card accounting. Plugin enablement is per-agent.
+// Connecting a Vault alone never grants payment/executor authority.
+export const cardVaults = pgTable('card_vaults', {
+  provider: text().notNull().default('agentcard'),
+  id: uuid().primaryKey().defaultRandom(), ownerId: text('owner_id').notNull(), clientFingerprint: text('client_fingerprint').notNull(),
+  userId: text('user_id').notNull(), testMode: boolean('test_mode').notNull(),
+  linkedAt: timestamp('linked_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  disconnectedAt: timestamp('disconnected_at', { withTimezone: true, mode: 'date' }),
+}, table => [uniqueIndex('card_vault_owner_client').on(table.ownerId, table.provider, table.clientFingerprint), uniqueIndex('card_vault_user_client').on(table.provider, table.userId, table.clientFingerprint)])
+export const cardSessions = pgTable('card_sessions', {
+  provider: text().notNull().default('agentcard'),
+  id: uuid().primaryKey().defaultRandom(), ownerId: text('owner_id').notNull(), clientFingerprint: text('client_fingerprint').notNull(),
+  idempotencyKey: text('idempotency_key').notNull(), providerSessionId: text('provider_session_id'), expectedUserId: text('expected_user_id'),
+  status: text().$type<'creating' | 'pending' | 'linked' | 'expired' | 'unknown' | 'cancelled'>().notNull(),
+  encryptedUrl: text('encrypted_url'), testMode: boolean('test_mode'), pollInterval: integer('poll_interval').notNull().default(3),
+  nextPollAt: timestamp('next_poll_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
+}, table => [uniqueIndex('card_session_idempotency').on(table.ownerId, table.provider, table.clientFingerprint, table.idempotencyKey), uniqueIndex('card_session_provider_id').on(table.provider, table.providerSessionId)])
+
+export const cardCheckoutPermissions = pgTable('card_checkout_permissions', {
+  grantId: uuid('grant_id').primaryKey().references(() => grants.id), ownerId: text('owner_id').notNull(),
+  agentId: uuid('agent_id').notNull().references(() => agents.id), vaultId: uuid('vault_id').notNull().references(() => cardVaults.id), enabled: boolean().notNull().default(false), revision: integer().notNull().default(1),
+})
+export const cardCheckouts = pgTable('card_checkouts', {
+  provider: text().notNull().default('agentcard'),
+  id: uuid().primaryKey().defaultRandom(), ownerId: text('owner_id').notNull(), agentId: uuid('agent_id').notNull().references(() => agents.id),
+  grantId: uuid('grant_id').references(() => grants.id), vaultId: uuid('vault_id').notNull().references(() => cardVaults.id),
+  clientFingerprint: text('client_fingerprint').notNull(), testMode: boolean('test_mode').notNull(),
+  principalKey: text('principal_key').notNull(), idempotencyKey: text('idempotency_key').notNull(), requestHash: text('request_hash').notNull(), operationHash: text('operation_hash').notNull(),
+  policyHash: text('policy_hash').notNull(), permissionRevision: integer('permission_revision'), vaultLinkedAt: timestamp('vault_linked_at', { withTimezone: true, mode: 'date' }).notNull(),
+  rail: text().$type<'browser' | 'purchase'>().notNull().default('browser'),
+  details: jsonb().$type<{ cart?: CardPurchaseCart; deliveryAddress?: CardDeliveryAddress; orderId?: string; merchantOrderConfirmed?: boolean; continuationClaimed?: boolean }>().notNull().default({}),
+  intentId: text('intent_id').notNull(), merchant: text().notNull(), checkoutOrigin: text('checkout_origin').notNull(), amountMinor: integer('amount_minor').notNull(),
+  encryptedRequest: text('encrypted_request').notNull(), encryptedApprovalUrl: text('encrypted_approval_url'), encryptedReplay: text('encrypted_replay'),
+  status: text().$type<CardCheckoutStatus>().notNull(), providerId: text('provider_id'), cancelRequested: boolean('cancel_requested').notNull().default(false), budgetUnsafe: boolean('budget_unsafe').notNull().default(false),
+  usdReservedMicros: text('usd_reserved_micros').notNull(), usdSettledMicros: text('usd_settled_micros'), error: text(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(), settledAt: timestamp('settled_at', { withTimezone: true, mode: 'date' }),
+  nextPollAt: timestamp('next_poll_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+}, table => [uniqueIndex('card_checkout_provider_id').on(table.provider, table.providerId), uniqueIndex('card_checkout_idempotency').on(table.provider, table.principalKey, table.idempotencyKey), uniqueIndex('card_checkout_active_intent').on(table.ownerId, table.provider, table.clientFingerprint, table.intentId).where(sql`${table.status} in ('pending_approval','queued','submitting','awaiting_provider','unknown','confirmed')`)])
+
+export const cardPurchaseTurns = pgTable('card_purchase_turns', {
+  id: uuid().primaryKey().defaultRandom(), ownerId: text('owner_id').notNull(), agentId: uuid('agent_id').notNull().references(() => agents.id), grantId: uuid('grant_id').references(() => grants.id),
+  vaultId: uuid('vault_id').notNull().references(() => cardVaults.id), principalKey: text('principal_key').notNull(), idempotencyKey: text('idempotency_key').notNull(), requestHash: text('request_hash').notNull(),
+  providerConversationId: text('provider_conversation_id'), encryptedInput: text('encrypted_input').notNull(), encryptedResult: text('encrypted_result'),
+  status: text().$type<'running' | 'complete' | 'unknown'>().notNull(), createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+}, table => [uniqueIndex('card_purchase_turn_key').on(table.principalKey, table.idempotencyKey)])
 
 export const wallets = pgTable('wallets', {
   id: uuid().primaryKey().defaultRandom(),

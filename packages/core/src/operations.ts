@@ -86,7 +86,7 @@ export const usdLimits = z.object({
   total: z.string().regex(/^(0|[1-9]\d{0,11})(\.\d{1,6})?$/).nullable(),
 }).strict()
 export type UsdLimits = z.infer<typeof usdLimits>
-export const pluginIdValues = ['uniswap', 'ens'] as const
+export const pluginIdValues = ['agentcard', 'uniswap', 'ens'] as const
 export const pluginId = z.enum(pluginIdValues)
 export const pluginIds = z.array(pluginId).refine(items => new Set(items).size === items.length, 'Duplicate plugins')
 export type PluginId = z.infer<typeof pluginId>

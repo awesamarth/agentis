@@ -16,7 +16,7 @@ const admin = postgres(url, { max: 1 }), schema = `network_check_${randomBytes(6
 await admin.unsafe(`CREATE SCHEMA ${schema}`)
 const connection = postgres(url, { max: 4, connection: { search_path: schema } })
 try {
-  for (const table of ['agents', 'wallets', 'operations', 'onboarding', 'grants']) await admin.unsafe(`CREATE TABLE ${schema}.${table} (LIKE public.${table} INCLUDING ALL)`)
+  for (const table of ['agents', 'wallets', 'operations', 'onboarding', 'grants', 'card_checkouts']) await admin.unsafe(`CREATE TABLE ${schema}.${table} (LIKE public.${table} INCLUDING ALL)`)
   const db = drizzle(connection, { schema: tables }), ownerId = `fixture-${schema}`, agentId = crypto.randomUUID()
   const deny = async (): Promise<never> => { throw Error('Signing and execution forbidden') }
   const executor: Executor = { id: 'privy', validate() {}, prepare: deny, broadcast: deny, receipt: deny }

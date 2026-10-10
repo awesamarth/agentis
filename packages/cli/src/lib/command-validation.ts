@@ -3,6 +3,7 @@ const commandTree: Record<string, readonly string[] | null> = {
   logout: null,
   whoami: null,
   capabilities: null,
+  cards: ['status', 'setup', 'request', 'list', 'get', 'cancel', 'ask', 'confirm', 'conversation', 'execute', 'continue'],
   discover: null,
   identity: ['setup', 'show', 'resolve', 'update', 'delegate', 'revoke'],
   swap: ['quote', 'execute', 'get'],

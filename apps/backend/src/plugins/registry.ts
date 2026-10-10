@@ -4,6 +4,8 @@ import type { WalletRow } from '../db/schema'
 import type { OperationService, Transaction } from '../operations'
 import { EnsService } from './ens/service'
 import { ensPublicRoutes, ensRoutes } from './ens/routes'
+import { AgentcardService } from './agentcard/service'
+import { agentcardRoutes } from './agentcard/routes'
 import { UniswapService } from './uniswap/service'
 import { uniswapRoutes } from './uniswap/routes'
 
@@ -22,12 +24,19 @@ type PluginLifecycle = {
 
 type PluginDefinition = {
   catalog: PluginCatalogEntry
+  requiresExecutor?: boolean
   create(service: OperationService): PluginLifecycle
   routes(service: PluginLifecycle): Hono<any>
   publicRoutes?(service: PluginLifecycle): { path: string; app: Hono<any> }
 }
 
 const definitions = {
+  agentcard: {
+    catalog: { id: 'agentcard', scope: 'agent', networks: [], features: ['vault', 'browser_checkout', 'purchase_api'] },
+    requiresExecutor: false,
+    create: (service: OperationService) => new AgentcardService(service),
+    routes: (service: PluginLifecycle) => agentcardRoutes(service as AgentcardService),
+  },
   uniswap: {
     catalog: { id: 'uniswap', scope: 'agent', networks: ['eip155:84532'], features: ['swap', 'rebalance', 'dca', 'gas_refill', 'x402_shortfall_funding'] },
     create: (service: OperationService) => new UniswapService(service),
@@ -47,7 +56,7 @@ export class PluginRegistry {
   readonly catalog = pluginIdValues.map(id => definitions[id].catalog)
   private readonly services: ServiceMap
 
-  constructor(service: OperationService) {
+  constructor(private readonly service: OperationService) {
     this.services = Object.fromEntries(pluginIdValues.map(id => [id, definitions[id].create(service)])) as ServiceMap
   }
 
@@ -79,6 +88,10 @@ export class PluginRegistry {
   }
 
   async tick() {
-    for (const id of pluginIdValues) await (this.services[id] as PluginLifecycle).tick?.()
+    for (const id of pluginIdValues) {
+      const definition: PluginDefinition = definitions[id]
+      if (!this.service.executor && definition.requiresExecutor !== false) continue
+      await (this.services[id] as PluginLifecycle).tick?.()
+    }
   }
 }
