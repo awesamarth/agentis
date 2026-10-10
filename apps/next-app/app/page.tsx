@@ -1,10 +1,10 @@
 'use client'
 
 import { usePrivy } from '@privy-io/react-auth'
-import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
+import PluginShowcase from '@/components/landing/PluginShowcase'
 
 const capabilities = [
   {
@@ -33,24 +33,6 @@ const capabilities = [
   },
 ]
 
-const plugins = [
-  {
-    name: 'Agentcard', icon: '/plugins/agentcard.png', status: 'Preview',
-    title: 'Bring your own card.',
-    body: 'Connect an existing credit or debit card for agent shopping. Browser checkout and delegated purchases are in preview.',
-  },
-  {
-    name: 'Uniswap', icon: '/plugins/uniswap.png', status: 'Base Sepolia · testnet',
-    title: 'Keep the right tokens on hand.',
-    body: 'Swap tokens, schedule purchases and rebalance funds. You choose which features your agent can use.',
-  },
-  {
-    name: 'ENS', icon: '/plugins/ens.svg', status: 'Ethereum Sepolia · testnet',
-    title: 'Give your agent a name.',
-    body: 'Set up an agent identity with payment addresses and service details, so there’s more to it than a wallet address.',
-  },
-]
-
 const connections = [
   { name: 'MCP', description: 'Connect your AI assistant to Agentis.', href: 'https://docs.agentis.systems/docs/mcp' },
   { name: 'CLI', description: 'Use Agentis from your terminal or agent harness.', href: 'https://docs.agentis.systems/docs/cli' },
@@ -58,7 +40,6 @@ const connections = [
 ]
 
 const eyebrow = 'font-mono text-[0.68rem] uppercase tracking-[0.18em] text-ink-muted'
-const sectionTitle = 'font-serif text-4xl font-black leading-[1.02] text-black sm:text-5xl lg:text-6xl'
 
 function AgentWalletVisual() {
   return (
@@ -202,31 +183,18 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="plugins" className="scroll-mt-8 px-6 py-16 sm:px-10 sm:py-20 lg:px-12">
-        <div className="mx-auto max-w-7xl">
-          <p className={eyebrow}>Optional plugins</p>
-          <div className="mt-5 flex flex-wrap items-end justify-between gap-6">
-            <h2 className={`${sectionTitle} max-w-3xl`}>Add what your agent needs.</h2>
-            <Link href="/dashboard" className="border-b border-ink pb-1 font-mono text-xs uppercase tracking-wider focus-visible:outline-2 focus-visible:outline-offset-4">Manage your agents <span aria-hidden="true">↗</span></Link>
-          </div>
-          <p className="mt-5 max-w-xl leading-relaxed text-ink-muted">Keep each agent’s setup focused. You choose which extras to enable.</p>
-          <div className="mt-10 grid gap-5 md:grid-cols-3">
-            {plugins.map(plugin => <article key={plugin.name} className="border border-beige-darker bg-[#f8f4ed]/70 p-6 sm:p-7">
-              <div className="flex items-center gap-3"><Image src={plugin.icon} alt="" width={36} height={36} className="shrink-0" /><h3 className="font-serif text-2xl font-bold">{plugin.name}</h3></div>
-              <p className="mt-5 inline-block border border-beige-darker px-2 py-1 font-mono text-[0.6rem] uppercase tracking-wide">{plugin.status}</p>
-              <h4 className="mt-5 font-serif text-2xl font-bold leading-tight">{plugin.title}</h4>
-              <p className="mt-4 text-sm leading-relaxed text-ink-muted">{plugin.body}</p>
-            </article>)}
-          </div>
-        </div>
-      </section>
+      <PluginShowcase />
 
       <section id="connect" className="px-6 pb-16 sm:px-10 sm:pb-20 lg:px-12">
         <div className="mx-auto max-w-7xl border-2 border-ink bg-black p-1 text-beige shadow-[10px_10px_0_rgba(42,38,32,0.08)]">
           <div className="grid gap-10 border border-beige/25 p-6 sm:p-10 lg:grid-cols-[1.3fr_1fr] lg:items-center lg:gap-14">
-            <div>
+            <div className="@container min-w-0">
               <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-beige/60">Connect your agent</p>
-              <h2 className="mt-6 font-serif text-4xl font-black leading-[1.02] sm:text-5xl lg:text-6xl">Dashboard for humans.<br />SDK and MCP for agents.<br /><span className="italic text-beige/70">CLI for both.</span></h2>
+              <h2 className="mt-6 font-serif text-[min(3.75rem,8cqw)] font-black leading-[1.02]">
+                <span className="block whitespace-nowrap">Dashboard for humans.</span>
+                <span className="block whitespace-nowrap">SDK and MCP for agents.</span>
+                <span className="block whitespace-nowrap italic text-beige/70">CLI for both.</span>
+              </h2>
               <p className="mt-6 max-w-xl text-base leading-relaxed text-beige/75">Set up your agent, choose its wallets and spending rules, then connect the tools it uses. Manage approvals and follow its activity from your dashboard.</p>
               <Link href="/dashboard" className="mt-7 inline-block border border-beige/40 px-6 py-3 font-mono text-xs uppercase tracking-wider transition-colors hover:bg-beige hover:text-black focus-visible:outline-2 focus-visible:outline-offset-4">Open dashboard <span aria-hidden="true">↗</span></Link>
             </div>
