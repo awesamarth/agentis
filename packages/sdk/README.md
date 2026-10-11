@@ -27,6 +27,8 @@ const result = await client.operations.create({
 }, { idempotencyKey: 'stable-task-id' })
 ```
 
+SDK callers generate and persist an `idempotencyKey` before sending each new intended payment; for example, generate a UUID and save it with the task. Reuse the original key and exact terms after uncertainty. A separate payment needs a new key even when its details are identical. Never ask the end user to invent a key. The CLI manages its own saved request identities; keyless MCP calls instead use fresh server-generated UUIDs and must not be automatically retried.
+
 `operations.get/list/wait` return state/receipt; `wait` stops at pending approval or unknown outcome. Owner clients can `operations.approve(id, operationHash)` / `reject`, `wallets.link/setPolicy`, and `grants.create/list/revoke`.
 
 Owner-only `agents.pause(id)` stops new payments and invalidates unsubmitted approvals for that agent; already-issued transactions still reconcile. Owner-only `wallets.exportKey(id, { confirm: true })` requires an authenticated owner and verified user + server quorum, then uses the server authorization key to export. It returns a sensitive private key: never log, cache, or persist it unintentionally. Keep this capability in an owner-controlled interface, never an agent tool.

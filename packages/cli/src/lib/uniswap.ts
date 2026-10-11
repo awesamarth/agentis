@@ -1,6 +1,7 @@
 import { select, text, confirm, isCancel } from '@clack/prompts'
 import { formatUnits } from 'viem'
 import type { SwapRequest, SwapQuote, SwapPlan, DcaInput } from '@agentis-hq/sdk'
+import { paymentRequest } from './payment-request'
 import { sessions } from './session'
 
 type Values = Record<string, string | boolean | undefined>
@@ -59,7 +60,6 @@ export async function runUniswap(command: string, subcommand: string | undefined
     const tokenIn = await token('from', 'USDC'), tokenOut = await token('to', tokenIn === 'ETH' ? 'USDC' : 'ETH')
     return { walletId: wallet.id, tokenIn, tokenOut, amount: await prompt('amount', values['exact-output'] ? `Amount of ${tokenOut} to receive` : `Amount of ${tokenIn} to sell`), type: values['exact-output'] ? 'EXACT_OUTPUT' : 'EXACT_INPUT', slippageBps: Number(str(values, 'slippage-bps') ?? '50'), maxFee: str(values, 'max-fee') ?? '0.0001', minimumOutputAtomic: str(values, 'minimum-output-atomic'), maximumInputAtomic: str(values, 'maximum-input-atomic') }
   }
-  const key = () => { const value = str(values, 'key') ?? (interactive ? crypto.randomUUID() : undefined); if (!value) throw Error('--key required; preserve it after uncertainty'); if (!values.json) console.log(`Request key: ${value}`); return value }
   const consent = async () => { if (values.yes) return; if (!interactive) throw Error('Use --yes to submit noninteractively; it does not bypass owner approval'); if (!answer(await confirm({ message: 'Request this execution?', initialValue: false }))) throw Error('Cancelled') }
   const print = (data: unknown, human: string) => console.log(values.json ? JSON.stringify(data, null, 2) : `\n${human}\n`)
   if (command === 'swap') {
@@ -68,23 +68,21 @@ export async function runUniswap(command: string, subcommand: string | undefined
     if (!['quote', 'execute'].includes(action)) throw Error('Use swap quote, execute or get')
     const input = await request()
     if (action === 'quote') { const quote = await client.uniswap.quote(input); print(quote, quoteText(quote)); return }
-    const requestKey = key()
-    // With --yes, do not refresh preview terms on retries: the backend returns the persisted plan.
-    if (interactive && !values.yes) {
+    // Retain the original reviewed bounds on retries; never silently refresh them.
+    if (interactive && !values.yes && !values.retry) {
       const quote = await client.uniswap.quote(input)
       input.minimumOutputAtomic = quote.minimumOutputAtomic; input.maximumInputAtomic = quote.maximumInputAtomic
       console.log(`${quoteText(quote)}\nRetry bounds: --minimum-output-atomic ${quote.minimumOutputAtomic} --maximum-input-atomic ${quote.maximumInputAtomic}`)
     }
     await consent()
-    const plan = await client.uniswap.swap(input, { idempotencyKey: requestKey }); print(plan, planText(plan)); return
+    const plan = await paymentRequest(client, 'uniswap.swap', input, { key: str(values, 'key'), retry: str(values, 'retry') }, options => client.uniswap.swap(input, options)); print(plan, planText(plan)); return
   }
   if (command === 'rebalance') {
     const target = Number(await prompt('eth-percent', 'Target ETH percentage (remainder USDC)', String((await client.uniswap.target(wallet.id)).ethPercent)))
     if (values.preview) { const preview = await client.uniswap.rebalance(wallet.id, target); print(preview, preview.quote ? quoteText(preview.quote) : 'No rebalance needed'); return }
-    const requestKey = key()
     if (interactive && !values.yes) { const preview = await client.uniswap.rebalance(wallet.id, target); console.log(preview.quote ? quoteText(preview.quote) : 'No rebalance needed') }
     await consent()
-    const plan = await client.uniswap.executeRebalance(wallet.id, target, { idempotencyKey: requestKey }); print(plan, plan ? planText(plan) : 'No rebalance needed'); return
+    const plan = await paymentRequest(client, 'uniswap.rebalance', { walletId: wallet.id, ethPercent: target }, { key: str(values, 'key'), retry: str(values, 'retry') }, options => client.uniswap.executeRebalance(wallet.id, target, options)); print(plan, plan ? planText(plan) : 'No rebalance needed'); return
   }
   const action = subcommand ?? 'list', schedules = await client.uniswap.dca.list(wallet.id)
   if (action === 'list' || action === 'show') {

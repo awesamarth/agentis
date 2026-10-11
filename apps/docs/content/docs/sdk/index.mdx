@@ -56,7 +56,7 @@ if (operation.status === 'pending_approval') {
 }
 ```
 
-The wallet must have the payment asset and enough gas. Ask mode returns an approval link; Auto follows the agent's limits without an additional Agentis approval. Reuse the same idempotency key and exact request if a response is lost.
+The wallet must have the payment asset and enough gas. Ask mode returns an approval link; Auto follows the agent's limits without an additional Agentis approval. Your application generates and persists one idempotency key per intended payment. Reuse that key and exact request after a lost response; see [retry behavior](/docs/sdk/operations#idempotency-and-retry-behavior).
 
 ## Guides
 

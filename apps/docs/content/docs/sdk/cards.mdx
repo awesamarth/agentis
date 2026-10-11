@@ -5,7 +5,7 @@ description: Build shopping carts and attach Agentcard browser checkout
 
 First complete [Agentcard setup](/docs/agentis/agentcard): enable the plugin, connect the owner's Vault and grant your runtime's key separate card permission. Crypto consent alone does not grant card access.
 
-Examples use the authenticated `client` from [SDK setup](/docs/sdk).
+Examples use the authenticated `client` from [SDK setup](/docs/sdk). Your application generates and persists request keys; see [request identity and retries](/docs/sdk/operations#idempotency-and-retry-behavior). Users do not need to supply keys in their shopping prompts.
 
 ## Build a cart
 

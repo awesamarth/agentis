@@ -24,9 +24,9 @@ export function exactAmount(value: string, decimals: number) {
 }
 
 // Shared request construction only: no wallet files, credentials, signing or RPC.
-export function transferTerms(input: TransferInput, allowEns = false) {
-  if (!input.key?.trim() || input.key.length > 200) {
-    throw Error('--key is required (1–200 characters); reuse it to check an uncertain send, never choose a new key blindly')
+export function transferTerms(input: Omit<TransferInput, 'key'> & { key?: string }, allowEns = false, automaticKey = false) {
+  if ((!automaticKey && input.key === undefined) || (input.key !== undefined && (!input.key.trim() || input.key.length > 200))) {
+    throw Error('--key must contain 1–200 characters (required for local custody); never change it after uncertainty')
   }
   const chains = parseChains(input.chain)
   if (chains.length !== 1) throw Error('Choose exactly one --chain for a send')

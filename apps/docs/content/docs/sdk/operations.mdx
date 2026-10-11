@@ -65,9 +65,11 @@ A successful chain payment does not guarantee a successful provider response. Li
 
 ## Idempotency and retry behavior
 
-Persist your idempotency key with the task before creating a payment. Reusing the same key with identical terms returns the same request rather than authorizing another payment. Reusing it with different terms is rejected.
+SDK payment methods require `{ idempotencyKey }`. Generate a UUID once for each intended payment and persist it with the task **before** the first request. A separate new payment needs a new key, even if its amount and recipient are identical. Users do not need to invent these keys.
 
-After a lost response, retrieve the existing operation, or repeat the original request with the same key and exact terms. Do not generate a new key automatically. Unknown submissions retain their budget reservation until reconciled.
+After a lost response, read the original operation or repeat the request using the same credential, key and exact terms. The backend returns the existing operation rather than authorizing a replacement. Reusing a key with different terms is rejected. Unknown submissions retain their budget reservation until reconciled.
+
+The [CLI](/docs/cli#automatic-request-identity) generates and saves keys and supports explicit retries. [MCP](/docs/mcp) accepts an optional key: when omitted, each tool call gets a fresh server-generated UUID and is **not deduplicated against other calls**. Never automatically repeat a keyless MCP payment after a timeout or missing result.
 
 ## Handle API errors
 

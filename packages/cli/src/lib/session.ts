@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process'
 import { setTimeout } from 'node:timers/promises'
 import { AgentisClient, type CliCredential } from '@agentis-hq/sdk'
 import { namedChain } from './output'
+import { requestClient } from './payment-request'
 
 const agentSummary = (credential: CliCredential) => ({ name: credential.agentName, chains: credential.chainIds.map(namedChain) })
 
@@ -69,13 +70,13 @@ export function logout() {
 }
 export function sessions(agent?: string, allowDisconnected = false) {
   if (agent && process.env.AGENTIS_TOKEN) throw Error('--agent selects a stored login credential; unset AGENTIS_TOKEN first')
-  if (process.env.AGENTIS_TOKEN) return [{ client: new AgentisClient({ baseUrl: apiUrl(), token: process.env.AGENTIS_TOKEN }), agentId: null, agentName: 'AGENTIS_TOKEN' }]
+  if (process.env.AGENTIS_TOKEN) return [{ client: requestClient(new AgentisClient({ baseUrl: apiUrl(), token: process.env.AGENTIS_TOKEN }), apiUrl(), process.env.AGENTIS_TOKEN), agentId: null, agentName: 'AGENTIS_TOKEN' }]
   const session = readSession()
   if (!session && allowDisconnected && !agent) return []
   if (!session) throw Error('Run agentis login or set AGENTIS_TOKEN first')
   const credentials = agent ? session.credentials.filter(c => c.agentId === agent || c.agentName === agent) : session.credentials
   if (!credentials.length || (agent && credentials.length !== 1)) throw Error('Choose an unambiguous linked agent ID with --agent; see agentis whoami')
-  return credentials.map(c => ({ client: new AgentisClient({ baseUrl: session.apiUrl, token: c.token }), agentId: c.agentId, agentName: c.agentName }))
+  return credentials.map(c => ({ client: requestClient(new AgentisClient({ baseUrl: session.apiUrl, token: c.token }), session.apiUrl, c.token), agentId: c.agentId, agentName: c.agentName }))
 }
 export function whoami() {
   if (process.env.AGENTIS_TOKEN) return { message: 'Using AGENTIS_TOKEN; stored browser login is overridden.' }

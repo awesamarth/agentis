@@ -41,7 +41,7 @@ See the [SDK browser example](/docs/sdk/cards#browser-checkout). CLI `cards requ
 
 1. Ask for products or a cart using SDK `client.cards.purchases.ask`, CLI `cards ask`, or MCP `agentis_purchase_ask`.
 2. Read the returned conversation and structured carts. Asking does not confirm a purchase.
-3. Select the intended cart and confirm its exact returned hash with a stable idempotency key. Confirmation may immediately place the order in Auto mode.
+3. Select the intended cart and confirm its exact returned hash. You do not need to include a key in your prompt. MCP generates a fresh key for each keyless call, while CLI saves request IDs for explicit retries. Never repeat an uncertain purchase as a new request. Confirmation may immediately place the order in Auto mode.
 4. In Ask mode, return the dashboard approval link to the owner. An authorized request can be submitted with the purchase execution command; this cannot approve it.
 5. If Agentcard requires approval, complete it at the supplied private link. Use **continue** only when Agentis has recorded the same cart as unpaid and awaiting provider approval—not after a timeout or an unknown charge.
 

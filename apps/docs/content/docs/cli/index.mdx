@@ -36,6 +36,14 @@ Solana MPP supports SOL/USDC pull-mode charges with sponsored or agent-paid fees
 
 Use `--chain` with a key from [networks and assets](/docs/agentis/networks).
 
+## Automatic request identity
+
+Hosted sends, paid fetches, operation creation and card requests generate a fresh UUID when `--key` is omitted. The CLI saves it **before sending** in `~/.agentis/payment-requests/` and prints the request ID to stderr. Two ordinary invocations are two new requests, even when their amounts and recipients are identical.
+
+To retry an existing request, repeat its original command and arguments with `--retry <request-id>` or `--retry latest`. `latest` selects the most recent saved request for that credential and command type. The API, credential, command and request terms must match; mismatches stop before submission. A retry uses the original key, so the backend returns/reconciles that request instead of paying again. After uncertainty, use this explicit retry or inspect the existing operation—do not rerun a bare payment command.
+
+The private journal stores the UUID, credential/API fingerprint and request hash, not credentials, bodies, card captures or signed transactions. The hash validates retry terms; it does not deduplicate new payments. `--key` remains an explicit stable-key override and cannot be combined with `--retry`. Local-custody commands retain their existing explicit-key flow.
+
 ## Card purchases
 
 Requires CLI 0.7.0 or later and [Agentcard setup](/docs/agentis/agentcard). The plugin and separate card permission must be enabled for the CLI connection. These are hosted commands, not local-wallet payments.
@@ -43,7 +51,7 @@ Requires CLI 0.7.0 or later and [Agentcard setup](/docs/agentis/agentcard). The 
 ```sh
 agentis cards status --agent <agent-name-or-id>
 agentis cards setup --agent <agent-name-or-id>
-agentis cards ask --agent <agent-name-or-id> --file ask.json --key notebook-cart-001
+agentis cards ask --agent <agent-name-or-id> --file ask.json
 ```
 
 `setup` returns the owner's dashboard setup link; it does not connect a card or grant consent itself. Example `ask.json`:
@@ -55,7 +63,7 @@ agentis cards ask --agent <agent-name-or-id> --file ask.json --key notebook-cart
 Inspect the returned conversation and carts. To request the selected purchase, create `cart.json` with the exact returned `conversationId` and reviewed `cartHash`:
 
 ```sh
-agentis cards confirm --agent <agent-name-or-id> --file cart.json --key notebook-purchase-001
+agentis cards confirm --agent <agent-name-or-id> --file cart.json
 agentis cards get <checkout-id> --agent <agent-name-or-id>
 ```
 

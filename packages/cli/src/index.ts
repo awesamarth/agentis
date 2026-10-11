@@ -11,6 +11,7 @@ import { formatOutput } from './lib/output'
 import { walletList } from './lib/wallet-list'
 import { walletBalance } from './lib/wallet-balance'
 import { sendHostedTransfer } from './lib/hosted-send'
+import { paymentRequest } from './lib/payment-request'
 import { hostedPolicy, hostedHistory } from './lib/hosted-views'
 import { banner, localCreationOptions, confirmLocalSend, promptLocalRules } from './lib/local-prompts'
 import { localSendTerms, sendLocalTransfer } from './lib/local-send'
@@ -33,11 +34,16 @@ async function main() {
     from: { type: 'string' }, 'exact-output': { type: 'boolean' }, 'slippage-bps': { type: 'string' }, 'eth-percent': { type: 'string' }, 'every-minutes': { type: 'string' }, preview: { type: 'boolean' }, 'swap-funding': { type: 'boolean' },
     'minimum-output-atomic': { type: 'string' }, 'maximum-input-atomic': { type: 'string' },
     parent: { type: 'string' }, label: { type: 'string' }, record: { type: 'string' }, endpoint: { type: 'string' }, description: { type: 'string' },
-    file: { type: 'string' }, key: { type: 'string' }, hash: { type: 'string' }, json: { type: 'boolean' },
+    file: { type: 'string' }, key: { type: 'string' }, retry: { type: 'string' }, hash: { type: 'string' }, json: { type: 'boolean' },
     chains: { type: 'string' }, chain: { type: 'string' }, to: { type: 'string' }, amount: { type: 'string' }, asset: { type: 'string' }, 'max-fee': { type: 'string' }, 'fee-asset': { type: 'string' }, yes: { type: 'boolean' },
     'max-amount': { type: 'string' }, 'per-transaction': { type: 'string' }, hourly: { type: 'string' }, daily: { type: 'string' }, total: { type: 'string' }, pause: { type: 'boolean' }, resume: { type: 'boolean' }, limit: { type: 'string' },
   } })
   const [command, subcommand, id] = positionals
+  if (values.retry !== undefined) {
+    if (values.key !== undefined) throw Error('Choose --key or --retry, not both')
+    const payable = (command === 'wallet' && subcommand === 'send') || command === 'fetch' || (command === 'operations' && subcommand === 'create') || (command === 'cards' && ['ask', 'confirm', 'request'].includes(subcommand!)) || (command === 'identity' && subcommand === 'update') || (command === 'swap' && subcommand === 'execute') || (command === 'rebalance' && !values.preview)
+    if (values.local || !payable) throw Error('--retry is for hosted payment creation commands only')
+  }
   const requestFields = (): HttpRequestFields => {
     if (values.data !== undefined && values['data-file'] !== undefined) throw Error('Choose --data or --data-file')
     const headers: Record<string, string> = {}
@@ -70,8 +76,8 @@ async function main() {
     return
   }
   if (command === 'cards') {
-    if (Object.keys(values).some(flag => !['agent', 'help', 'json', ...(['request', 'ask', 'confirm'].includes(subcommand!) ? ['file', 'key'] : [])].includes(flag))) throw Error('Unsupported cards command option')
-    if (values.help) { console.log('agentis cards status|setup|list [--agent <name-or-id>] [--json]\nagentis cards ask --file <ask.json> --key <stable-key> [--agent <name-or-id>]\n  JSON: {"ask":"what to buy","conversationId":"optional previous turn id","deliveryAddress":{...}}\nagentis cards confirm --file <cart.json> --key <stable-key> [--agent <name-or-id>]\n  JSON: {"conversationId":"turn id","cartHash":"exact returned cart hash"}\nagentis cards conversation <turn-id> | get|cancel|execute|continue <checkout-id> [--agent <name-or-id>]\nagentis cards request --file <official-sdk-capture.json> --key <stable-key> [--agent <name-or-id>]\nSeparate card consent is required. Ask waits for owner approval; Auto submits within agent limits. Agentcard/bank approval may remain. Continue ONLY a documented unpaid provider-approval pause, never a timeout. Read the original checkout after uncertainty; do not blindly confirm again. Browser purchases use @agentis-hq/sdk/cards/browser.'); return }
+    if (Object.keys(values).some(flag => !['agent', 'help', 'json', ...(['request', 'ask', 'confirm'].includes(subcommand!) ? ['file', 'key', 'retry'] : [])].includes(flag))) throw Error('Unsupported cards command option')
+    if (values.help) { console.log('agentis cards status|setup|list [--agent <name-or-id>] [--json]\nagentis cards ask --file <ask.json> [--key <stable-key>] [--agent <name-or-id>]\n  JSON: {"ask":"what to buy","conversationId":"optional previous turn id","deliveryAddress":{...}}\nagentis cards confirm --file <cart.json> [--key <stable-key>] [--agent <name-or-id>]\n  JSON: {"conversationId":"turn id","cartHash":"exact returned cart hash"}\nagentis cards conversation <turn-id> | get|cancel|execute|continue <checkout-id> [--agent <name-or-id>]\nagentis cards request --file <official-sdk-capture.json> [--key <stable-key>] [--agent <name-or-id>]\nNew calls generate and save a fresh request ID before sending. For a retry, repeat the SAME arguments with --retry <request-id> (or --retry latest). A bare command creates a NEW request, even with identical inputs. --key remains an optional stable-key override. Separate card consent is required. Ask waits for owner approval; Auto submits within agent limits. Agentcard/bank approval may remain. Continue ONLY a documented unpaid provider-approval pause, never a timeout. Read the original checkout after uncertainty; do not blindly confirm again. Browser purchases use @agentis-hq/sdk/cards/browser.'); return }
     if (positionals.length !== (['get', 'cancel', 'conversation', 'execute', 'continue'].includes(subcommand!) ? 3 : 2)) throw Error('Check agentis cards --help for the command arguments')
     const linked = sessions(values.agent)
     if (linked.length !== 1) throw Error('Select one linked agent with --agent')
@@ -88,12 +94,12 @@ async function main() {
       if (!selected) throw Error('When using AGENTIS_TOKEN, supply an agent UUID with --agent')
       if (subcommand === 'list') result = await cards.checkouts.list(selected)
       else if (['request', 'ask', 'confirm'].includes(subcommand!)) {
-        if (!values.file || !values.key) throw Error('--file and --key are required; never use a new key after uncertainty')
+        if (!values.file) throw Error('--file is required; use --retry <request-id> only to resume an existing request')
         let input
         try { input = JSON.parse(readFileSync(values.file, 'utf8')) } catch { throw Error('Could not read valid checkout JSON; capture contents were not logged') }
         if (input?.agentId && input.agentId !== selected) throw Error('Input agentId must match the selected agent')
         const payload = { ...input, agentId: selected }
-        result = subcommand === 'ask' ? await cards.purchases.ask(payload, { idempotencyKey: values.key }) : subcommand === 'confirm' ? await cards.purchases.confirm(payload, { idempotencyKey: values.key }) : await cards.checkouts.create(payload, { idempotencyKey: values.key })
+        result = await paymentRequest<unknown>(linked[0]!.client, `cards.${subcommand}`, payload, values, options => subcommand === 'ask' ? cards.purchases.ask(payload, options) : subcommand === 'confirm' ? cards.purchases.confirm(payload, options) : cards.checkouts.create(payload, options))
       } else result = await cards.status(selected)
     }
     // Private provider links and browser replay material must never enter terminal/agent output.
@@ -127,19 +133,21 @@ async function main() {
     [--max-fee <decimal>] [--yes]  Local x402 / Tempo MPP; --asset selects a Tempo token, --fee-asset selects its gas token.
   wallet create --local [--name <name>] [--chains base,ethereum,tempo,solana,arc-mainnet]
     Interactive name + chain selection; Base selected by default. Flags work without a terminal.
-  wallet send [--hosted | --local] --wallet <name-or-id> --chain <chain> --to <address> --amount <decimal> --key <request-key>
+  wallet send [--hosted | --local] --wallet <name-or-id> --chain <chain> --to <address> --amount <decimal> [--key <request-key>]
     [--asset <symbol>] [--fee-asset <Tempo-symbol>] [--max-fee <decimal>] [--yes]
     Hosted by default: ask mode returns a dashboard approval link; automatic executes within policy.
     Mainnet by default; Arc mainnet uses arc-mainnet. Use base-sepolia, sepolia, arc, tempo-testnet or solana-devnet for testnets.
     The historical arc key remains Arc Testnet. --yes skips local confirmation only.
-    Reuse identical terms and --key after uncertainty: only the receipt is checked, never a resend.
-  fetch <url> --wallet <wallet-id> --max-amount-atomic <cap> --key <idempotency-key>
+    Hosted requests generate and save a fresh UUID before sending. A bare command creates a NEW request.
+    To retry, repeat the same arguments with --retry <request-id> or --retry latest; identity and terms are checked.
+    --key overrides automatic identity. Local custody still requires --key.
+  fetch <url> --wallet <wallet-id> --max-amount-atomic <cap> [--key <idempotency-key>]
     Paid HTTP via x402 or Tempo/Solana MPP. --method/-X, --header/-H, --data/-d or --data-file (exact bytes).
     Data defaults to POST; otherwise GET. Set Content-Type for the provider's body format.
     Hosted unsponsored MPP requires --max-fee-atomic (Tempo: 18 decimals; Solana: lamports, includes ATA rent).
     Solana defaults to USDC; use --asset SOL for native MPP. Sponsored charges cost the agent zero gas.
     Tempo: --asset OUSD|USDC.e|pathUSD|alphaUSD (alphaUSD is testnet only), --fee-asset <symbol> optional.
-  operations create --file <request.json> --key <idempotency-key>
+  operations create --file <request.json> [--key <idempotency-key>]
   operations list|get <id>|wait <id>
   operations approve|reject <id> --hash <operation-hash>   (owner only)
   capabilities
@@ -168,8 +176,8 @@ ${identityHelp}`)
   else if (command === 'whoami') output = whoami()
   else if (command === 'wallet' && subcommand === 'balance') output = await walletBalance(values.local ?? false, values.hosted ?? false, values.wallet, values.agent)
   else if (command === 'wallet' && subcommand === 'send' && !values.local) {
-    if (!values.wallet || !values.chain || !values.to || !values.amount || !values.key) throw Error('--wallet, --chain, --to, --amount and --key required; amounts are decimal token units')
-    output = await sendHostedTransfer({ wallet: values.wallet, chain: values.chain, to: values.to, amount: values.amount, key: values.key, asset: values.asset, maxFee: values['max-fee'], feeAsset: values['fee-asset'] }, values.agent)
+    if (!values.wallet || !values.chain || !values.to || !values.amount) throw Error('--wallet, --chain, --to and --amount required; amounts are decimal token units')
+    output = await sendHostedTransfer({ wallet: values.wallet, chain: values.chain, to: values.to, amount: values.amount, key: values.key, retry: values.retry, asset: values.asset, maxFee: values['max-fee'], feeAsset: values['fee-asset'] }, values.agent)
   }
   else if (command === 'policy' && !values.local) output = await hostedPolicy(values.agent, values.wallet)
   else if (command === 'wallet' && subcommand === 'history' && !values.local) output = await hostedHistory(values.agent, values.wallet, Number(values.limit ?? '20'))
@@ -236,23 +244,25 @@ ${identityHelp}`)
       throw Error('Operation is not accessible with these CLI keys')
     }
     if (command === 'fetch') {
-      if (!subcommand || !values.wallet || !values['max-amount-atomic'] || !values.key) throw new Error('URL, --wallet, --max-amount-atomic and --key required; reuse the key after timeouts')
+      if (!subcommand || !values.wallet || !values['max-amount-atomic']) throw new Error('URL, --wallet and --max-amount-atomic required; use --retry <request-id> to resume an existing request')
       client = await forWallet(values.wallet)
       if (values['swap-funding']) {
         if (values.asset || values['fee-asset']) throw Error('Tempo token selection cannot be combined with swap funding')
-        const result = await client.uniswap.fetch({ ...requestFields(), url: subcommand, walletId: values.wallet, maxAmountAtomic: values['max-amount-atomic'] }, { idempotencyKey: values.key })
+        const input = { ...requestFields(), url: subcommand, walletId: values.wallet, maxAmountAtomic: values['max-amount-atomic'] }
+        const result = await paymentRequest(client, 'uniswap.fetch', input, values, options => client.uniswap.fetch(input, options))
         console.log(values.json ? JSON.stringify(result, null, 2) : result.funding ? planText(result.funding) : formatOutput('operations', result.payment)); return
       }
-      const operation = await client.fetch({ ...requestFields(), url: subcommand, walletId: values.wallet, asset: values.asset, feeAsset: values['fee-asset'], maxAmountAtomic: values['max-amount-atomic'], ...(values['max-fee-atomic'] ? { maxFeeAtomic: values['max-fee-atomic'] } : {}) }, { idempotencyKey: values.key })
+      const input = { ...requestFields(), url: subcommand, walletId: values.wallet, asset: values.asset, feeAsset: values['fee-asset'], maxAmountAtomic: values['max-amount-atomic'], ...(values['max-fee-atomic'] ? { maxFeeAtomic: values['max-fee-atomic'] } : {}) }
+      const operation = await paymentRequest(client, 'fetch', input, values, options => client.fetch(input, options))
       output = operation.status === 'queued' ? await client.operations.wait(operation.id, { timeoutMs: 120_000 }) : operation
     }
     else if (command === 'capabilities') output = await client.capabilities()
     else if (command === 'operations') {
       if (subcommand === 'create') {
-        if (!values.file || !values.key) throw new Error('--file and --key required; reuse the same key after timeouts')
+        if (!values.file) throw new Error('--file required; use --retry <request-id> to resume an existing request')
         const input = JSON.parse(readFileSync(values.file, 'utf8'))
         client = await forWallet(input.walletId)
-        output = await client.operations.create(input, { idempotencyKey: values.key })
+        output = await paymentRequest(client, 'operations.create', input, values, options => client.operations.create(input, options))
       } else if (subcommand === 'list') output = (await Promise.all(linked.map(item => item.client.operations.list()))).flat().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       else {
         if (!id) throw new Error('Operation ID required')

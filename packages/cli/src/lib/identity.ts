@@ -1,12 +1,13 @@
 import { select, text, isCancel } from '@clack/prompts'
 import { AgentisClient } from '@agentis-hq/sdk'
 import { sessions, apiUrl } from './session'
+import { paymentRequest } from './payment-request'
 
 export const identityHelp = `Identity (ENSv2 + ERC-8004, Ethereum Sepolia):
   identity setup --agent <name> --parent <yourname.eth> [--label research]
   identity show --agent <name>
   identity resolve <name> --chain base|arc|tempo|solana|sepolia
-  identity update --agent <name> --description <text> | --endpoint <https-url> --key <stable-key> --yes
+  identity update --agent <name> --description <text> | --endpoint <https-url> [--key <stable-key>] --yes
   identity delegate|revoke --agent <name> --record endpoint|description
   Setup/delegation return an owner review link. Updates require on-chain delegation and normal agent approval/budgets.
   Hosted wallet send also accepts an ENS name in --to.`
@@ -50,8 +51,9 @@ export async function runIdentity(action: string | undefined, name: string | und
     if (wallet.chainId !== 'eip155:11155111') throw Error('Grant access to this agent’s Ethereum Sepolia wallet first')
     const endpoint = str('endpoint'), description = str('description'), key = str('key')
     if (Number(endpoint !== undefined) + Number(description !== undefined) !== 1) throw Error('Provide exactly one of --endpoint or --description')
-    if (!key || !values.yes) throw Error('Use --key and --yes to request the update; Ask mode still requires owner approval')
-    const operation = await client.identity.update({ walletId: wallet.id, key: endpoint !== undefined ? 'endpoint' : 'description', value: endpoint ?? description! }, { idempotencyKey: key })
+    if (!values.yes) throw Error('Use --yes to request the update; Ask mode still requires owner approval')
+    const input = { walletId: wallet.id, key: endpoint !== undefined ? 'endpoint' as const : 'description' as const, value: endpoint ?? description! }
+    const operation = await paymentRequest(client, 'identity.update', input, { key, retry: str('retry') }, options => client.identity.update(input, options))
     print(operation, `${operation.reason}\n${operation.status}${operation.approvalUrl ? `\nApprove: ${operation.approvalUrl}` : ''}\nOperation: ${operation.id}`); return
   }
   throw Error(identityHelp)

@@ -24,6 +24,12 @@ Credentials live in `~/.agentis/cli-session.json` (directory 0700/file 0600, fil
 
 Login requests expire after ten minutes. A random CLI-only secret binds the one-time exchange; keys and secrets never appear in the browser URL, and the backend stores only hashes of credentials/secrets. If the exchange response is lost after issuance, restart login and revoke the unclaimed CLI keys shown in the dashboard. No automatic owner-authentication fallback.
 
+## Automatic request identity
+
+Hosted payments and card requests generate a fresh UUID when `--key` is omitted, save it before sending in the private `~/.agentis/payment-requests/` journal, and print the request ID to stderr. **A bare command creates a new request, even with identical payment details.**
+
+For a retry, repeat the original command/arguments with `--retry <request-id>` or `--retry latest` (the latest request for this credential and command type). The original key is reused across process restarts; changed API, credential, command or payment terms are rejected before submission. After a timeout, use this explicit retry or inspect the existing operation—never blindly rerun a bare command. The journal stores identity and hashes, not tokens, request bodies, card captures or signed bytes. `--key` remains an explicit override; it cannot be combined with `--retry`. Local custody retains its existing explicit-key flow.
+
 ## Agentcard purchases
 
 Enable the Agentcard plugin, connect the owner's card in the dashboard and grant this CLI connection explicit card permission. Existing crypto access is not card consent.
@@ -31,14 +37,14 @@ Enable the Agentcard plugin, connect the owner's card in the dashboard and grant
 ```sh
 agentis cards status --agent <agent-name-or-id>
 agentis cards setup --agent <agent-name-or-id>
-agentis cards ask --agent <agent-name-or-id> --file ask.json --key notebook-cart-001
+agentis cards ask --agent <agent-name-or-id> --file ask.json
 agentis cards conversation <turn-id> --agent <agent-name-or-id>
 ```
 
 `setup` returns the owner's dashboard link; it does not grant permission. `ask.json` contains `{"ask":"Find a notebook under $10. Do not purchase yet."}` and may include `conversationId` and `deliveryAddress`. Inspect the structured carts. To buy the selected cart, supply `{"conversationId":"<turn-id>","cartHash":"<exact-returned-hash>"}` in `cart.json`:
 
 ```sh
-agentis cards confirm --agent <agent-name-or-id> --file cart.json --key notebook-purchase-001
+agentis cards confirm --agent <agent-name-or-id> --file cart.json
 agentis cards get <checkout-id> --agent <agent-name-or-id>
 ```
 
@@ -51,8 +57,8 @@ Browser checkout uses `@agentis-hq/sdk/cards/browser`; CLI does not drive a brow
 - `wallet list [--local]`
 - `wallet create --local [--name <name>] [--chains base,arc-mainnet,tempo,solana]`
 - `wallet send --local --wallet <name-or-id> --chain <chain> --to <address> --amount <decimal> --key <request-key> [--asset <symbol>] [--max-fee <decimal>] [--yes]`
-- `fetch <url> --wallet <wallet-id> --max-amount-atomic <cap> --key <stable-idempotency-key>`
-- `operations create --file <request.json> --key <stable-idempotency-key>`
+- `fetch <url> --wallet <wallet-id> --max-amount-atomic <cap> [--key <stable-idempotency-key>]`
+- `operations create --file <request.json> [--key <stable-idempotency-key>]`
 - `operations list|get <id>|wait <id>`
 - `operations approve|reject <id> --hash <operation-hash>` (owner only)
 - `capabilities`

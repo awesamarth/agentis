@@ -3,7 +3,7 @@ title: Transfers and paid APIs
 description: Send tokens, discover services and pay HTTP endpoints
 ---
 
-Examples use the authenticated `client` from [SDK setup](/docs/sdk). Every payment request takes a stable `idempotencyKey`: one key per intended payment, not one key per HTTP attempt.
+Examples use the authenticated `client` from [SDK setup](/docs/sdk). Every SDK payment request takes a stable `idempotencyKey`: your application generates and persists one per intended payment, not per HTTP attempt. See [request identity and retries](/docs/sdk/operations#idempotency-and-retry-behavior).
 
 ## Send tokens
 

@@ -23,7 +23,9 @@ The production endpoint is `https://api.agentis.systems/mcp`; local development 
 - `agentis_capabilities`
 - `agentis_request_operation` (advanced raw request)
 
-Use wallet listing to select the agent/wallet IDs. Send/fetch tools accept decimal token amounts and require a stable idempotency key. Reuse the same key after uncertainty—never blindly create another payment.
+Use wallet listing to select the agent/wallet IDs. Send/fetch tools accept decimal token amounts. Payment keys are optional: when omitted, Agentis generates a fresh UUID for each tool call. **Identical keyless calls are separate requests and may make separate payments.** Users do not need to mention keys in their prompts.
+
+Keyless payment tools are not idempotent: never automatically repeat them after a timeout, lost result or provider HTTP failure. Inspect the original operation/history, swap plan or card checkout first. An explicitly supplied key retains same-key deduplication with exact terms. Budgets, owner approvals, persisted signing proofs and existing card-conversation guards remain enforced.
 
 ## Agentcard tools
 
@@ -32,7 +34,7 @@ Complete [Agentcard setup](/docs/agentis/agentcard), including separate card per
 - `agentis_cards_setup`: read configuration status and the owner's setup link; does not connect a card or grant consent.
 - `agentis_purchase_ask`: find products/build a cart; no confirmation or charge.
 - `agentis_purchase_conversation`: read an existing shopping turn and its structured carts.
-- `agentis_purchase_confirm`: request purchase of the exact selected cart hash with a stable key. **May place an order in Auto mode.** Ask requires owner approval.
+- `agentis_purchase_confirm`: request purchase of the exact selected cart hash. Key is optional; never blindly repeat confirmation after uncertainty. **May place an order in Auto mode.** Ask requires owner approval.
 - `agentis_purchase_execute`: submit an already-authorized delegated purchase; cannot approve it.
 - `agentis_purchase_continue`: continue only the same known-unpaid cart after Agentcard approval; never a timeout retry.
 - `agentis_card_checkouts`: list this connection's card requests.

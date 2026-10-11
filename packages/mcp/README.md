@@ -42,7 +42,7 @@ Cloud-hosted clients cannot reach your laptop's localhost. Use the production HT
 - `agentis_capabilities`: execution capabilities and network/asset metadata.
 - `agentis_request_operation`: advanced raw operation request.
 
-Use `agentId` from wallet listing for reads and `walletId` for sends/fetches. With multiple connected agents, select the desired agent explicitly. Amounts in friendly send/fetch tools are decimal strings; raw operations use atomic strings. Every payment requires a stable idempotency key. Keep the same key/terms after uncertainty.
+Use `agentId` from wallet listing for reads and `walletId` for sends/fetches. With multiple connected agents, select the desired agent explicitly. Amounts in friendly send/fetch tools are decimal strings; raw operations use atomic strings. Payment keys are optional. When omitted, the server generates a fresh UUID per tool call: identical keyless calls are separate requests and may pay twice. Payment tools advertise `idempotentHint: false`; never automatically repeat them after timeouts, missing responses or provider HTTP failures. Inspect existing operations/history, swap plans or card checkouts instead. Explicitly supplied keys retain same-key/exact-terms deduplication. Never ask the human to invent a key. Normal budgets, approvals, signed-proof persistence and card-conversation safeguards are unchanged.
 
 Ask mode returns `approvalUrl`: the owner reviews/approves in the dashboard. Automatic mode queues execution within existing policies. Read status with `agentis_get_operation`. A client's tool-call permission prompt is not Agentis payment approval. There are no approve/reject, policy-edit, key-export, credential-administration or local-custody tools.
 
@@ -54,7 +54,7 @@ Enable the plugin and connect the owner's Vault in the dashboard, then explicitl
 
 - `agentis_cards_setup`: read status and the owner's setup link; no enrollment or consent mutation.
 - `agentis_purchase_ask` / `agentis_purchase_conversation`: build a cart and read its original turn; no purchase confirmation.
-- `agentis_purchase_confirm`: request purchase of the exact selected cart hash with a stable key. Auto may place the order immediately; Ask waits for owner review.
+- `agentis_purchase_confirm`: request purchase of the exact selected cart hash with an optional key. Never blindly repeat confirmation after uncertainty. Auto may place the order immediately; Ask waits for owner review.
 - `agentis_purchase_execute`: submit an already-authorized request, not approve it.
 - `agentis_purchase_continue`: only continue a recorded unpaid provider approval pause, never a timeout.
 - `agentis_card_checkouts` / `agentis_card_checkout_get` / `agentis_card_checkout_cancel`: list, read/reconcile and request cancellation of original checkouts. Cancellation is not a refund or merchant order cancellation.
