@@ -1,0 +1,66 @@
+---
+title: Card purchases with Agentcard
+description: Connect a card and authorize browser or delegated purchases
+---
+
+Agentcard is an optional per-agent plugin. It connects your card through Agentcard Vault and supports two purchase flows: browser checkout through the official Agentcard SDK, and delegated shopping through Agentcard's Purchase API.
+
+**Preview:** Vault enrollment has been verified. Browser checkout and delegated purchase completion have not yet been verified end to end through Agentis. Availability depends on the provider, merchant and issuer; not every checkout is supported.
+
+## Connect and authorize
+
+1. Open your agent in the dashboard and enable **Agentcard** under plugins.
+2. Choose **Connect a card**. Add your card on Agentcard's secure Vault page, which opens in a new tab. Enter real card details only there.
+3. Return to Agentis. The card list refreshes on focus; use **Refresh cards** if needed. The dashboard shows masked card details.
+4. In the Agentcard purchase controls, explicitly allow the API key, CLI connection or MCP connection that may purchase. Connecting a card or granting crypto access does not grant card access.
+5. Set the agent's USD limits and Ask/Auto mode before requesting a purchase.
+
+The Vault connection belongs to the owner and can be shared across their agents, but plugin enablement and key permission are separate for each agent. An agent cannot grant itself permission or approve its own request.
+
+If purchases are disabled, the backend operator must configure Agentcard and enable card execution. This is separate from connecting a card.
+
+## Approvals and budgets
+
+- **Ask:** review the merchant/cart and reserved USD ceiling in the dashboard before approving.
+- **Auto:** authorized purchases may be submitted within the agent's limits without another Agentis approval.
+- Agentcard or your bank may still require approval in either mode. Agentis does not bypass issuer checks.
+- Card purchases and mainnet crypto spending use the agent's shared USD budget. Browser requests reserve the requested amount plus one cent; delegated purchases reserve the cart's full approved ceiling.
+- Issuer fees and reusable browser payment credentials are outside a claim of hard spending enforcement. Only give card-enabled access to a trusted harness.
+
+## Choose a flow
+
+### Browser checkout
+
+Use `@agentis-hq/sdk/cards/browser` to attach the official Agentcard interceptor to a Playwright Chromium page. Agentis supplies a scoped transport; the harness must not receive Agentcard organization credentials or the owner's card details.
+
+The helper does not shop for you. Your browser automation navigates to the merchant and operates its checkout. Keep the browser context alive through approval and checkout completion, and verify the merchant's order result separately. A helper instance handles one purchase attempt.
+
+See the [SDK browser example](/docs/sdk#browser-checkout). CLI `cards request` is an advanced interface for an official SDK capture, not a substitute for the browser adapter. Do not invent capture payloads or log them.
+
+### Delegated Purchase API
+
+1. Ask for products or a cart using SDK `client.cards.purchases.ask`, CLI `cards ask`, or MCP `agentis_purchase_ask`.
+2. Read the returned conversation and structured carts. Asking does not confirm a purchase.
+3. Select the intended cart and confirm its exact returned hash with a stable idempotency key. Confirmation may immediately place the order in Auto mode.
+4. In Ask mode, return the dashboard approval link to the owner. An authorized request can be submitted with the purchase execution command; this cannot approve it.
+5. If Agentcard requires approval, complete it at the supplied private link. Use **continue** only when Agentis has recorded the same cart as unpaid and awaiting provider approval—not after a timeout or an unknown charge.
+
+One conversation is used for one cart/order. Provider access to delegated shopping must be available for the connected account; a working Vault connection alone does not prove Purchase API access.
+
+## Read status safely
+
+Use the original checkout ID with SDK `client.cards.checkouts.get`, CLI `cards get`, or MCP `agentis_card_checkout_get`. Card requests use their own checkout IDs, not crypto operation IDs.
+
+- `pending_approval`: owner review is needed.
+- `queued`: authorized but not yet dispatched.
+- `submitting`, `awaiting_provider`, `unknown`: inspect the same request; do not create another purchase to retry it.
+- `confirmed`: payment was confirmed; also check the merchant's order confirmation.
+- `failed`, `rejected`, `expired`: inspect the original result before deciding what to do next.
+
+Never log private provider approval links, captured requests or browser replay credentials. A failed HTTP response does not prove that no charge occurred.
+
+## Disable or disconnect
+
+Disabling the plugin stops new requests and revokes that agent's card permissions. It does not undo a submitted charge; unresolved requests retain reservations while they reconcile. Other agents and the owner's Vault connection are not disconnected.
+
+**Disconnect from Agentis** removes Agentis access to the connection. It does not delete cards or revoke provider-side permissions in Agentcard Vault. Manage those directly in the Vault. Cancelling an Agentis checkout is not a refund or a merchant order cancellation.

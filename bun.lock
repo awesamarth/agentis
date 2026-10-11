@@ -90,7 +90,7 @@
     },
     "packages/cli": {
       "name": "@agentis-hq/cli",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "bin": {
         "agentis": "dist/index.js",
       },
@@ -120,7 +120,7 @@
     },
     "packages/core": {
       "name": "@agentis-hq/core",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "dependencies": {
         "@redstone-finance/protocol": "1.0.0",
         "@solana-program/compute-budget": "0.11.0",
@@ -166,7 +166,7 @@
     },
     "packages/sdk": {
       "name": "@agentis-hq/sdk",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "dependencies": {
         "@agent-cards/sdk": "0.23.6",
         "@agentis-hq/core": "workspace:*",

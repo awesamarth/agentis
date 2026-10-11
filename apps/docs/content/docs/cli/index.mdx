@@ -36,4 +36,33 @@ Solana MPP supports SOL/USDC pull-mode charges with sponsored or agent-paid fees
 
 Use `arc-mainnet` for Arc mainnet. The historical `arc` key remains Arc Testnet; existing wallets are never reinterpreted as mainnet consent. Use `base-sepolia`, `sepolia`, `arc`, `tempo-testnet` or `solana-devnet` to select testnets explicitly. Arc native sends/fee caps use 18-decimal USDC; x402 amount caps use 6-decimal USDC.
 
+## Card purchases
+
+Requires CLI 0.7.0 or later and [Agentcard setup](/docs/agentis/agentcard). The plugin and separate card permission must be enabled for the CLI connection. These are hosted commands, not local-wallet payments.
+
+```sh
+agentis cards status --agent <agent-name-or-id>
+agentis cards setup --agent <agent-name-or-id>
+agentis cards ask --agent <agent-name-or-id> --file ask.json --key notebook-cart-001
+```
+
+`setup` returns the owner's dashboard setup link; it does not connect a card or grant consent itself. Example `ask.json`:
+
+```json
+{ "ask": "Find a notebook under $10. Do not purchase yet." }
+```
+
+Inspect the returned conversation and carts. To request the selected purchase, create `cart.json` with the exact returned `conversationId` and reviewed `cartHash`:
+
+```sh
+agentis cards confirm --agent <agent-name-or-id> --file cart.json --key notebook-purchase-001
+agentis cards get <checkout-id> --agent <agent-name-or-id>
+```
+
+**Confirm may place a real order in Auto mode.** In Ask mode, open the returned dashboard approval link. `cards execute <checkout-id>` submits an already-authorized Purchase API request; it never approves. `cards conversation <turn-id>` reads an existing shopping turn. `cards list` lists checkouts. `cards cancel <checkout-id>` requests checkout cancellation, not a merchant refund.
+
+Use `cards continue <checkout-id>` only for the same known-unpaid cart after completing Agentcard approval. After a timeout or unknown outcome, inspect the original request; never create a new key to retry the purchase. Card payment completion does not establish merchant order completion.
+
+Browser checkout uses the [SDK browser adapter](/docs/sdk#browser-checkout), not CLI-driven browser automation. `cards request` accepts an official SDK capture for advanced use; do not construct or log captures manually. Run `agentis cards --help` for exact options.
+
 Local wallet files are plaintext, owner-permission-protected files. Reuse an unchanged request key after uncertainty. An unknown submission is not permission to pay again. Run `agentis --help` for exact flags.

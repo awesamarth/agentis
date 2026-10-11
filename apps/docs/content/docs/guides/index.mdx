@@ -20,4 +20,10 @@ bun run index.ts
 
 Use a separate development database and testnet wallets. Execution defaults to disabled. Never point a local worker at a stale production snapshot, and never commit environment files, wallet keys or signed-payment journals.
 
+## Optional Agentcard backend configuration
+
+The Agentcard plugin uses `AGENTCARD_CLIENT_ID`, `AGENTCARD_CLIENT_SECRET` and `AGENTIS_CARD_STORAGE_KEY` on the backend only. The storage key is 32 random bytes encoded as 64 hex characters; preserve it across restarts because it protects persisted private checkout data. Never expose these values to an agent or browser.
+
+Apply all migrations, including 0018–0020. Card execution defaults off; set `AGENTIS_CARD_CHECKOUT_ENABLED=true` only when the operator intends to enable purchases. Provider configuration, execution enablement, per-agent plugin enablement and per-key card consent are separate requirements. Starting a backend with live credentials is not permission to make a test purchase. See [owner setup and purchase behavior](/docs/agentis/agentcard).
+
 Run `bun run check` for package builds and TypeScript checks. Run `bun run check:offline` for curated no-money regressions. Database-backed and explicit live checks remain separate under `testing/`.

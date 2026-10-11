@@ -29,6 +29,12 @@ One backend handles authorization, execution and receipts across the dashboard, 
 | **Agent interfaces** | TypeScript SDK, CLI and remote MCP with browser OAuth and explicit agent/network consent. |
 | **Local custody** | Multichain CLI wallets, local spending policies, balances, transfers and paid fetches. No Privy account required for local custody. |
 
+### Agentcard plugin (preview)
+
+Connect your card through Agentcard Vault, enable the plugin for an agent, and explicitly permit selected API/CLI/MCP credentials to purchase. Card requests follow the agent's Ask/Auto mode and share its USD budget with mainnet crypto spending; provider/bank approval may still be required.
+
+SDK 0.5.0 adds `client.cards` and the official Agentcard browser bridge at `@agentis-hq/sdk/cards/browser`; CLI 0.7.0 adds `agentis cards`; remote MCP includes delegated shopping and checkout-status tools. Vault enrollment is verified; browser and Purchase API completion remain unverified end to end. See the [setup and purchase guide](https://docs.agentis.systems/docs/agentis/agentcard). A confirmed charge is not a confirmed merchant order; never automatically repeat an uncertain purchase.
+
 ### Networks
 
 | Network | Assets | Paid API support |
@@ -93,7 +99,7 @@ Keep the same request key and terms when checking an uncertain payment. A new ke
 
 ### TypeScript SDK
 
-Install `bun add @agentis-hq/sdk@^0.3.0` in an agent runtime or application backend:
+Install `bun add @agentis-hq/sdk@^0.5.0` in an agent runtime or application backend:
 
 ```ts
 import { AgentisClient } from '@agentis-hq/sdk'

@@ -2,7 +2,7 @@
 
 Thin TypeScript HTTP client. Use `new AgentisClient({baseUrl, token})`; token can be an async getter for a fresh Privy JWT. Agents receive only scoped `agt_exec_` grants.
 
-Install with `bun add @agentis-hq/sdk@0.3.0`.
+Install with `bun add @agentis-hq/sdk@0.5.0`.
 
 ```ts
 import { AgentisClient } from '@agentis-hq/sdk'
@@ -45,4 +45,36 @@ Tempo push-only offers use the same `fetch` API and require a positive fee ceili
 
 Solana MPP charges use the same `fetch` API: USDC by default, or `asset: 'SOL'` for native payments. SOL amounts and `maxFeeAtomic` use lamports (9 decimals); USDC uses 6 decimals. Agent-paid fees include possible recipient ATA rent; sponsored offers bind zero agent fees. Tempo/Solana MPP provider splits are persisted in `operation.mpp.splits`; `amountAtomic` is the entire charge, with the primary share equal to total minus splits. All recipients pass policy/approval checks; Solana ATA rent is reserved per distinct recipient. Existing Solana/Base x402 is preserved.
 
-Build locally with `bun run build:packages` at repo root. Version 0.3.0 exposes the V2 API. See the [project README](https://github.com/awesamarth/agentis#readme) for networks, plugins and examples.
+## Agentcard purchases (preview)
+
+Enable the optional Agentcard plugin for the agent, connect the owner's Vault in the dashboard, and explicitly grant this runtime's key card permission. Crypto permission alone is insufficient. Vault enrollment is verified; browser/Purchase API completion is not yet verified end to end.
+
+```ts
+const turn = await client.cards.purchases.ask({
+  agentId,
+  ask: 'Find a notebook under $10. Do not purchase yet.',
+}, { idempotencyKey: 'notebook-cart-001' })
+// Inspect turn.carts and choose the intended cart before confirming.
+```
+
+`client.cards.purchases.confirm({ agentId, conversationId: turn.id, cartHash: selectedCart.hash }, { idempotencyKey })` requests the exact reviewed cart and can immediately place an order in Auto mode. Ask returns an owner approval link. `client.cards.checkouts.execute(id)` submits an already-authorized purchase; it does not approve. Read the original request with `client.cards.checkouts.get(id)` and the shopping turn with `client.cards.purchases.conversation(turn.id)`.
+
+Use `client.cards.purchases.continue(id)` only after a known-unpaid Agentcard approval pause, never after an unknown charge or timeout. `client.cards.checkouts.cancel(id)` requests cancellation but is not a merchant order cancellation/refund. Card requests use checkout IDs, not crypto operation IDs, and share the agent's USD budget. Agentcard/issuer approvals still apply.
+
+### Browser adapter
+
+```ts
+import { createCardCheckoutContext } from '@agentis-hq/sdk/cards/browser'
+
+const { context, page, controller } = await createCardCheckoutContext(browser, {
+  client, agentId, merchant: 'Selected merchant', amountMinor: 1000,
+  idempotencyKey: 'browser-purchase-001',
+  onApprovalUrl: url => { /* Show privately to owner; never log. */ },
+})
+```
+
+Supply a Playwright Chromium `browser` (install Playwright separately). The helper creates a context with service workers blocked and attaches the official Agentcard SDK. Drive shopping with the returned `page`; keep the context alive through approval and merchant completion, then close it. `attachCardCheckout(page, options)` also supports an existing page in a service-worker-blocked context. `cardCheckoutPlaceholder` exports dummy form values for supported interception—not real card details.
+
+One adapter handles one purchase attempt. Never log captures/replay credentials, put Agentcard organization secrets in the harness, or automatically repeat an uncertain checkout. Verify the merchant order separately from payment. Not every processor is supported; prepared/native-checkout and future-spend APIs are not exposed. Reusable browser credentials and issuer fees are outside hard spending-enforcement claims; use a trusted harness.
+
+See the [Agentcard guide](https://docs.agentis.systems/docs/agentis/agentcard) and [SDK examples](https://docs.agentis.systems/docs/sdk). Build locally with `bun run build:packages` at repo root. See the [project README](https://github.com/awesamarth/agentis#readme) for networks and plugins.

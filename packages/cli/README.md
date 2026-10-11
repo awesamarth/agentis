@@ -2,7 +2,7 @@
 
 Requires [Bun](https://bun.sh) on your PATH (the CLI executable uses Bun).
 
-Install: `bun add -g @agentis-hq/cli@0.5.0` (or `npm install -g @agentis-hq/cli@0.5.0`). Then run `agentis login` and `agentis --help`.
+Install: `bun add -g @agentis-hq/cli@0.7.0` (or `npm install -g @agentis-hq/cli@0.7.0`). Then run `agentis login` and `agentis --help`.
 
 For repository development, run `bun run build:packages`, then `bun packages/cli/src/index.ts --help`. Source commands in the examples below also work as `agentis ...` after installation.
 
@@ -23,6 +23,28 @@ The CLI receives one executor key per selected agent, restricted to the selected
 Credentials live in `~/.agentis/cli-session.json` (directory 0700/file 0600, filesystem protection—not encrypted custody), bound to the API URL. Unset `AGENTIS_TOKEN` before logging in. Existing sessions are not silently overwritten; log out before choosing a replacement selection, and revoke old keys separately. Local wallet files are untouched.
 
 Login requests expire after ten minutes. A random CLI-only secret binds the one-time exchange; keys and secrets never appear in the browser URL, and the backend stores only hashes of credentials/secrets. If the exchange response is lost after issuance, restart login and revoke the unclaimed CLI keys shown in the dashboard. No automatic owner-authentication fallback.
+
+## Agentcard purchases (preview)
+
+Enable the Agentcard plugin, connect the owner's card in the dashboard and grant this CLI connection explicit card permission. Existing crypto access is not card consent. Vault enrollment is verified; purchase completion remains unverified end to end.
+
+```sh
+agentis cards status --agent <agent-name-or-id>
+agentis cards setup --agent <agent-name-or-id>
+agentis cards ask --agent <agent-name-or-id> --file ask.json --key notebook-cart-001
+agentis cards conversation <turn-id> --agent <agent-name-or-id>
+```
+
+`setup` returns the owner's dashboard link; it does not grant permission. `ask.json` contains `{"ask":"Find a notebook under $10. Do not purchase yet."}` and may include `conversationId` and `deliveryAddress`. Inspect the structured carts. To buy the selected cart, supply `{"conversationId":"<turn-id>","cartHash":"<exact-returned-hash>"}` in `cart.json`:
+
+```sh
+agentis cards confirm --agent <agent-name-or-id> --file cart.json --key notebook-purchase-001
+agentis cards get <checkout-id> --agent <agent-name-or-id>
+```
+
+**Confirm can place a real order in Auto mode.** Ask requires owner review in the dashboard. `cards execute <checkout-id>` submits an authorized Purchase API request; it cannot approve one. `cards continue <checkout-id>` is only for a known-unpaid provider approval pause after the owner completes it, not a timeout retry. `cards list` lists requests; `cards cancel <checkout-id>` requests cancellation, not a merchant refund. Reuse the original checkout after uncertainty; never blindly confirm with a new key. Payment and merchant order completion are separate.
+
+Browser checkout uses `@agentis-hq/sdk/cards/browser`; CLI does not drive a browser. `cards request` is an advanced entry point for official SDK captures—do not invent or log them. See `agentis cards --help` and the [Agentcard guide](https://docs.agentis.systems/docs/agentis/agentcard).
 
 ## Commands
 

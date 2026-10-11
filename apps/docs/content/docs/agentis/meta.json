@@ -3,5 +3,5 @@
   "description": "Start here and use the dashboard.",
   "icon": "BookOpenIcon",
   "root": true,
-  "pages": ["index"]
+  "pages": ["index", "agentcard"]
 }

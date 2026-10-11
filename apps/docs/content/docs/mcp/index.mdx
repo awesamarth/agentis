@@ -25,6 +25,22 @@ The production endpoint is `https://api.agentis.systems/mcp`; local development 
 
 Use wallet listing to select the agent/wallet IDs. Send/fetch tools accept decimal token amounts and require a stable idempotency key. Reuse the same key after uncertainty—never blindly create another payment.
 
+## Agentcard tools
+
+Complete [Agentcard setup](/docs/agentis/agentcard), including separate card permission for this MCP connection. Existing crypto OAuth consent does not grant card access. Purchase completion remains preview/unverified end to end.
+
+- `agentis_cards_setup`: read configuration status and the owner's setup link; does not connect a card or grant consent.
+- `agentis_purchase_ask`: find products/build a cart; no confirmation or charge.
+- `agentis_purchase_conversation`: read an existing shopping turn and its structured carts.
+- `agentis_purchase_confirm`: request purchase of the exact selected cart hash with a stable key. **May place an order in Auto mode.** Ask requires owner approval.
+- `agentis_purchase_execute`: submit an already-authorized delegated purchase; cannot approve it.
+- `agentis_purchase_continue`: continue only the same known-unpaid cart after Agentcard approval; never a timeout retry.
+- `agentis_card_checkouts`: list this connection's card requests.
+- `agentis_card_checkout_get`: read/reconcile the original checkout ID.
+- `agentis_card_checkout_cancel`: request checkout cancellation, not an order refund.
+
+Use card checkout reads for card requests, not `agentis_get_operation`. The MCP tools do not drive a browser or return browser replay credentials. Browser interception uses the [SDK adapter](/docs/sdk#browser-checkout). A payment result and a merchant order result are distinct.
+
 ## Approval and permissions
 
 Payments share the existing backend budgets and execution pipeline. Ask mode returns a dashboard approval link for the owner; automatic mode queues execution within limits. Poll `agentis_get_operation` for the result. A client's “allow tool call” prompt does not authorize an Agentis payment.
@@ -33,4 +49,4 @@ There are no approval, policy-edit, key-export or local-wallet tools. New networ
 
 OAuth uses S256 PKCE, expiring single-use codes, resource-bound access tokens and rotating refresh tokens. Owner credentials stay in the browser. Backend authorization is rechecked for every tool operation.
 
-The native MCP SDK/OAuth flow passed isolated local checks. Actual external-client browser consent and paid execution remain manual verification steps.
+The owner has verified a production ChatGPT web MCP connection/payment, revocation and rejection of non-consented wallets. Agentcard purchase tools have not yet been verified end to end through MCP. Refresh the client's tool list after backend updates; availability follows the deployed backend, not an npm install.

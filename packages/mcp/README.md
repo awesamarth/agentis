@@ -4,25 +4,27 @@ Remote Streamable HTTP MCP with browser OAuth consent. No local MCP process, man
 
 ## Connect
 
-For local development, a desktop MCP client that supports HTTP OAuth can connect to:
+Connect an HTTP/OAuth-capable client to the production endpoint:
 
 ```text
-http://localhost:3001/mcp
+https://api.agentis.systems/mcp
 ```
+
+For a separate local development backend, use `http://localhost:3001/mcp`.
 
 Example URL-based client configuration:
 
 ```json
 {
   "mcpServers": {
-    "agentis": { "url": "http://localhost:3001/mcp" }
+    "agentis": { "url": "https://api.agentis.systems/mcp" }
   }
 }
 ```
 
 Connect → browser sign-in → explicitly select agents/networks → confirm → return to your client. Nothing is preselected. New networks require new consent. The client stores OAuth tokens; owner credentials stay in the browser.
 
-Cloud-hosted clients cannot reach your laptop's localhost. They need a deployed HTTPS endpoint; this implementation does not deploy or publish it automatically. Actual browser/client consent must still be user-tested.
+Cloud-hosted clients cannot reach your laptop's localhost. They need a deployed HTTPS endpoint; this implementation does not deploy or publish it automatically. The owner has verified production ChatGPT web consent/payment and revocation; compatibility with other clients still depends on their HTTP/OAuth support.
 
 ## Tools
 
@@ -45,6 +47,21 @@ Use `agentId` from wallet listing for reads and `walletId` for sends/fetches. Wi
 Ask mode returns `approvalUrl`: the owner reviews/approves in the dashboard. Automatic mode queues execution within existing policies. Read status with `agentis_get_operation`. A client's tool-call permission prompt is not Agentis payment approval. There are no approve/reject, policy-edit, key-export, credential-administration or local-custody tools.
 
 All payments use the existing backend policy/reservation/signing/reconciliation pipeline. No separate MCP budget or signer. Unknown submission retains reservations and never authorizes a blind resend; an HTTP failure does not mean no payment happened.
+
+## Agentcard plugin tools (preview)
+
+Enable the plugin and connect the owner's Vault in the dashboard, then explicitly allow the MCP connection's grant to purchase. Crypto OAuth consent alone does not authorize cards.
+
+- `agentis_cards_setup`: read status and the owner's setup link; no enrollment or consent mutation.
+- `agentis_purchase_ask` / `agentis_purchase_conversation`: build a cart and read its original turn; no purchase confirmation.
+- `agentis_purchase_confirm`: request purchase of the exact selected cart hash with a stable key. Auto may place the order immediately; Ask waits for owner review.
+- `agentis_purchase_execute`: submit an already-authorized request, not approve it.
+- `agentis_purchase_continue`: only continue a recorded unpaid provider approval pause, never a timeout.
+- `agentis_card_checkouts` / `agentis_card_checkout_get` / `agentis_card_checkout_cancel`: list, read/reconcile and request cancellation of original checkouts. Cancellation is not a refund or merchant order cancellation.
+
+Card requests share USD accounting with mainnet crypto payments but have checkout IDs, not crypto operation IDs. The owner/provider may still need to approve. Never create a replacement purchase after an unknown outcome. Payment completion does not prove merchant order completion. MCP does not perform browser interception or expose replay credentials; use the SDK browser adapter for that flow.
+
+Vault enrollment is verified; Agentcard purchase completion through MCP is not yet verified end to end. See the [Agentcard guide](https://docs.agentis.systems/docs/agentis/agentcard). Remote tools update with the backend deployment; users do not install an MCP npm package.
 
 ## Runtime and deployment configuration
 
@@ -74,4 +91,4 @@ Dashboard API access shows `MCP` with the client name. Revoke an agent's MCP ent
 
 `testing/remote-mcp-check.ts` uses a throwaway schema in the dedicated local Postgres, real HTTP and the official MCP SDK/OAuth client. It checks discovery, dynamic registration, owner consent, agent/network isolation, PKCE/resource binding, code replay, tool registration, ask-mode links, idempotency, budget denial, refresh rotation/reuse revocation and cancellation. It cannot sign/broadcast and does not alter funded wallets.
 
-Browser Privy consent and a connection from the user's actual MCP app remain manual checks. Real automatic sends and paid x402/MPP were already checked through the common backend/CLI, but fresh paid execution through a real MCP client is not yet verified. Public deployment, auth-endpoint rate limiting and expired OAuth-record housekeeping remain deployment/follow-up work; do not confuse passing local checks with a deployed public connector.
+The owner verified a production ChatGPT web MCP connection/payment, revocation and rejection of non-consented wallets. This does not establish Agentcard purchase completion or every client/provider combination. Auth-endpoint rate limiting and expired OAuth-record housekeeping remain follow-up work. Refresh the client tool list after backend updates; the latest rollout must not be inferred from a Git push alone.
