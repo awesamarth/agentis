@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CardSession } from '@agentis-hq/sdk'
 import { useAgentisClient } from '@/lib/agentis'
 import CardCheckouts from './CardCheckouts'
+import ConfirmationDialog from '@/components/ConfirmationDialog'
 
 export default function CardConnections({ agentId }: { agentId: string }) {
   const { user } = usePrivy()
@@ -32,6 +33,7 @@ function closeLoadingTab(tab: Window | null) {
 function OwnerCards({ ownerId, agentId }: { ownerId: string; agentId: string }) {
   const client = useAgentisClient('Sign in to connect cards'), cache = useQueryClient()
   const [consent, setConsent] = useState(false), [sessionId, setSessionId] = useState<string | null>(null)
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false)
   const requestKey = useRef<string | null>(null)
   const vaultKey = ['card-vault', ownerId]
   const vault = useQuery({ queryKey: vaultKey, queryFn: () => client.cards.vault(), retry: false, refetchOnWindowFocus: 'always', gcTime: 0 })
@@ -103,11 +105,14 @@ function OwnerCards({ ownerId, agentId }: { ownerId: string; agentId: string }) 
           <button disabled={!consent || connect.isPending || disconnect.isPending} onClick={() => connect.mutate(openVaultTab())} className="border border-ink px-4 py-2 font-mono text-xs hover:bg-beige-dark disabled:opacity-40">{connect.isPending ? 'Opening Agentcard…' : vault.data.connected ? 'Add or manage cards ↗' : 'Connect a card ↗'}</button>
         </div>}
         {(vault.data.connected || active) && <div className="border-t border-beige-darker pt-3">
-          <button disabled={disconnect.isPending || connect.isPending} onClick={() => { if (window.confirm('Disconnect Agentis and discard pending enrollment links? This does not delete cards or revoke permissions at Agentcard. Manage those in the Vault.')) disconnect.mutate() }} className="font-mono text-xs underline disabled:opacity-40">Disconnect from Agentis</button>
+          <button disabled={disconnect.isPending || connect.isPending} onClick={() => { disconnect.reset(); setConfirmDisconnect(true) }} className="font-mono text-xs underline disabled:opacity-40">Disconnect from Agentis</button>
           <p className="mt-2 text-xs text-ink-muted">Disconnecting here does not delete vaulted cards or revoke Agentcard permissions. Manage those directly in your Vault.</p>
         </div>}
       </>}
       {vault.data && <CardCheckouts agentId={agentId} enabled={vault.data.checkoutEnabled} connected={vault.data.connected} />}
     </div>
+    <ConfirmationDialog open={confirmDisconnect} title="Disconnect from Agentis?" description="Disconnect your owner-wide Vault connection and discard pending enrollment links. This affects agents using this connection, but does not delete cards or revoke permissions at Agentcard. Manage those directly in the Vault."
+      confirmLabel="Disconnect" destructive pending={disconnect.isPending || connect.isPending} error={disconnect.error?.message}
+      onClose={() => setConfirmDisconnect(false)} onConfirm={async () => { if (!connect.isPending) await disconnect.mutateAsync() }} />
   </section>
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useCreateWallet, useExportWallet, usePrivy } from '@privy-io/react-auth'
+import ConfirmationDialog from '@/components/ConfirmationDialog'
 
 export default function TestPage() {
   const { ready, authenticated, user, login } = usePrivy()
@@ -93,7 +94,14 @@ function QuorumWalletTest() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [restResult, setRestResult] = useState('')
+  const [exportTarget, setExportTarget] = useState<{ owner: string; address: string; requestId: string; signer: 'user' | 'server' } | null>(null)
   const selected = authenticated && wallet?.owner === user?.id ? wallet : null
+  const exportMatches = !!exportTarget && !!selected && exportTarget.owner === user?.id && exportTarget.address === selected.address
+  function reviewExport(signer: 'user' | 'server') {
+    if (!user || !selected || busy) return
+    setError(''); setWallet(current => current ? { ...current, key: undefined } : null)
+    setExportTarget({ owner: user.id, address: selected.address, requestId: requestId.current, signer })
+  }
   async function testRest() {
     if (!authenticated || busy) return
     setBusy(true); setError(''); setRestResult('')
@@ -114,7 +122,7 @@ function QuorumWalletTest() {
   }, [])
   async function run(exporting: boolean, signer: 'user' | 'server' = 'user') {
     if (!user || !authenticated || busy || (exporting && !selected)) return
-    if (exporting && !window.confirm(`Export this throwaway wallet’s private key using the ${signer} quorum member? Keep it secure and unfunded.`)) return
+    if (exporting && (!exportMatches || exportTarget?.signer !== signer || exportTarget.requestId !== requestId.current)) return
     const owner = user.id
     setBusy(true); setError('')
     setWallet(current => current ? { ...current, key: undefined } : null)
@@ -129,17 +137,25 @@ function QuorumWalletTest() {
         if (!data.serverAuthorized) throw new Error('User + server quorum was not verified')
         setWallet({ owner, address: data.address })
       }
-    } catch (cause) { setError(`${exporting ? `${signer} export` : 'Create'} failed: ${cause instanceof Error ? cause.message : 'Unknown error'}`) }
+    } catch (cause) {
+      setError(`${exporting ? `${signer} export` : 'Create'} failed: ${cause instanceof Error ? cause.message : 'Unknown error'}`)
+      if (exporting) throw cause // Keep the confirmation open with the existing error.
+    }
     finally { setBusy(false) }
   }
   return <section className="space-y-4 border-t border-beige-darker pt-8">
     <h2 className="font-serif text-2xl font-bold">Backend quorum wallet test</h2>
     <p className="text-sm text-ink-muted">New throwaway wallet with the same user + server 1-of-2 quorum. Stored only in Privy—not in Agentis. Test user-JWT authorization and server-member authorization separately. Neither automatically falls back to the other.</p>
-    <div className="flex flex-wrap gap-3"><button disabled={!authenticated || busy || !!selected} onClick={() => run(false)} className="bg-black px-5 py-3 font-mono text-xs text-white disabled:opacity-40">1. Create quorum wallet</button><button disabled={!authenticated || busy || !selected} onClick={() => run(true)} className="bg-black px-5 py-3 font-mono text-xs text-white disabled:opacity-40">2. Export using user JWT</button><button disabled={!authenticated || busy || !selected} onClick={() => run(true, 'server')} className="bg-black px-5 py-3 font-mono text-xs text-white disabled:opacity-40">3. Export using server member</button></div>
+    <div className="flex flex-wrap gap-3"><button disabled={!authenticated || busy || !!selected} onClick={() => run(false)} className="bg-black px-5 py-3 font-mono text-xs text-white disabled:opacity-40">1. Create quorum wallet</button><button disabled={!authenticated || busy || !selected} onClick={() => reviewExport('user')} className="bg-black px-5 py-3 font-mono text-xs text-white disabled:opacity-40">2. Export using user JWT</button><button disabled={!authenticated || busy || !selected} onClick={() => reviewExport('server')} className="bg-black px-5 py-3 font-mono text-xs text-white disabled:opacity-40">3. Export using server member</button></div>
     {busy && <p role="status" className="text-sm">Working…</p>}
     {selected && <p className="break-all border border-beige-darker bg-[#faf7f1] p-4 font-mono text-xs">{selected.address}</p>}
     {selected?.key && <div><p className="mb-2 text-xs text-red-700">Keep this key secure. Hidden when you switch tabs.</p><textarea aria-label="Throwaway quorum wallet private key" readOnly spellCheck={false} autoComplete="off" value={selected.key} className="w-full border border-beige-darker p-3 font-mono text-xs" /><button className="font-mono text-xs underline" onClick={() => setWallet(current => current ? { ...current, key: undefined } : null)}>Hide key</button></div>}
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+    <ConfirmationDialog open={exportMatches} title="Export test wallet key?" description={`Export this throwaway wallet’s private key using the ${exportTarget?.signer ?? 'user'} quorum member. Keep the key secure and the wallet unfunded.`}
+      confirmLabel="Export private key" destructive pending={busy} disabled={!exportMatches} error={error || undefined}
+      onClose={() => setExportTarget(null)} onConfirm={async () => { if (exportMatches && exportTarget) await run(true, exportTarget.signer) }}>
+      <p className="break-all font-mono text-xs">{exportTarget?.address}</p>
+    </ConfirmationDialog>
     <div className="space-y-3 border-t border-beige-darker pt-5"><h3 className="font-serif text-xl font-bold">JWT exchange without the SDK</h3><p className="text-sm text-ink-muted">Backend sends your current access token directly to POST /v1/wallets/authenticate using plain fetch. No SDK exchange, new wallet, signing, or export. Any encrypted authorization key is discarded.</p><button disabled={!authenticated || busy} onClick={testRest} className="bg-black px-5 py-3 font-mono text-xs text-white disabled:opacity-40">Test JWT via direct REST</button>{restResult && <pre aria-live="polite" className="overflow-x-auto border border-beige-darker bg-[#faf7f1] p-4 font-mono text-xs">{restResult}</pre>}</div>
   </section>
 }
