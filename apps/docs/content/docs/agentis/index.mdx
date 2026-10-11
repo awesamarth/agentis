@@ -7,7 +7,9 @@ Agentis gives each agent independent wallets, USD limits, approval rules and opt
 
 Hosted wallets use Privy and scoped executor grants. Agents cannot change policy, approve themselves or export hosted keys. Local-custody CLI wallets are also available for users who want keys to remain on their machine.
 
-Choose Base, Ethereum, Tempo or Solana. Base is selected by default. Turn on **Enable testnets** in agent settings to add Base Sepolia, Ethereum Sepolia, Arc, Tempo Testnet or Solana Devnet.
+Choose Base, Ethereum, Tempo, Solana or Arc. Base is selected by default. Turn on **Enable testnets** in agent settings to add Base Sepolia, Ethereum Sepolia, Arc Testnet, Tempo Testnet or Solana Devnet.
+
+Arc mainnet uses `arc-mainnet` (`eip155:5042`); `arc` remains Arc Testnet for existing wallets and history. Mainnet requires explicit network selection and credential access. Native USDC transfers and gas use 18 decimals; x402 uses the same balance through the 6-decimal USDC interface and requires an Arc-mainnet-enabled seller/facilitator. Mainnet RPC/contracts have been checked read-only; funded hosted Arc settlement is not yet verified.
 
 Mainnet and testnets have separate spending allowances. Direct transfers and x402/MPP paid HTTP requests use the same approval flow. Uniswap and ENS remain available on their supported testnets.
 

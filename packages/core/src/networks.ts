@@ -1,4 +1,4 @@
-import { base, baseSepolia, mainnet, sepolia, tempo, tempoTestnet, arcTestnet } from 'viem/chains'
+import { base, baseSepolia, mainnet, sepolia, tempo, tempoTestnet, arc, arcTestnet } from 'viem/chains'
 import type { Chain } from 'viem'
 
 export type NetworkDefinition = {
@@ -45,6 +45,12 @@ const solana = (key: string, testnet: boolean, genesisHash: string, mint: string
   assets: [{ id: 'native', symbol: 'SOL', decimals: 9, priceId: 'coingecko:solana' }, { id: `spl:${mint}`, symbol: 'USDC', decimals: 6, priceId: 'coingecko:usd-coin' }],
   x402: { token: mint, asset: `spl:${mint}`, scale: 1n }, mpp: true,
 })
+// Viem's Arc definition has no default RPC/explorer yet.
+const arcMainnet: Chain = {
+  ...arc,
+  rpcUrls: { default: { http: ['https://rpc.mainnet.arc.io'] } },
+  blockExplorers: { default: { name: 'Arc Explorer', url: 'https://explorer.arc.io' } },
+}
 // Developer-owned catalog. Add networks here only when their family adapter and
 // token/rail contracts are supported. Never infer execution support from a name.
 export const networkCatalog: readonly NetworkDefinition[] = [
@@ -52,6 +58,12 @@ export const networkCatalog: readonly NetworkDefinition[] = [
   evm('ethereum', 'Ethereum', 'ethereum', mainnet, 'ETHEREUM_RPC_URL', '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', 'USD Coin', 'eth-mainnet'),
   tempoNetwork('tempo', tempo, tempoTokens.pathUSD, 'redstone:pathUSD', 'TEMPO_RPC_URL'),
   solana('solana', false, '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d', 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'SOLANA_RPC_URL', 'https://api.mainnet-beta.solana.com'),
+  // Keep `arc` bound to its historical testnet; mainnet requires a new selection/grant.
+  { key: 'arc-mainnet', name: 'Arc', family: 'arc', chain: arcMainnet, chainId: `eip155:${arcMainnet.id}`, chainType: 'ethereum', testnet: false,
+    currency: 'USDC', decimals: 18, priceId: 'coingecko:usd-coin', rpcEnv: 'ARC_RPC_URL', rpcUrl: arcMainnet.rpcUrls.default.http[0], explorer: arcMainnet.blockExplorers!.default.url,
+    defaultAsset: 'USDC', defaultFee: '0.01', portfolio: 'arc-mainnet', assets: [{ id: 'native', symbol: 'USDC', decimals: 18, priceId: 'coingecko:usd-coin' }],
+    // The 6-decimal ERC-20 interface is the same balance, not a second asset.
+    x402: { token: '0x3600000000000000000000000000000000000000', asset: 'native', scale: 1_000_000_000_000n, domainName: 'USDC', domainVersion: '2' } },
   evm('base-sepolia', 'Base Sepolia', 'base', baseSepolia, 'BASE_SEPOLIA_RPC_URL', '0x036cbd53842c5426634e7929541ec2318f3dcf7e', 'USDC', 'base-sepolia'),
   evm('sepolia', 'Ethereum Sepolia', 'ethereum', sepolia, 'SEPOLIA_RPC_URL', '0x1c7d4b196cb0c7b01d743fbc6116a902379c7238', 'USDC', 'eth-sepolia'),
   { key: 'arc', name: 'Arc Testnet', family: 'arc', chain: arcTestnet, chainId: `eip155:${arcTestnet.id}`, chainType: 'ethereum', testnet: true, currency: 'USDC', decimals: 18, priceId: 'coingecko:usd-coin', rpcEnv: 'ARC_TESTNET_RPC_URL', rpcUrl: arcTestnet.rpcUrls.default.http[0], explorer: arcTestnet.blockExplorers.default.url, defaultAsset: 'USDC', defaultFee: '0.01', portfolio: 'arc-testnet', assets: [{ id: 'native', symbol: 'USDC', decimals: 18, priceId: 'coingecko:usd-coin' }], x402: { token: '0x3600000000000000000000000000000000000000', asset: 'native', scale: 1_000_000_000_000n, domainName: 'USDC', domainVersion: '2' } },

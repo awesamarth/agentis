@@ -37,6 +37,7 @@ One backend handles authorization, execution and receipts across the dashboard, 
 | Ethereum | ETH, USDC | x402 |
 | Tempo | OUSD, USDC.e, pathUSD | MPP charge |
 | Solana | SOL, USDC | x402, MPP charge |
+| Arc | USDC | x402; requires an Arc-mainnet-enabled seller/facilitator |
 | Base Sepolia | ETH, USDC | x402 |
 | Ethereum Sepolia | ETH, USDC | x402; requires a Sepolia-enabled seller/facilitator |
 | Arc Testnet | USDC | x402 |
@@ -44,6 +45,8 @@ One backend handles authorization, execution and receipts across the dashboard, 
 | Solana Devnet | SOL, USDC | x402, MPP charge |
 
 Base mainnet is the default network. Enable testnets in agent settings to select them. Mainnet and testnets have separate budget usage; balance totals and profile spending include mainnet only. ENSv2 identity writes use Ethereum Sepolia; Uniswap currently uses Base Sepolia only. Enabling a network does not automatically enable a plugin or expand an existing restricted credential.
+
+Arc mainnet uses `arc-mainnet` (`eip155:5042`); the historical `arc` key remains Arc Testnet. Select mainnet explicitly and grant access separately. Native transfers and gas use 18-decimal USDC; x402 uses the same balance through its 6-decimal ERC-20 interface. Arc mainnet RPC/contracts were checked read-only; funded hosted settlement has not been verified.
 
 ## Get started
 

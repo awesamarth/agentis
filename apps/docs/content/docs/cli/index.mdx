@@ -34,6 +34,6 @@ Tempo supports OUSD (the new-selection default), USDC.e and pathUSD on mainnet a
 
 Solana MPP supports SOL/USDC pull-mode charges with sponsored or agent-paid fees. USDC is the default; choose `--asset SOL` for native payments. Hosted `--max-fee-atomic` is in lamports and includes potential ATA rent; local `--max-fee` defaults to 0.005 SOL. Solana x402 remains available. Tempo/Solana MPP splits show every recipient/share and budget the charge total once. Solana rent exposure is per distinct recipient ATA. Tempo push-only offers are supported with agent-paid fees: Agentis persists proof, broadcasts, confirms settlement and sends the provider a hash credential. Dual-mode offers prefer pull; provider sponsorship stays pull-only. HTTP failure never triggers a new payment. Solana push remains unsupported; Base x402 is unchanged.
 
-Use `base-sepolia`, `sepolia`, `arc`, `tempo-testnet` or `solana-devnet` to select testnets explicitly.
+Use `arc-mainnet` for Arc mainnet. The historical `arc` key remains Arc Testnet; existing wallets are never reinterpreted as mainnet consent. Use `base-sepolia`, `sepolia`, `arc`, `tempo-testnet` or `solana-devnet` to select testnets explicitly. Arc native sends/fee caps use 18-decimal USDC; x402 amount caps use 6-decimal USDC.
 
 Local wallet files are plaintext, owner-permission-protected files. Reuse an unchanged request key after uncertainty. An unknown submission is not permission to pay again. Run `agentis --help` for exact flags.

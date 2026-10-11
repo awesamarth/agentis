@@ -14,5 +14,7 @@ export const evmChains = networks.flatMap(network => network.chain ? [network.ch
 export function evmClient(chainId: string, retryCount = 0) {
   const network = requireNetwork(chainId)
   if (!network.chain) throw Error('Expected an EVM network')
-  return createPublicClient({ chain: network.chain as Chain, transport: http(process.env[network.rpcEnv] ?? network.rpcUrl, { timeout: 15_000, retryCount }) })
+  const rpcUrl = process.env[network.rpcEnv] ?? (network.key === 'arc-mainnet' && process.env.ALCHEMY_API_KEY
+    ? `https://arc-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}` : network.rpcUrl)
+  return createPublicClient({ chain: network.chain as Chain, transport: http(rpcUrl, { timeout: 15_000, retryCount }) })
 }

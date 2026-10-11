@@ -27,7 +27,7 @@ Login requests expire after ten minutes. A random CLI-only secret binds the one-
 ## Commands
 
 - `wallet list [--local]`
-- `wallet create --local [--name <name>] [--chains base,arc,tempo,solana]`
+- `wallet create --local [--name <name>] [--chains base,arc-mainnet,tempo,solana]`
 - `wallet send --local --wallet <name-or-id> --chain <chain> --to <address> --amount <decimal> --key <request-key> [--asset <symbol>] [--max-fee <decimal>] [--yes]`
 - `fetch <url> --wallet <wallet-id> --max-amount-atomic <cap> --key <stable-idempotency-key>`
 - `operations create --file <request.json> --key <stable-idempotency-key>`
@@ -43,7 +43,7 @@ Login requests expire after ten minutes. A random CLI-only secret binds the one-
 bun packages/cli/src/index.ts wallet create --local
 
 # Non-interactive; omitted --chains defaults to Base.
-bun packages/cli/src/index.ts wallet create --local --name personal --chains base,arc,tempo,solana --json
+bun packages/cli/src/index.ts wallet create --local --name personal --chains base,arc-mainnet,tempo,solana --json
 bun packages/cli/src/index.ts wallet list --local
 
 # Amount and fee budget are decimal token units, not atomic units.
@@ -56,7 +56,7 @@ One name/mnemonic derives a shared EVM address for enabled Base/Arc/Tempo networ
 
 Version-4 wallet files live in `~/.agentis/wallets-v2` (0700 directory / 0600 files). Older files are rejected without modifying them or reinterpreting testnet aliases as mainnet consent. No automatic migration. Mnemonics are never printed. **Files are not encrypted; anyone with file access can sign or bypass CLI restrictions.** There is no local agent-vs-owner permission boundary. Local policies are CLI safeguards, not hosted authorization.
 
-Supported local sends derive from the shared network catalog: Base/Ethereum ETH and USDC, Arc testnet native USDC, Solana SOL/USDC, and Tempo OUSD/USDC.e/pathUSD plus testnet alphaUSD. BetaUSD/thetaUSD are not supported. Mainnet is the default; testnets require explicit aliases. RPC URLs use the selected network's configured environment override or public default; actual EVM chain IDs / Solana genesis are checked before signing. Solana token sends can create the recipient ATA. Funds are sent directly with the local key, not via the backend. Local x402/MPP is available through `fetch --local` (below).
+Supported local sends derive from the shared network catalog: Base/Ethereum ETH and USDC, Arc mainnet/testnet native USDC, Solana SOL/USDC, and Tempo OUSD/USDC.e/pathUSD plus testnet alphaUSD. BetaUSD/thetaUSD are not supported. Mainnet is the default; testnets require explicit aliases. Arc mainnet uses `arc-mainnet` (`eip155:5042`); the historical `arc` key remains Arc Testnet and is never migrated into mainnet consent. Native USDC transfers and fee caps use 18 decimals; x402 caps use 6 decimals. Arc mainnet RPC/contracts were checked read-only; funded hosted execution remains unverified. RPC URLs use the selected network's configured environment override or public default; actual EVM chain IDs / Solana genesis are checked before signing. Solana token sends can create the recipient ATA. Funds are sent directly with the local key, not via the backend. Local x402/MPP is available through `fetch --local` (below).
 
 Default fee budgets: Base and Ethereum Sepolia 0.0001 ETH, Arc 0.01 USDC, Tempo 0.01 in the selected fee token, Solana 0.005 SOL; override with `--max-fee`. Base checks estimated execution fees plus a buffer for L1 fees (not a fixed on-chain cap on changing L1 fees). Solana budgets possible ATA rent as well as fees. Tempo uses protocol nonce lane 0 with an explicitly fetched pending nonce; 2D lanes are not allocated. Tempo gas accounting uses 18-decimal protocol USD units, rounded to six-decimal fee-token precision. `--fee-asset` selects a Tempo gas token independently; defaults to the payment token when eligible, or OUSD for testnet USDC.e.
 

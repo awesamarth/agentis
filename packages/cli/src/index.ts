@@ -125,12 +125,13 @@ async function main() {
     Use none to remove a cap; zero blocks spending. No flags on set opens interactive editing.
   fetch <url> --local --wallet <name-or-id> --chain <chain> --max-amount <decimal> --key <request-key>
     [--max-fee <decimal>] [--yes]  Local x402 / Tempo MPP; --asset selects a Tempo token, --fee-asset selects its gas token.
-  wallet create --local [--name <name>] [--chains base,ethereum,tempo,solana]
+  wallet create --local [--name <name>] [--chains base,ethereum,tempo,solana,arc-mainnet]
     Interactive name + chain selection; Base selected by default. Flags work without a terminal.
   wallet send [--hosted | --local] --wallet <name-or-id> --chain <chain> --to <address> --amount <decimal> --key <request-key>
     [--asset <symbol>] [--fee-asset <Tempo-symbol>] [--max-fee <decimal>] [--yes]
     Hosted by default: ask mode returns a dashboard approval link; automatic executes within policy.
-    Mainnet by default. Use base-sepolia, sepolia, arc, tempo-testnet or solana-devnet for testnets. --yes skips local confirmation only.
+    Mainnet by default; Arc mainnet uses arc-mainnet. Use base-sepolia, sepolia, arc, tempo-testnet or solana-devnet for testnets.
+    The historical arc key remains Arc Testnet. --yes skips local confirmation only.
     Reuse identical terms and --key after uncertainty: only the receipt is checked, never a resend.
   fetch <url> --wallet <wallet-id> --max-amount-atomic <cap> --key <idempotency-key>
     Paid HTTP via x402 or Tempo/Solana MPP. --method/-X, --header/-H, --data/-d or --data-file (exact bytes).
