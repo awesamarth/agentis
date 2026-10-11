@@ -1,0 +1,65 @@
+---
+title: Wallets and balances
+description: Find accessible wallets, read balances and inspect agent limits
+---
+
+Examples use the authenticated `client` from [SDK setup](/docs/sdk).
+
+## List wallets
+
+```ts
+const wallets = await client.wallets.list()
+const wallet = wallets.find(item => item.id === process.env.AGENTIS_WALLET_ID)
+if (!wallet?.enabled) throw new Error('Select an enabled wallet accessible to this key')
+```
+
+Each wallet includes `id`, `address`, `chainId`, `agentId`, `agentName`, `enabled`, `policy`, `policyVersion` and `agentPlugins`. A wallet ID selects an Agentis wallet; a chain ID selects its network. They are not interchangeable.
+
+Executor keys see only wallets in their authorized scope. Selecting another wallet cannot bypass an agent's limits or a network restriction. See [networks and assets](/docs/agentis/networks) for available networks.
+
+## Read balances
+
+```ts
+if (!wallet.agentId) throw new Error('Choose an agent wallet')
+const balance = await client.agents.balance(wallet.agentId)
+
+for (const network of balance.networks) {
+  for (const token of network.tokens) {
+    // token.amountAtomic: integer string, or null when unavailable
+    // token.decimals: decimals for displaying that amount
+    // token.usdMicros: USD millionths as a string, or null
+  }
+}
+```
+
+`balance.usdMicros` is the mainnet USD total. Testnet balances are listed separately and are not included in that total. `complete` indicates whether the result is complete; do not interpret `null` as zero. `checkedAt` records when the snapshot was read. Display balances may be cached and do not authorize spending.
+
+An owner client can retrieve all agent balances with `ownerClient.agents.balances()`, which returns a record keyed by agent ID. An executor's `agents.balance(id)` response is limited to wallets that key can access.
+
+## Read spending rules
+
+```ts
+const policy = await client.wallets.policy(wallet.id)
+
+// policy.mode: 'ask' | 'automatic' | 'paused'
+// policy.limits: perTransaction, hourly, daily, total (USD millionths)
+// policy.spentMicros and policy.reservedMicros: USD millionths
+// policy.environment: 'mainnet' | 'testnet'
+// policy.allowedRecipients: configured recipient restrictions
+```
+
+This policy response reports limits as integer strings in USD millionths: `'5000000'` means $5. Owner settings accept decimal USD strings instead. A `null` limit is uncapped; `'0'` blocks spending. Hourly/daily limits use rolling windows, and the total limit does not reset. Limits are shared across the agent's networks and credentials and include fees. Mainnet and testnet usage are accounted separately.
+
+Pending requests reserve budget. A reservation is not a completed payment; an uncertain submission can keep its reservation until its outcome is resolved.
+
+## Read history
+
+```ts
+const history = await client.history()
+```
+
+History includes payments within the caller's authorized wallets/networks, including payments issued by other keys in that scope. Use `operations.list()` or `operations.get(id)` when tracking requests controlled by your current credential. Reconnecting with a different key does not transfer control of requests issued by an earlier key.
+
+## Wallet administration
+
+Wallet provisioning normally happens when the owner creates an agent and selects networks. See [owner administration](/docs/sdk/administration) for agent settings, existing-wallet linking and export access. Agent runtimes should not receive owner credentials.

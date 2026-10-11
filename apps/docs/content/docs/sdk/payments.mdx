@@ -1,0 +1,94 @@
+---
+title: Transfers and paid APIs
+description: Send tokens, discover services and pay HTTP endpoints
+---
+
+Examples use the authenticated `client` from [SDK setup](/docs/sdk). Every payment request takes a stable `idempotencyKey`: one key per intended payment, not one key per HTTP attempt.
+
+## Send tokens
+
+Use `client.operations.create(input, { idempotencyKey })` for a transfer. Supply a wallet ID, its chain ID, an asset, recipient, amount and maximum fee.
+
+```ts
+const operation = await client.operations.create({
+  walletId: process.env.AGENTIS_WALLET_ID!,
+  action: 'transfer',
+  chainId: 'eip155:8453',
+  asset: 'native',
+  to: process.env.RECIPIENT_ADDRESS!,
+  amountAtomic: '1000000000000000',  // 0.001 ETH
+  maxFeeAtomic: '100000000000000',   // 0.0001 ETH fee budget
+  reason: 'Requested payment',
+}, { idempotencyKey: 'base-transfer-001' })
+```
+
+Use `native` for a network's native asset, `erc20:<contract-address>` for catalog EVM tokens and `spl:<mint-address>` for catalog Solana tokens. The asset and chain must match the selected wallet. For supported assets and amount units, see [networks](/docs/agentis/networks).
+
+`maxFeeAtomic` is a budget, not an extra transfer to the recipient. Execution checks the required fees before signing. For Tempo, optional `feeAsset` selects a catalog fee token independently of the payment asset. For mainnet recipients, use an explicit address; ENS resolution is available on the plugin's supported testnets.
+
+## Discover services
+
+Discovery is public and can use a client without a token:
+
+```ts
+import { AgentisClient } from '@agentis-hq/sdk'
+
+const catalog = new AgentisClient({ baseUrl: 'https://api.agentis.systems' })
+const results = await catalog.discovery.search({ query: 'web search', limit: 3 })
+const service = await catalog.discovery.describe('exa')
+```
+
+Search and describe return provider endpoints, request schemas and advertised payment offers. They do not call the provider or create a payment. Choose the intended endpoint and request body from the service details; the provider's actual payment challenge determines the payment terms.
+
+## Pay an API
+
+`client.fetch` handles the provider's x402 or MPP challenge through the hosted payment flow. It returns an Agentis `Operation`, not a JavaScript `Response`.
+
+```ts
+const operation = await client.fetch({
+  walletId: process.env.AGENTIS_WALLET_ID!,
+  url: 'https://seller.example/paid-data',
+  maxAmountAtomic: '10000', // 0.01 of a six-decimal payment token
+}, { idempotencyKey: 'paid-data-001' })
+```
+
+For agent-paid Tempo or Solana MPP fees, also supply `maxFeeAtomic`. Tempo's fee ceiling uses 18-decimal protocol USD units; Solana uses lamports and includes potential recipient token-account rent. A sponsored offer binds zero agent fees. On Tempo, omitting the fee budget or setting it to `'0'` selects sponsored offers only.
+
+Optional `asset` selects a supported payment currency. Tempo defaults to OUSD for new selections; Solana MPP defaults to USDC and accepts `asset: 'SOL'`. Tempo also accepts `feeAsset` for a separate eligible fee token. Sponsorship covers gas, not the provider's service price.
+
+## Methods, headers and request bodies
+
+The SDK supports GET, HEAD, POST, PUT, PATCH, DELETE and OPTIONS. Set the method explicitly when sending a body:
+
+```ts
+const operation = await client.fetch({
+  walletId: process.env.AGENTIS_WALLET_ID!,
+  url: 'https://seller.example/search',
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ query: 'solar energy market' }),
+  maxAmountAtomic: '10000',
+  maxFeeAtomic: '0',
+}, { idempotencyKey: 'search-request-001' })
+```
+
+Use `body` for exact UTF-8 text or `bodyBase64` for binary/multipart bytes, never both. GET and HEAD cannot have bodies. Non-JSON bodies are supported; set the matching Content-Type. Do not supply payment credentials or transport headers such as Host, Cookie or Content-Length—Agentis manages payment authorization and transport.
+
+The method, headers and body are bound to the payment request. Changing any of them while reusing the same idempotency key is not a retry of the same request.
+
+## Read the result
+
+If approval is required, present `operation.approvalUrl` to the owner. For a queued/submitted operation, use `client.operations.wait(operation.id)`. See [operation states](/docs/sdk/operations).
+
+```ts
+const result = await client.operations.get(operation.id)
+if (result.httpResponse) {
+  const { status, headers, bodyBase64 } = result.httpResponse
+  const body = Buffer.from(bodyBase64, 'base64')
+  // Handle status and content type before decoding JSON or saving a file.
+}
+```
+
+The raw response limit is 10 MiB, with a 20-second provider request deadline. Payment settlement and provider HTTP success are separate: a confirmed payment may accompany a provider error or a missing response. Do not automatically pay again to retry delivery.
+
+Tempo charges support pull and agent-paid push; Solana charges use pull. Provider splits appear in `operation.mpp.splits`; `amountAtomic` is the total charge, including those shares. All recipients remain subject to the agent's rules.

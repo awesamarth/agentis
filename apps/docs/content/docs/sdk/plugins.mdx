@@ -1,0 +1,107 @@
+---
+title: Uniswap and ENS
+description: Swap tokens, schedule purchases and manage agent identity
+---
+
+Plugins are enabled per agent in the dashboard or by an [owner client](/docs/sdk/administration). Their payment operations follow the agent's spending limits and approval rules.
+
+## Uniswap
+
+The Uniswap plugin operates on Base Sepolia with ETH and USDC. Quotes use decimal token amounts; execution also binds an atomic output minimum or input maximum.
+
+### Quote and swap
+
+```ts
+import type { SwapRequest } from '@agentis-hq/sdk'
+
+const request: SwapRequest = {
+  walletId: process.env.BASE_SEPOLIA_WALLET_ID!,
+  tokenIn: 'ETH',
+  tokenOut: 'USDC',
+  amount: '0.001',
+  type: 'EXACT_INPUT',
+  slippageBps: 50,
+  maxFee: '0.0001',
+}
+const quote = await client.uniswap.quote(request)
+
+// Review the quote before requesting execution.
+const plan = await client.uniswap.swap({
+  ...request,
+  minimumOutputAtomic: quote.minimumOutputAtomic,
+}, { idempotencyKey: 'swap-001' })
+```
+
+For `EXACT_OUTPUT`, `amount` is the requested output and execution needs the quote's `maximumInputAtomic`. Quotes expire; do not silently accept a worse price. A swap returns a `SwapPlan`, whose `operations` may include an allowance operation as well as the swap.
+
+Read `client.uniswap.get(plan.id)` for the current plan. Present any `approvalUrl` to the owner; use the included operation states to track settlement.
+
+### Rebalance and schedules
+
+| Method | Purpose |
+| --- | --- |
+| `uniswap.target(walletId)` | Read the saved ETH allocation percentage |
+| `uniswap.rebalance(walletId, ethPercent)` | Preview a rebalance |
+| `uniswap.executeRebalance(walletId, ethPercent, { idempotencyKey })` | Request the rebalance |
+| `uniswap.saveTarget(walletId, ethPercent)` | Save the target ETH allocation percentage |
+| `uniswap.dca.list(walletId)` | Read DCA/gas-refill schedules |
+| `uniswap.dca.requestSetup(input)` | Request owner confirmation to create, edit, pause or cancel a schedule |
+
+For an agent-requested schedule:
+
+```ts
+const setup = await client.uniswap.dca.requestSetup({
+  action: 'create',
+  input: {
+    request,
+    intervalMinutes: 1440,
+    confirm: true,
+  },
+})
+// Present setup.approvalUrl to the owner.
+```
+
+Owner interfaces can read `dca.setup(id)` and decide with `dca.completeSetup(id, approve)`. Direct schedule management uses `dca.create`, `dca.update` and `dca.status`. Scheduling does not grant unlimited spending; executions remain subject to the agent's rules.
+
+`uniswap.fetch(input, { idempotencyKey })` can opt into funding a Base Sepolia x402 USDC shortfall before the paid request. It returns `{ funding, payment }`; track both instead of assuming the provider request already completed.
+
+## ENS identity
+
+The ENS plugin uses ENSv2 on Ethereum Sepolia. The owner sets up the namespace and can delegate only the agent's endpoint and description records.
+
+### Read and resolve
+
+```ts
+const identity = await client.identity.show(process.env.ENS_WALLET_ID!)
+const recipient = await client.identity.resolve('research.yourname.eth', 'eip155:84532')
+// recipient.address is the explicit record for the requested supported network.
+```
+
+Resolution is a public read and can use a tokenless client. Do not infer a mainnet address from a testnet record.
+
+### Request setup and update a record
+
+```ts
+const setup = await client.identity.requestSetup({
+  walletId: process.env.ENS_WALLET_ID!,
+  parent: 'yourname.eth',
+  label: 'research',
+})
+// Present setup.approvalUrl to the owner.
+```
+
+Once the owner has granted the relevant record delegation:
+
+```ts
+const operation = await client.identity.update({
+  walletId: process.env.ENS_WALLET_ID!,
+  key: 'endpoint',
+  value: 'https://agent.example/api',
+}, { idempotencyKey: 'identity-endpoint-001' })
+```
+
+The update returns an ordinary operation with the same approval/receipt handling as other payments. Agents cannot change protected payment-address records or manage somebody else's name.
+
+Owner interfaces use `identity.setup`, `identity.next` and `identity.delegation(walletId, key, grant)` for setup and permissions. `identity.retry(walletId, operationId)` is an explicit recovery action for an existing setup step, not a general payment retry.
+
+For card checkout and delegated shopping, see [Card purchases](/docs/sdk/cards).

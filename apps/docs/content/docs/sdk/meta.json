@@ -3,5 +3,5 @@
   "description": "Use Agentis from apps and agent runtimes.",
   "icon": "Code2Icon",
   "root": true,
-  "pages": ["index"]
+  "pages": ["index", "wallets", "payments", "operations", "administration", "plugins", "cards"]
 }

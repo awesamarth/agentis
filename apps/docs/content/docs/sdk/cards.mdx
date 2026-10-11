@@ -1,0 +1,105 @@
+---
+title: Card purchases
+description: Build shopping carts and attach Agentcard browser checkout
+---
+
+First complete [Agentcard setup](/docs/agentis/agentcard): enable the plugin, connect the owner's Vault and grant your runtime's key separate card permission. Crypto consent alone does not grant card access.
+
+Examples use the authenticated `client` from [SDK setup](/docs/sdk).
+
+## Build a cart
+
+```ts
+const agentId = process.env.AGENTIS_AGENT_ID!
+const setup = await client.cards.status(agentId)
+const turn = await client.cards.purchases.ask({
+  agentId,
+  ask: 'Find a notebook under $10. Do not purchase yet.',
+}, { idempotencyKey: 'notebook-cart-001' })
+```
+
+`ask` returns a shopping turn with `id`, `status`, `reply` and structured `carts`. It does not confirm a purchase. Supply `conversationId` to continue shopping in the same conversation, and `deliveryAddress` when delivery details are needed. Read an existing turn with `client.cards.purchases.conversation(turn.id)`.
+
+## Confirm the selected cart
+
+Inspect the returned cart, destination and approved ceiling before confirming. Pass the exact selected cart hash; do not derive confirmation from the provider's prose.
+
+```ts
+import type { CardPurchaseCart } from '@agentis-hq/sdk'
+
+async function purchaseSelectedCart(selectedCart: CardPurchaseCart) {
+  return client.cards.purchases.confirm({
+    agentId,
+    conversationId: turn.id,
+    cartHash: selectedCart.hash,
+  }, { idempotencyKey: 'notebook-purchase-001' })
+}
+// Call only after selecting the intended cart from turn.carts.
+```
+
+**Confirm can place a real order immediately in Auto mode.** Ask returns `pending_approval` with a dashboard `approvalUrl`. `client.cards.checkouts.execute(id)` submits an already-authorized purchase; it cannot approve one. The dashboard's purchase approval action also submits the authorized purchase.
+
+## Read, continue or cancel
+
+| Method | Purpose |
+| --- | --- |
+| `cards.checkouts.list(agentId)` | List accessible checkout requests |
+| `cards.checkouts.get(id)` | Read/reconcile the original request |
+| `cards.purchases.continue(id)` | Resume the same known-unpaid cart after Agentcard approval |
+| `cards.checkouts.cancel(id)` | Request checkout cancellation |
+
+Use `continue` only when the backend has recorded an unpaid provider approval pause and the owner has completed that approval. It is not a timeout retry. Keep the original checkout ID/key after uncertainty; a new key would describe a new purchase. Cancellation is not a merchant refund or order cancellation.
+
+Card checkouts have their own IDs and statuses, separate from crypto operations. A confirmed payment does not prove merchant order completion; check the merchant's result too.
+
+## Browser checkout
+
+Install Playwright and its Chromium browser separately:
+
+```sh
+bun add playwright
+bunx playwright install chromium
+```
+
+Create a context with the official Agentcard interceptor attached through Agentis:
+
+```ts
+import { chromium } from 'playwright'
+import { createCardCheckoutContext } from '@agentis-hq/sdk/cards/browser'
+
+const browser = await chromium.launch({ headless: false })
+const { context, page, controller } = await createCardCheckoutContext(browser, {
+  client,
+  agentId,
+  merchant: 'Selected merchant',
+  amountMinor: 1000, // USD cents: $10
+  idempotencyKey: 'browser-purchase-001',
+  onApprovalUrl: url => { /* Present privately to the owner; do not log. */ },
+})
+await page.goto('https://merchant.example/checkout')
+// Drive the merchant's checkout using your browser automation.
+// Keep the context alive through approval and order completion.
+// Close context/browser when the attempt is resolved.
+```
+
+The helper returns `{ context, page, controller }` and blocks service workers. It attaches interception but does not shop for you. A helper instance handles one purchase attempt; do not recreate it to retry an uncertain payment.
+
+For an existing page, use `attachCardCheckout(page, options)` in a context created with `serviceWorkers: 'block'`. The exported `cardCheckoutPlaceholder` contains dummy form values for supported interception—not the owner's real card details.
+
+Do not log captured requests, private approval URLs or replay credentials. Agentcard organization secrets belong only on the backend. Merchant/processor support varies; prepared/native-checkout and future-spend APIs are not exposed by this adapter.
+
+## Owner connection and permissions
+
+The dashboard provides these controls. An owner client can also use:
+
+| Method | Purpose |
+| --- | --- |
+| `cards.vault()` | Read connection status and masked cards |
+| `cards.connect({ idempotencyKey, confirm: true })` | Create an owner Vault enrollment session |
+| `cards.session(id)` | Read the original enrollment session |
+| `cards.disconnect({ confirm: true })` | Disconnect the owner-wide Agentis connection |
+| `cards.permissions.list(agentId)` | Read per-key card permissions |
+| `cards.permissions.set({ grantId, enabled, confirm: true, scope: 'card_purchases_follow_agent_policy' })` | Explicitly allow or revoke a key's card access |
+| `cards.checkouts.decide(id, operationHash, approve)` | Approve/reject the exact reviewed checkout |
+
+Disconnecting Agentis does not delete vaulted cards or revoke provider-side permissions; manage those in Agentcard Vault. Agents cannot perform owner consent or approval actions.

@@ -1,0 +1,45 @@
+---
+title: Networks and assets
+description: Choose networks and use the right token units
+---
+
+Choose networks in the agent's settings. Base is selected by default; enable the testnet toggle to see test networks. Access keys and MCP connections must include the networks they will use.
+
+## Available networks
+
+Use the key with CLI `--chain` or SDK agent network selection.
+
+| Network | Key | Assets | Paid APIs |
+| --- | --- | --- | --- |
+| Base | `base` | ETH, USDC | x402 |
+| Ethereum | `ethereum` | ETH, USDC | x402 |
+| Tempo | `tempo` | OUSD, USDC.e, pathUSD | MPP |
+| Solana | `solana` | SOL, USDC | x402, MPP |
+| Arc | `arc-mainnet` | USDC | x402 |
+| Base Sepolia | `base-sepolia` | ETH, USDC | x402 |
+| Ethereum Sepolia | `sepolia` | ETH, USDC | x402 |
+| Tempo Testnet | `tempo-testnet` | OUSD, USDC.e, pathUSD, alphaUSD | MPP |
+| Solana Devnet | `solana-devnet` | SOL, USDC | x402, MPP |
+| Arc Testnet | `arc` | USDC | x402 |
+
+A paid API must offer the selected network and supported asset. Uniswap uses Base Sepolia; ENS identity setup uses Ethereum Sepolia. Enabling a network does not automatically enable a plugin.
+
+## Amounts and fees
+
+CLI send commands accept decimal token amounts. SDK transfer requests use atomic-unit strings and an explicit `maxFeeAtomic`. Keep amounts as strings or bigint in application code rather than floating-point numbers.
+
+| Asset / use | Decimals |
+| --- | --- |
+| ETH transfers and fees | 18 |
+| SOL transfers and fees | 9 |
+| USDC on Base/Ethereum/Solana | 6 |
+| Tempo payment tokens | 6 |
+| Tempo protocol fee ceiling | 18 |
+| Arc native USDC transfers and fees | 18 |
+| USDC amounts in x402 challenges | 6 |
+
+For example, 1 USDC at six decimals is `'1000000'`; 0.001 SOL is `'1000000'` lamports. Arc's native and ERC-20 USDC interfaces represent one balance with different decimal precision.
+
+Tempo accepts a separate eligible fee token. Testnet USDC.e cannot pay gas; its default fee token is OUSD. Provider-sponsored MPP charges have zero agent gas, while the agent still pays the service price.
+
+Mainnet and testnet spending allowances are separate. Dashboard USD totals include mainnet only. Native gas and payment-token balances must be sufficient for the requested operation.

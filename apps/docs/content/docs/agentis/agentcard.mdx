@@ -5,7 +5,7 @@ description: Connect a card and authorize browser or delegated purchases
 
 Agentcard is an optional per-agent plugin. It connects your card through Agentcard Vault and supports two purchase flows: browser checkout through the official Agentcard SDK, and delegated shopping through Agentcard's Purchase API.
 
-**Preview:** Vault enrollment has been verified. Browser checkout and delegated purchase completion have not yet been verified end to end through Agentis. Availability depends on the provider, merchant and issuer; not every checkout is supported.
+Availability depends on the provider, merchant and issuer; not every checkout is supported.
 
 ## Connect and authorize
 
@@ -35,7 +35,7 @@ Use `@agentis-hq/sdk/cards/browser` to attach the official Agentcard interceptor
 
 The helper does not shop for you. Your browser automation navigates to the merchant and operates its checkout. Keep the browser context alive through approval and checkout completion, and verify the merchant's order result separately. A helper instance handles one purchase attempt.
 
-See the [SDK browser example](/docs/sdk#browser-checkout). CLI `cards request` is an advanced interface for an official SDK capture, not a substitute for the browser adapter. Do not invent capture payloads or log them.
+See the [SDK browser example](/docs/sdk/cards#browser-checkout). CLI `cards request` is an advanced interface for an official SDK capture, not a substitute for the browser adapter. Do not invent capture payloads or log them.
 
 ### Delegated Purchase API
 

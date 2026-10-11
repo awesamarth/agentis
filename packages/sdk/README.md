@@ -4,6 +4,16 @@ Thin TypeScript HTTP client. Use `new AgentisClient({baseUrl, token})`; token ca
 
 Install with `bun add @agentis-hq/sdk@0.5.0`.
 
+## Documentation
+
+- [SDK setup and quickstart](https://docs.agentis.systems/docs/sdk)
+- [Wallets, balances and policies](https://docs.agentis.systems/docs/sdk/wallets)
+- [Transfers, discovery and paid APIs](https://docs.agentis.systems/docs/sdk/payments)
+- [Operations, approvals, receipts and errors](https://docs.agentis.systems/docs/sdk/operations)
+- [Owner administration and access keys](https://docs.agentis.systems/docs/sdk/administration)
+- [Uniswap and ENS](https://docs.agentis.systems/docs/sdk/plugins)
+- [Card purchases and browser checkout](https://docs.agentis.systems/docs/sdk/cards)
+
 ```ts
 import { AgentisClient } from '@agentis-hq/sdk'
 
@@ -19,11 +29,11 @@ const result = await client.operations.create({
 
 `operations.get/list/wait` return state/receipt; `wait` stops at pending approval or unknown outcome. Owner clients can `operations.approve(id, operationHash)` / `reject`, `wallets.link/setPolicy`, and `grants.create/list/revoke`.
 
-Owner-only `agents.pause(id)` stops new payments and invalidates unsubmitted approvals for that agent; already-issued transactions still reconcile. Owner-only `wallets.exportKey(id, { confirm: true })` requires an authenticated owner and verified user + server quorum, then uses the server authorization key to export. It returns a sensitive private key: never log, cache, or persist it unintentionally. This is the explicit default, not a fallback after user authorization fails.
+Owner-only `agents.pause(id)` stops new payments and invalidates unsubmitted approvals for that agent; already-issued transactions still reconcile. Owner-only `wallets.exportKey(id, { confirm: true })` requires an authenticated owner and verified user + server quorum, then uses the server authorization key to export. It returns a sensitive private key: never log, cache, or persist it unintentionally. Keep this capability in an owner-controlled interface, never an agent tool.
 
 For `grants.create`, supply `agentId` and `agentName`. Keys have no expiry by default and remain valid until revoked. An optional future `expiresAt` may be supplied, with no 30-day cap; existing explicit expiries remain unchanged. Omit `chainIds` for all enabled networks, including future additions; supply a non-empty, unique `chainIds` array to restrict the key to selected enabled networks. Restricted keys do not automatically include newly added networks. Legacy `walletId` scope remains supported instead of `agentId`, without `chainIds`; existing keys keep their scope. Agent keys can call `wallets.list()` to discover only their enabled wallets; neither scope permits settings changes, creating keys or self-approval.
 
-No local policy bypass, signing, USD guessing or automatic payment retries. Hosted Privy execution, x402/MPP paid fetch, Uniswap and ENS methods use the common backend. Core network support comes from backend capabilities; ENS and Uniswap remain on their existing testnet deployments. The SDK is a transport client and has no mandatory chain or seller-paywall dependencies.
+No local policy bypass, signing, USD guessing or automatic payment retries. Hosted Privy execution, x402/MPP paid fetch, Uniswap and ENS methods use the common backend. Core network support comes from backend capabilities; ENS and Uniswap remain on their existing testnet deployments. The SDK does not require local wallet keys or a seller-paywall integration.
 
 ## Public API discovery
 
@@ -45,9 +55,9 @@ Tempo push-only offers use the same `fetch` API and require a positive fee ceili
 
 Solana MPP charges use the same `fetch` API: USDC by default, or `asset: 'SOL'` for native payments. SOL amounts and `maxFeeAtomic` use lamports (9 decimals); USDC uses 6 decimals. Agent-paid fees include possible recipient ATA rent; sponsored offers bind zero agent fees. Tempo/Solana MPP provider splits are persisted in `operation.mpp.splits`; `amountAtomic` is the entire charge, with the primary share equal to total minus splits. All recipients pass policy/approval checks; Solana ATA rent is reserved per distinct recipient. Existing Solana/Base x402 is preserved.
 
-## Agentcard purchases (preview)
+## Agentcard purchases
 
-Enable the optional Agentcard plugin for the agent, connect the owner's Vault in the dashboard, and explicitly grant this runtime's key card permission. Crypto permission alone is insufficient. Vault enrollment is verified; browser/Purchase API completion is not yet verified end to end.
+Enable the optional Agentcard plugin for the agent, connect the owner's Vault in the dashboard, and explicitly grant this runtime's key card permission. Crypto permission alone is insufficient.
 
 ```ts
 const turn = await client.cards.purchases.ask({
@@ -77,4 +87,4 @@ Supply a Playwright Chromium `browser` (install Playwright separately). The help
 
 One adapter handles one purchase attempt. Never log captures/replay credentials, put Agentcard organization secrets in the harness, or automatically repeat an uncertain checkout. Verify the merchant order separately from payment. Not every processor is supported; prepared/native-checkout and future-spend APIs are not exposed. Reusable browser credentials and issuer fees are outside hard spending-enforcement claims; use a trusted harness.
 
-See the [Agentcard guide](https://docs.agentis.systems/docs/agentis/agentcard) and [SDK examples](https://docs.agentis.systems/docs/sdk). Build locally with `bun run build:packages` at repo root. See the [project README](https://github.com/awesamarth/agentis#readme) for networks and plugins.
+See the [Agentcard guide](https://docs.agentis.systems/docs/agentis/agentcard) and [card SDK examples](https://docs.agentis.systems/docs/sdk/cards). Build locally with `bun run build:packages` at repo root. See the [project README](https://github.com/awesamarth/agentis#readme) for networks and plugins.

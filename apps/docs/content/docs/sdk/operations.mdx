@@ -1,0 +1,92 @@
+---
+title: Operations and errors
+description: Handle approvals, settlement, receipts and uncertain outcomes
+---
+
+Token transfers and paid API calls return an `Operation`. Its `id` identifies the request; `operationHash` binds the reviewed terms; `status` describes its current state.
+
+## Read and wait
+
+```ts
+const operation = await client.operations.get(operationId)
+const requests = await client.operations.list()        // current credential's scope
+const agentRequests = await client.operations.list(agentId)
+
+const result = await client.operations.wait(operationId, {
+  timeoutMs: 120_000,
+  intervalMs: 1500,
+  signal: AbortSignal.timeout(120_000),
+})
+```
+
+`wait` polls while the operation is `queued`, `submitting` or `submitted`. It returns when approval is needed, the outcome is unknown, or the operation is terminal. It does not approve, sign again or resend a payment. Cancelling or timing out the polling request does not cancel the payment.
+
+## Statuses
+
+| Status | What your application should do |
+| --- | --- |
+| `pending_approval` | Show the owner `approvalUrl`; wait for their decision |
+| `queued` | Authorized and waiting for execution; track the same operation |
+| `submitting` | Signing/submission is in progress; do not create a replacement |
+| `submitted` | Transaction submitted; await reconciliation |
+| `unknown` | Outcome is unresolved; keep the original ID/key and inspect it |
+| `confirmed` | Read the settlement receipt and, for paid APIs, the HTTP response |
+| `failed` | Inspect the error and receipt; actual network fees may have been spent |
+| `denied`, `rejected`, `expired` | Read the reason; do not automatically request another payment |
+
+## Owner approval
+
+In Ask mode, the normal path is to give the owner the dashboard approval link. Agent credentials cannot approve or reject their own requests.
+
+An owner-facing application can use a separate owner client after the user reviews the exact operation:
+
+```ts
+const reviewed = await ownerClient.operations.get(operationId)
+// Present the recipient, amount, fees and expiry to the owner first.
+const approved = await ownerClient.operations.approve(reviewed.id, reviewed.operationHash)
+// Or, when the owner chooses rejection:
+// await ownerClient.operations.reject(reviewed.id, reviewed.operationHash)
+```
+
+Use the hash of the operation the user actually reviewed. A policy change or expired approval requires a fresh review; do not silently approve a replacement request.
+
+## Receipts and responses
+
+A settled operation can include:
+
+- `transactionHash` and `receipt.chainId` for the transaction.
+- `receipt.blockNumber`, `receipt.success` and `receipt.feeAtomic`.
+- `receipt.feePayment` for the fee asset, units and payer when applicable.
+- `usdReservedMicros` and `usdSettledMicros` for USD accounting.
+- `httpResponse.status`, `headers` and `bodyBase64` for a paid API's response.
+- `error` for a request or execution problem.
+
+A successful chain payment does not guarantee a successful provider response. Likewise, an HTTP timeout does not prove that no payment happened. Operation polling tracks Agentis execution, not a provider's asynchronous job; use the returned provider job ID or link according to that provider's API.
+
+## Idempotency and retry behavior
+
+Persist your idempotency key with the task before creating a payment. Reusing the same key with identical terms returns the same request rather than authorizing another payment. Reusing it with different terms is rejected.
+
+After a lost response, retrieve the existing operation, or repeat the original request with the same key and exact terms. Do not generate a new key automatically. Unknown submissions retain their budget reservation until reconciled.
+
+## Handle API errors
+
+```ts
+import { AgentisApiError } from '@agentis-hq/sdk'
+
+try {
+  const operation = await client.operations.get(operationId)
+} catch (error) {
+  if (error instanceof AgentisApiError) {
+    // error.status: HTTP status
+    // error.code: machine-readable Agentis error code
+    // error.message: explanation suitable for the request's caller
+  } else {
+    // Transport failure or timeout: inspect the original request before retrying.
+  }
+}
+```
+
+A missing permission, insufficient balance or policy denial requires the appropriate owner action, not another wallet or relaxed limits. Keep tokens, private approval links and payment credentials out of logs.
+
+Card purchases use [checkout IDs and card status methods](/docs/sdk/cards), rather than crypto operation IDs.

@@ -1,13 +1,19 @@
 ---
-title: SDK
-description: A thin client for the Agentis API
+title: TypeScript SDK
+description: Give your agent wallets, payments and spending controls
 ---
 
-Install SDK 0.5.0 or later for Agentcard support:
+The Agentis SDK connects your application or agent runtime to hosted wallets, token transfers, paid APIs, spending policies and transaction receipts. It uses the same permissions and approval flow as the dashboard, CLI and MCP.
+
+## Install
 
 ```sh
-bun add @agentis-hq/sdk@latest
+bun add @agentis-hq/sdk
 ```
+
+## Create a client
+
+Create an access key from your agent's **API access** panel and store it in your runtime's environment. Choose the networks that key should access.
 
 ```ts
 import { AgentisClient } from '@agentis-hq/sdk'
@@ -16,70 +22,69 @@ const client = new AgentisClient({
   baseUrl: 'https://api.agentis.systems',
   token: process.env.AGENTIS_TOKEN!,
 })
-
-const operation = await client.fetch({
-  walletId: process.env.AGENTIS_WALLET_ID!,
-  url: 'https://seller.example/paid-data',
-  maxAmountAtomic: '10000',
-}, { idempotencyKey: 'research-task-1' })
 ```
 
-The SDK wraps hosted wallets, balances, policy/history reads, operations, paid fetch, grants, consent flows, Uniswap and ENS. Pending approval is a normal result with an approval URL. `operations.wait()` returns on approval-required, unknown or terminal states and never approves or resends.
+An agent key can request payments within its scope. It cannot approve its own payments, change spending rules or export wallet keys. Use a separate owner-authenticated client for [administration](/docs/sdk/administration).
 
-Public discovery is available through `client.discovery.search({ query: 'web search', limit: 3 })` and `client.discovery.describe('exa')`. These Mercator-backed catalog reads need no token and never create a payment. Price/compatibility metadata is advisory; the actual provider challenge and normal policy remain authoritative. Discovery routes must be present on the selected backend deployment.
+`token` also accepts a function returning a string or a promise, useful for fetching a fresh owner access token. An optional `fetch` implementation can be supplied for your runtime. Do not add automatic retries around payment requests.
 
-Use scoped executor grants in agent runtimes. Keep owner tokens out of browser bundles and unattended agents. The SDK performs no local signing or policy bypass.
+## Make your first payment
 
-## Card purchases
-
-First complete [Agentcard setup](/docs/agentis/agentcard). Enable the plugin for the agent and grant the runtime's key separate card permission. Crypto consent alone is insufficient. Browser/Purchase flows are a preview and have not yet been verified end to end through Agentis.
+This example requests a 1 USDC transfer from an enabled Base wallet. Set `RECIPIENT_ADDRESS` to the intended recipient. Amounts and fee caps are atomic-unit strings.
 
 ```ts
-const agentId = process.env.AGENTIS_AGENT_ID!
-const setup = await client.cards.status(agentId)
-const turn = await client.cards.purchases.ask({
-  agentId,
-  ask: 'Find a notebook under $10. Do not purchase yet.',
-}, { idempotencyKey: 'notebook-cart-001' })
+const wallets = await client.wallets.list()
+const wallet = wallets.find(item => item.enabled && item.chainId === 'eip155:8453')
+if (!wallet) throw new Error('Enable Base and give this key access to its wallet')
+
+const operation = await client.operations.create({
+  walletId: wallet.id,
+  action: 'transfer',
+  chainId: wallet.chainId,
+  asset: 'erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+  to: process.env.RECIPIENT_ADDRESS!,
+  amountAtomic: '1000000',          // 1 USDC
+  maxFeeAtomic: '100000000000000',  // 0.0001 ETH fee budget
+  reason: 'Requested transfer',
+}, { idempotencyKey: 'transfer-invoice-001' })
+
+if (operation.status === 'pending_approval') {
+  // Present operation.approvalUrl to the owner and wait for their decision.
+} else if (['queued', 'submitting', 'submitted'].includes(operation.status)) {
+  const result = await client.operations.wait(operation.id)
+  // Inspect result.status and result.receipt before reporting completion.
+}
 ```
 
-Inspect `turn.carts` and the intended cart's full ceiling. Confirm only the exact cart hash selected for purchase; this can place a real order immediately in Auto mode:
+The wallet must have the payment asset and enough gas. Ask mode returns an approval link; Auto follows the agent's limits without an additional Agentis approval. Reuse the same idempotency key and exact request if a response is lost.
 
-```ts
-const checkout = await client.cards.purchases.confirm({
-  agentId,
-  conversationId: turn.id,
-  cartHash: selectedCart.hash,
-}, { idempotencyKey: 'notebook-purchase-001' })
-```
+## Guides
 
-`selectedCart` above is the cart you reviewed from the returned structured data. Ask mode returns `pending_approval` and a dashboard `approvalUrl`. Only the owner can approve. `client.cards.checkouts.execute(checkout.id)` can submit an already-authorized request; it cannot approve one. The dashboard's purchase approval action also submits the authorized purchase.
+| Task | Guide |
+| --- | --- |
+| Find wallets, read balances and inspect spending limits | [Wallets and balances](/docs/sdk/wallets) |
+| Send tokens, discover services and pay x402/MPP APIs | [Transfers and paid APIs](/docs/sdk/payments) |
+| Handle approvals, wait for settlement and read results | [Operations and errors](/docs/sdk/operations) |
+| Create agents, configure rules and manage access keys | [Owner administration](/docs/sdk/administration) |
+| Quote swaps, rebalance, schedule DCA and use ENS | [Uniswap and ENS](/docs/sdk/plugins) |
+| Build a shopping cart or attach browser checkout | [Card purchases](/docs/sdk/cards) |
 
-Read the original request with `client.cards.checkouts.get(checkout.id)`. Read an existing shopping turn with `client.cards.purchases.conversation(turn.id)`. Use `client.cards.purchases.continue(checkout.id)` only after completing a known unpaid Agentcard approval pause. Never use it as a timeout retry. Cancellation uses `client.cards.checkouts.cancel(checkout.id)`; it is not an order cancellation or refund.
+## API groups
 
-## Browser checkout
+| API | Purpose |
+| --- | --- |
+| `client.wallets` | Wallet listing, policy reads and owner wallet administration |
+| `client.agents` | Agent balances and owner settings |
+| `client.operations` | Transfer requests, approval decisions, status and receipts |
+| `client.fetch` | Paid HTTP requests through x402 or MPP |
+| `client.discovery` | Public service search and details |
+| `client.history()` | Payment history within the caller's wallet/network scope |
+| `client.capabilities()` | Available networks, payment protocols and plugins |
+| `client.grants` | Owner-managed access keys |
+| `client.profile` | Owner account spending summary |
+| `client.uniswap` | Quotes, swaps, rebalancing and schedules |
+| `client.identity` | ENS resolution, identity setup and delegated records |
+| `client.cards` | Card connection, permissions and purchase requests |
+| `client.cliLogin`, `client.oauth` | Browser consent integration for CLI and MCP clients |
 
-Install Playwright separately and use a Chromium browser. The helper creates a context with service workers blocked and attaches the official Agentcard SDK through Agentis:
-
-```ts
-import { chromium } from 'playwright'
-import { createCardCheckoutContext } from '@agentis-hq/sdk/cards/browser'
-
-const browser = await chromium.launch({ headless: false })
-const { context, page, controller } = await createCardCheckoutContext(browser, {
-  client,
-  agentId,
-  merchant: 'Selected merchant',
-  amountMinor: 1000, // USD cents: $10, not a crypto atomic amount
-  idempotencyKey: 'browser-purchase-001',
-  onApprovalUrl: url => { /* Present privately to the owner; do not log. */ },
-})
-await page.goto('https://merchant.example/checkout')
-// Drive this merchant's checkout with your browser automation.
-// Keep this context alive until approval and merchant completion are resolved.
-// Then close context/browser. Do not recreate the purchase after uncertainty.
-```
-
-For an existing page, use `attachCardCheckout(page, options)` on a context created with `serviceWorkers: 'block'`. The exported `cardCheckoutPlaceholder` contains dummy form values for the supported interceptor flow, never the owner's real card details. The adapter handles interception, not shopping, and does not guarantee support for every merchant/processor. Do not log captures, private approval URLs or replay credentials. Keep Agentcard organization credentials on the backend.
-
-A confirmed payment is not proof of merchant order completion. Verify the order separately. Prepared/native-checkout and future-spend APIs are not exposed by this adapter.
+The SDK exports TypeScript request/response types such as `Operation`, `OperationInput`, `AgentisWallet`, `AgentSettings`, `FetchRequest` and `AgentisApiError`. Hosted signing and budget enforcement happen in the backend; the SDK does not hold wallet private keys.

@@ -1,0 +1,88 @@
+---
+title: Owner administration
+description: Create agents, configure budgets and manage scoped access
+---
+
+These methods are for owner-facing applications. Authenticate with a fresh Privy owner access token; never put that token in an unattended agent runtime.
+
+```ts
+import { AgentisClient } from '@agentis-hq/sdk'
+
+const ownerClient = new AgentisClient({
+  baseUrl: 'https://api.agentis.systems',
+  token: getOwnerAccessToken, // Your authenticated application's token getter
+})
+```
+
+The dashboard already provides these controls. You only need to call them directly when building your own owner interface.
+
+## Create and configure an agent
+
+```ts
+const options = await ownerClient.onboarding.get()
+const agent = await ownerClient.agents.create({
+  id: crypto.randomUUID(),
+  name: 'Research agent',
+  mode: 'ask',
+  limits: {
+    perTransaction: '5',
+    hourly: '10',
+    daily: '20',
+    total: '100',
+  },
+  allowedRecipients: [],
+  plugins: [],
+  selection: { networks: ['base'], defaultNetwork: 'base' },
+})
+```
+
+`onboarding.get()` returns network choices with assets and execution availability. Network selection provisions the agent's hosted wallets. Fund the selected wallets before requesting payments.
+
+Limits are decimal USD strings; `null` is uncapped and `'0'` blocks spending. An empty recipient list means no additional recipient restriction. Modes are `ask`, `automatic` and `paused`.
+
+`agents.update(id, settings)` accepts a full `AgentSettings` object, not a partial patch. Preserve the settings the owner did not intend to change. Use `agents.list()` to read current settings and `agents.pause(id)` to stop new payments. Pausing does not undo transactions already submitted.
+
+## Create a scoped access key
+
+```ts
+const access = await ownerClient.grants.create({
+  agentId: agent.id,
+  agentName: agent.name,
+  chainIds: ['eip155:8453'],
+})
+// Store access.token securely and give only this scoped token to the runtime.
+```
+
+A key has no expiry unless you supply `expiresAt`. Supply `chainIds` to restrict it to selected enabled networks; omit that field to allow all enabled networks, including future additions. Keys cannot manage rules, approve payments or export wallets.
+
+```ts
+const keys = await ownerClient.grants.list()
+await ownerClient.grants.revoke(keyId)
+```
+
+Revocation blocks new authorized work. It cannot undo a submitted transaction. Card access requires a separate permission even when the key already has crypto access.
+
+## Manage plugins
+
+```ts
+await ownerClient.agents.setPlugins(agent.id, ['agentcard', 'ens'])
+```
+
+This replaces the enabled-plugin list. Enabling a plugin does not grant a key card permission, approve a purchase or complete a provider connection. Disabling a plugin stops new plugin work; already-submitted work still needs reconciliation.
+
+## Owner views and wallet administration
+
+| Method | Purpose |
+| --- | --- |
+| `agents.list()` | List owned agents and settings |
+| `agents.balances()` | Retrieve all agent balance summaries |
+| `profile.get()` | Account-level agent counts and spending summaries |
+| `wallets.link({ providerWalletId, chainId, policy })` | Link an owned provider wallet with explicit policy |
+| `wallets.setPolicy(id, policy)` | Set the wallet's complete policy object |
+| `wallets.exportKey(id, { confirm: true })` | Explicitly export an owned wallet's private key |
+
+Export returns highly sensitive material. Require a deliberate owner action, avoid logging or persisting it, and never expose the export method through an agent's tool interface.
+
+## Consent integrations
+
+`client.cliLogin` provides `start`, `exchange`, `get` and owner `approve` methods for CLI browser authorization. `client.oauth.request` and owner `client.oauth.complete` support the MCP consent page. These serve client integrations; ordinary SDK runtimes should use an owner-issued scoped access key rather than implement another login protocol.

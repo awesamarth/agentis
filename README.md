@@ -29,11 +29,11 @@ One backend handles authorization, execution and receipts across the dashboard, 
 | **Agent interfaces** | TypeScript SDK, CLI and remote MCP with browser OAuth and explicit agent/network consent. |
 | **Local custody** | Multichain CLI wallets, local spending policies, balances, transfers and paid fetches. No Privy account required for local custody. |
 
-### Agentcard plugin (preview)
+### Agentcard plugin
 
 Connect your card through Agentcard Vault, enable the plugin for an agent, and explicitly permit selected API/CLI/MCP credentials to purchase. Card requests follow the agent's Ask/Auto mode and share its USD budget with mainnet crypto spending; provider/bank approval may still be required.
 
-SDK 0.5.0 adds `client.cards` and the official Agentcard browser bridge at `@agentis-hq/sdk/cards/browser`; CLI 0.7.0 adds `agentis cards`; remote MCP includes delegated shopping and checkout-status tools. Vault enrollment is verified; browser and Purchase API completion remain unverified end to end. See the [setup and purchase guide](https://docs.agentis.systems/docs/agentis/agentcard). A confirmed charge is not a confirmed merchant order; never automatically repeat an uncertain purchase.
+SDK 0.5.0 adds `client.cards` and the official Agentcard browser bridge at `@agentis-hq/sdk/cards/browser`; CLI 0.7.0 adds `agentis cards`; remote MCP includes delegated shopping and checkout-status tools. See the [setup and purchase guide](https://docs.agentis.systems/docs/agentis/agentcard). A confirmed charge is not a confirmed merchant order; never automatically repeat an uncertain purchase.
 
 ### Networks
 
@@ -52,7 +52,7 @@ SDK 0.5.0 adds `client.cards` and the official Agentcard browser bridge at `@age
 
 Base mainnet is the default network. Enable testnets in agent settings to select them. Mainnet and testnets have separate budget usage; balance totals and profile spending include mainnet only. ENSv2 identity writes use Ethereum Sepolia; Uniswap currently uses Base Sepolia only. Enabling a network does not automatically enable a plugin or expand an existing restricted credential.
 
-Arc mainnet uses `arc-mainnet` (`eip155:5042`); the historical `arc` key remains Arc Testnet. Select mainnet explicitly and grant access separately. Native transfers and gas use 18-decimal USDC; x402 uses the same balance through its 6-decimal ERC-20 interface. Arc mainnet RPC/contracts were checked read-only; funded hosted settlement has not been verified.
+See [networks and assets](https://docs.agentis.systems/docs/agentis/networks) for CLI network keys and token units.
 
 ## Get started
 
@@ -143,7 +143,7 @@ https://api.agentis.systems/mcp
 
 The owner signs in through the browser and explicitly selects agents and networks. Tools use the same backend rules as CLI/SDK requests. Restricted MCP credentials cannot approve payments, export keys or change policy. Uniswap and ENS tools are available according to enabled plugins.
 
-No local stdio process or manually copied owner token is required. The actual external-client/browser-consent flow remains a verification item; see [MCP setup and protocol details](packages/mcp/README.md).
+No local stdio process or manually copied owner token is required. See [MCP setup and protocol details](packages/mcp/README.md).
 
 ## Uniswap integration
 
@@ -246,7 +246,7 @@ Authenticate → validate request → reserve budget → approve / authorize
 - **Uncertain execution:** signed bytes/hash are persisted before broadcast. Unknown submissions retain reservations and reconcile; a timeout is not permission to create another payment.
 - **Local custody:** the CLI enforces its own wallet-wide ledger and rules. This is local software enforcement, not hosted security or protection against someone who controls the machine/private key.
 
-Mainnet support is implemented in source; live verification so far covers testnets, not mainnet payments. This is not an audited custody product. Rate limiting, webhook delivery and permanently unknown-submission recovery remain follow-up work. Umbra, Jupiter Earn and the former Quasar enforcement are not part of this V2 implementation.
+This is not an audited custody product. Keep owner credentials out of unattended agents and use scoped keys with appropriate limits.
 
 ## Run locally
 
@@ -284,7 +284,3 @@ Validation: `bun run check` builds the packages and typechecks the backend/inter
 | [`packages/cli`](packages/cli) | Hosted and local-custody commands |
 | [`packages/mcp`](packages/mcp) | Remote MCP tools used by the backend |
 | [`skills/agentis`](skills/agentis) | Concise V2 agent skill: discovery, payments, plugins and safety |
-
-### Verification status
-
-Real testnet transfers and paid requests have exercised the hosted and local payment paths. The deployed production API/owner-approval/worker flow also confirmed an [Arc USDC transfer](https://testnet.arcscan.app/tx/0x3f8060f64c397eb7e585e2167ee2f5ca10507c26fd29a3091252bff103b90142). Uniswap and ENS live evidence is linked above.

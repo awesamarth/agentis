@@ -9,10 +9,10 @@ Hosted wallets use Privy and scoped executor grants. Agents cannot change policy
 
 Choose Base, Ethereum, Tempo, Solana or Arc. Base is selected by default. Turn on **Enable testnets** in agent settings to add Base Sepolia, Ethereum Sepolia, Arc Testnet, Tempo Testnet or Solana Devnet.
 
-Arc mainnet uses `arc-mainnet` (`eip155:5042`); `arc` remains Arc Testnet for existing wallets and history. Mainnet requires explicit network selection and credential access. Native USDC transfers and gas use 18 decimals; x402 uses the same balance through the 6-decimal USDC interface and requires an Arc-mainnet-enabled seller/facilitator. Mainnet RPC/contracts have been checked read-only; funded hosted Arc settlement is not yet verified.
+See [networks and assets](/docs/agentis/networks) for network keys, supported tokens and amount units.
 
 Mainnet and testnets have separate spending allowances. Direct transfers and x402/MPP paid HTTP requests use the same approval flow. Uniswap and ENS remain available on their supported testnets.
 
-The optional [Agentcard plugin](/docs/agentis/agentcard) connects an owner's card for browser checkout and delegated shopping. It requires explicit per-key card permission and follows the agent's Ask/Auto mode and shared USD budget. Card purchase flows are a preview; Vault enrollment is verified, purchase completion is not yet verified end to end.
+The optional [Agentcard plugin](/docs/agentis/agentcard) connects an owner's card for browser checkout and delegated shopping. It requires explicit per-key card permission and follows the agent's Ask/Auto mode and shared USD budget.
 
-See the repository [README](https://github.com/awesamarth/agentis#readme) for current setup, supported assets and verification boundaries.
+See the repository [README](https://github.com/awesamarth/agentis#readme) for setup and integration examples.
