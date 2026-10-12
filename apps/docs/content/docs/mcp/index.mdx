@@ -23,9 +23,11 @@ The production endpoint is `https://api.agentis.systems/mcp`; local development 
 - `agentis_capabilities`
 - `agentis_request_operation` (advanced raw request)
 
-Use wallet listing to select the agent/wallet IDs. Send/fetch tools accept decimal token amounts. Payment keys are optional: when omitted, Agentis generates a fresh UUID for each tool call. **Identical keyless calls are separate requests and may make separate payments.** Users do not need to mention keys in their prompts.
+Use wallet listing to select the agent/wallet IDs. Each wallet includes a readable `chainName`, such as `tempoMainnet`, `solanaMainnet`, `baseSepolia` or `solanaDevnet`, alongside `chainId` and `environment`. The label does not replace the IDs used for payments or network consent. Send/fetch tools accept decimal token amounts. Payment keys are optional: when omitted, Agentis generates a fresh UUID for each tool call. **Identical keyless calls are separate requests and may make separate payments.** Users do not need to mention keys in their prompts.
 
 Keyless payment tools are not idempotent: never automatically repeat them after a timeout, lost result or provider HTTP failure. Inspect the original operation/history, swap plan or card checkout first. An explicitly supplied key retains same-key deduplication with exact terms. Budgets, owner approvals, persisted signing proofs and existing card-conversation guards remain enforced.
+
+Operation receipts include `feeAtomicDecimals` for interpreting `feeAtomic` in native/protocol units. For token-fee display, prefer `feePayment.amountAtomic`, `feePayment.decimals` and `feePayment.asset`. These are two representations of the same charge, not separate fees to add together. See [receipt units](/docs/sdk/operations#receipts-and-responses).
 
 ## Agentcard tools
 

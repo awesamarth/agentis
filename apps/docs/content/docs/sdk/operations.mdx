@@ -55,11 +55,14 @@ Use the hash of the operation the user actually reviewed. A policy change or exp
 A settled operation can include:
 
 - `transactionHash` and `receipt.chainId` for the transaction.
-- `receipt.blockNumber`, `receipt.success` and `receipt.feeAtomic`.
-- `receipt.feePayment` for the fee asset, units and payer when applicable.
+- `receipt.blockNumber` and `receipt.success` for settlement.
+- `receipt.feeAtomic` with `receipt.feeAtomicDecimals` for the fee in native/protocol precision.
+- `receipt.feePayment` for the fee asset, token precision and payer when applicable. Prefer its `amountAtomic` and `decimals` when displaying the token-denominated fee.
 - `usdReservedMicros` and `usdSettledMicros` for USD accounting.
 - `httpResponse.status`, `headers` and `bodyBase64` for a paid API's response.
 - `error` for a request or execution problem.
+
+`feeAtomic` and `feePayment.amountAtomic` describe the same charge at potentially different precisions; **do not add them together**. For example, on Tempo, `feeAtomic: "16000000000000"` with `feeAtomicDecimals: 18` and `feePayment: { amountAtomic: "16", decimals: 6, asset: "erc20:…" }` both represent a fee of `0.000016` fee tokens. Solana's protocol precision is 9 decimals. Older server responses may omit `feeAtomicDecimals`; never assume it equals the payment token's decimals.
 
 A successful chain payment does not guarantee a successful provider response. Likewise, an HTTP timeout does not prove that no payment happened. Operation polling tracks Agentis execution, not a provider's asynchronous job; use the returned provider job ID or link according to that provider's API.
 

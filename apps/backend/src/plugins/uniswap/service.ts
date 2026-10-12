@@ -136,7 +136,7 @@ export class UniswapService {
     const history = await this.service.db.select().from(plans).where(and(eq(plans.ownerId, principal.ownerId), eq(plans.walletId, walletId))).orderBy(desc(plans.createdAt)).limit(100)
     const operationIds = history.flatMap(plan => [plan.approvalId, plan.swapId]).filter((id): id is string => !!id)
     const receipts = operationIds.length ? await this.service.db.select({ id: operationRows.id, status: operationRows.status, transactionHash: operationRows.transactionHash, receipt: operationRows.receipt, usdSettledMicros: operationRows.usdSettledMicros }).from(operationRows).where(inArray(operationRows.id, operationIds)) : []
-    return selected.map(schedule => ({ ...schedule, runs: history.filter(plan => plan.scheduleId === schedule.id).slice(0, 20).map(plan => ({ id: plan.id, createdAt: plan.createdAt, status: plan.status, error: plan.error, quote: plan.quote, operations: receipts.filter(receipt => receipt.id === plan.approvalId || receipt.id === plan.swapId) })) }))
+    return selected.map(schedule => ({ ...schedule, runs: history.filter(plan => plan.scheduleId === schedule.id).slice(0, 20).map(plan => ({ id: plan.id, createdAt: plan.createdAt, status: plan.status, error: plan.error, quote: plan.quote, operations: receipts.filter(receipt => receipt.id === plan.approvalId || receipt.id === plan.swapId).map(operation => ({ ...operation, receipt: this.service.receiptView(operation.receipt) })) })) }))
   }
   async disable(tx: Tx, agentId: string) {
     await tx.update(schedules).set({ status: 'paused', version: sql`${schedules.version} + 1` }).where(and(eq(schedules.agentId, agentId), eq(schedules.status, 'active')))

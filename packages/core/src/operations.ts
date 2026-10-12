@@ -124,6 +124,6 @@ export type Operation = OperationInput & {
   approvalUrl: string | null
   transactionHash: string | null
   error: string | null
-  receipt: { transactionHash: string; chainId: string; blockNumber: string; feeAtomic: string; success: boolean; identity?: { agentId?: string; key?: string; value?: string }; swap?: { inputAtomic: string; outputAtomic: string; tokenOut: 'ETH' | 'USDC' }; feePayment?: { asset: string; amountAtomic: string; decimals: number; payer?: string }; sponsored?: boolean } | null
+  receipt: { transactionHash: string; chainId: string; blockNumber: string; feeAtomic: string; feeAtomicDecimals?: number; success: boolean; identity?: { agentId?: string; key?: string; value?: string }; swap?: { inputAtomic: string; outputAtomic: string; tokenOut: 'ETH' | 'USDC' }; feePayment?: { asset: string; amountAtomic: string; decimals: number; payer?: string }; sponsored?: boolean } | null
 }
 export const terminalStatuses = new Set<OperationStatus>(['confirmed', 'failed', 'denied', 'expired', 'rejected'])

@@ -38,12 +38,18 @@ export class OperationService {
   constructor(readonly db: Database, readonly executor: Executor | null, readonly config: PluginConfig, readonly dashboardUrl: string, readonly priceQuote: typeof quoteUsd = quoteUsd) {}
   readonly plugins = new PluginRegistry(this)
 
+  receiptView(receipt: Operation['receipt']): Operation['receipt'] {
+    // Enrich at the response boundary so persisted historical receipts need no migration.
+    // Protocol precision can differ from the fee token's precision (e.g. Tempo 18 vs 6).
+    return receipt ? { ...receipt, feeAtomicDecimals: findNetwork(receipt.chainId)?.decimals } : null
+  }
+
   view(row: Omit<OperationRow, 'httpResponse'> & { httpResponse?: OperationRow['httpResponse'] }): Operation {
     return {
       ...row.input, id: row.id, status: row.status, operationHash: row.operationHash,
       policyVersion: row.policyVersion, createdAt: row.createdAt.toISOString(), expiresAt: row.expiresAt.toISOString(),
       approvalUrl: row.status === 'pending_approval' ? `${this.dashboardUrl}/operations/${row.id}` : null,
-      transactionHash: row.transactionHash, receipt: row.receipt, error: row.error, httpResponse: row.httpResponse,
+      transactionHash: row.transactionHash, receipt: this.receiptView(row.receipt), error: row.error, httpResponse: row.httpResponse,
       usdReservedMicros: row.usdReservedMicros, usdSettledMicros: row.usdSettledMicros,
     }
   }
