@@ -31,7 +31,7 @@
         "zod": "^4.5.4",
       },
       "devDependencies": {
-        "@types/bun": "latest",
+        "@types/bun": "1.4.2",
         "drizzle-kit": "^0.31.10",
       },
       "peerDependencies": {
@@ -113,7 +113,7 @@
         "zod": "4.5.4",
       },
       "devDependencies": {
-        "@types/bun": "latest",
+        "@types/bun": "1.4.2",
         "tsup": "^8.0.0",
         "typescript": "^5.0.0",
       },
@@ -158,7 +158,7 @@
         "zod": "4.5.4",
       },
       "devDependencies": {
-        "@types/bun": "latest",
+        "@types/bun": "1.4.2",
         "tsup": "^8.0.0",
         "typescript": "^5.0.0",
         "wrangler": "^4.0.0",
