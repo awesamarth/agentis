@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { Challenge, Credential } from 'mppx'
 import { Proof } from 'mppx/tempo'
 import { tempo as tempoChain } from 'viem/chains'
-import { getAddress, erc20Abi, parseEventLogs, decodeFunctionData, encodeFunctionData, concatHex, keccak256, stringToHex, sliceHex, type Account, type Transport, type Address, type Client, type Hex, type TransactionReceipt } from 'viem'
+import { getAddress, formatUnits, erc20Abi, parseEventLogs, decodeFunctionData, encodeFunctionData, concatHex, keccak256, stringToHex, sliceHex, type Account, type Transport, type Address, type Client, type Hex, type TransactionReceipt } from 'viem'
 import { getChainId, readContract, getLogs, getTransactionReceipt, prepareTransactionRequest, signTransaction, sendRawTransaction, waitForTransactionReceipt } from 'viem/actions'
 import { Actions, Abis } from 'viem/tempo'
 import { Transaction as TempoTransaction, TxEnvelopeTempo, SignatureEnvelope } from 'ox/tempo'
@@ -68,11 +68,28 @@ const termsSchema = z.object({
   // Description carries no execution authority. Unknown financial extensions fail closed.
   description: z.string().max(2000).optional(), externalId: z.string().max(256).optional(),
   methodDetails: z.object({ chainId: z.number().int().positive(), feePayer: z.boolean().optional(),
+    // Optional alternative-route advertisement, not a requirement to use machine tokens.
+    // Keep it in the echoed challenge; Agentis still signs only the reviewed direct transfers.
+    machineTokenEnabled: z.boolean().optional(),
     supportedModes: z.array(z.enum(['pull', 'push'])).min(1).max(2).optional(),
     memo: z.string().regex(/^0x[0-9a-fA-F]{64}$/).optional(),
     splits: z.array(z.object({ recipient: address, amount: z.string().regex(/^[1-9]\d{0,77}$/), memo: z.string().regex(/^0x[0-9a-fA-F]{64}$/).optional() }).strict()).min(1).max(10).optional(),
   }).strict(),
 }).strict()
+export class TempoChallengeError extends Error {}
+
+// Report only bounded field names and our own diagnostics, never raw challenges or parser input.
+function tempoOfferError(error: unknown) {
+  if (error instanceof TempoChallengeError) return error.message
+  if (error instanceof z.ZodError) {
+    const fields = error.issues.flatMap(issue => issue.code === 'unrecognized_keys'
+      ? issue.keys.map(key => [...issue.path, key].join('.'))
+      : [issue.path.join('.')])
+      .filter(path => /^[A-Za-z0-9_.]{1,100}$/.test(path)).slice(0, 5)
+    return `Invalid or unsupported offer fields${fields.length ? `: ${fields.join(', ')}` : ''}`
+  }
+  return 'Malformed offer or invalid recipient/split terms'
+}
 export function parseTempoChallenge(header: string, chainId: string) {
   if (!header || header.length > 16384) throw Error('Invalid MPP challenge')
   // A persisted operation must contain exactly the selected offer, never a list.
@@ -81,33 +98,44 @@ export function parseTempoChallenge(header: string, chainId: string) {
   const challenge = offers[0]!
   const request = termsSchema.parse(challenge.request)
   const network = requireNetwork(chainId)
-  if (challenge.method !== 'tempo' || challenge.intent !== 'charge' || request.methodDetails.chainId !== network.chain?.id ||
-      (challenge.header && !['authorization', 'payment-authorization'].includes(challenge.header.toLowerCase())) ||
-      (request.methodDetails.feePayer && request.methodDetails.supportedModes && !request.methodDetails.supportedModes.includes('pull')) ||
-      !challenge.expires || !Number.isFinite(Date.parse(challenge.expires))) throw Error('Unsupported Tempo charge')
-  const asset = tempoAsset(chainId, request.currency)
+  if (challenge.method !== 'tempo' || challenge.intent !== 'charge') throw new TempoChallengeError('Expected a one-time Tempo charge; other methods, sessions and subscriptions are not supported')
+  if (request.methodDetails.chainId !== network.chain?.id) throw new TempoChallengeError(`Network mismatch: offered eip155:${request.methodDetails.chainId}, requested ${network.chainId}`)
+  if (challenge.header && !['authorization', 'payment-authorization'].includes(challenge.header.toLowerCase())) throw new TempoChallengeError('Unsupported payment credential header')
+  if (request.methodDetails.feePayer && request.methodDetails.supportedModes && !request.methodDetails.supportedModes.includes('pull')) throw new TempoChallengeError('Sponsored Tempo charges require pull mode')
+  if (!challenge.expires || !Number.isFinite(Date.parse(challenge.expires))) throw new TempoChallengeError('Offer expiry is missing or invalid')
+  const asset = network.assets.find(asset => asset.id.toLowerCase() === `erc20:${request.currency.toLowerCase()}`)
+  if (!asset || network.family !== 'tempo') throw new TempoChallengeError('Offered payment token is not supported on the selected Tempo network')
   getAddress(request.recipient)
   paymentTransfers({ to: request.recipient, amountAtomic: request.amount, mpp: { splits: request.methodDetails.splits?.map(split => ({ to: getAddress(split.recipient), amountAtomic: split.amount })) } })
   const mode = request.methodDetails.supportedModes && !request.methodDetails.supportedModes.includes('pull') ? 'push' as const : 'pull' as const
   return { challenge: { ...challenge, method: 'tempo' as const, intent: 'charge' as const, request }, request, asset, mode }
 }
 export function selectTempoChallenge(header: string, chainId: string, maximum: string, selector?: string, now = Date.now(), sponsoredOnly = false) {
-  if (!header || header.length > 16384) throw Error('Invalid MPP challenge')
+  if (!header || header.length > 16384) throw new TempoChallengeError('Missing MPP challenge or challenge exceeds the 16 KiB limit')
   const preferred = selector ? tempoAsset(chainId, selector) : undefined
-  const offers = Challenge.deserializeList(header)
-  if (offers.length > 32) throw Error('Too many MPP offers')
+  let offers: ReturnType<typeof Challenge.deserializeList>
+  try { offers = Challenge.deserializeList(header) } catch { throw new TempoChallengeError('Provider returned a malformed MPP challenge') }
+  if (offers.length > 32) throw new TempoChallengeError('Provider returned more than 32 MPP offers')
   const candidates: ReturnType<typeof parseTempoChallenge>[] = []
-  for (const offer of offers) {
+  const rejected: string[] = []
+  for (const [index, offer] of offers.entries()) {
     try {
       const parsed = parseTempoChallenge(Challenge.serialize(offer), chainId)
       const expiry = Date.parse(parsed.challenge.expires!)
-      if ((!sponsoredOnly || parsed.request.methodDetails.feePayer === true) && (!preferred || parsed.asset.id === preferred.id) && BigInt(parsed.request.amount) <= BigInt(maximum) && expiry >= now + 30_000 && expiry <= now + 600_000) candidates.push(parsed)
-    } catch { /* Ignore unsupported offers, not payment-validation failures at signing. */ }
+      const reasons: string[] = []
+      if (preferred && parsed.asset.id !== preferred.id) reasons.push(`token differs from requested ${preferred.symbol}`)
+      if (BigInt(parsed.request.amount) > BigInt(maximum)) reasons.push(`price exceeds cap ${formatUnits(BigInt(maximum), parsed.asset.decimals)} ${preferred?.symbol ?? parsed.asset.symbol}`)
+      if (sponsoredOnly && parsed.request.methodDetails.feePayer !== true) reasons.push('gas is not sponsored and the request has no positive fee budget')
+      if (expiry < now + 30_000) reasons.push('expiry has less than 30 seconds remaining')
+      if (expiry > now + 600_000) reasons.push('expiry is more than 10 minutes away')
+      if (reasons.length) rejected.push(`Offer ${index + 1} (${formatUnits(BigInt(parsed.request.amount), parsed.asset.decimals)} ${parsed.asset.symbol}): ${reasons.join('; ')}`)
+      else candidates.push(parsed)
+    } catch (error) { rejected.push(`Offer ${index + 1}: ${tempoOfferError(error)}`) }
   }
   // Catalog order expresses the preference; never choose a different token after approval.
   const order = requireNetwork(chainId).assets.map(asset => asset.id)
   candidates.sort((a, b) => order.indexOf(a.asset.id) - order.indexOf(b.asset.id))
-  if (!candidates.length) throw Error('No supported, unexpired Tempo charge within the requested token and price limits')
+  if (!candidates.length) throw new TempoChallengeError(`No acceptable Tempo charge. ${rejected.slice(0, 4).join('. ') || 'Provider returned no payment offers.'}${rejected.length > 4 ? ` (${rejected.length - 4} more offers rejected.)` : ''}`)
   return candidates[0]!
 }
 

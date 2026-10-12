@@ -8,7 +8,7 @@ import { SignatureEnvelope, TxEnvelopeTempo } from 'ox/tempo'
 import { paymentRequest, httpFields, paymentTransfers, type FetchRequest, type OperationInput, type PaidHttpResponse } from '@agentis-hq/core/operations'
 import type { WalletRow } from '../db/schema'
 import { evmClient, requireNetwork } from './networks'
-import { roundedTempoFee, selectTempoChallenge, parseTempoChallenge, tempoFeeAsset, tempoAsset, defaultTempoFeeAsset, checkTempoFunds, reconcileTempoPayment, assertTempoPaymentCalls, tempoPaymentMemo, prepareTempoPush, broadcastTempoPush } from '@agentis-hq/core/tempo'
+import { TempoChallengeError, roundedTempoFee, selectTempoChallenge, parseTempoChallenge, tempoFeeAsset, tempoAsset, defaultTempoFeeAsset, checkTempoFunds, reconcileTempoPayment, assertTempoPaymentCalls, tempoPaymentMemo, prepareTempoPush, broadcastTempoPush } from '@agentis-hq/core/tempo'
 import { paymentHttp } from './payment-http'
 import { fail } from '../errors'
 
@@ -31,7 +31,8 @@ export async function discoverMpp(input: FetchRequest, chainId = 'eip155:4217'):
   catch { fail(400, 'paid_fetch_unavailable', 'Paid URL was blocked or unavailable; no payment was created') }
   if (response.status !== 402 || !response.headers['www-authenticate']) fail(400, 'mpp_required', 'Expected a Tempo MPP charge challenge')
   let parsed
-  try { parsed = selectTempoChallenge(response.headers['www-authenticate'], chainId, input.maxAmountAtomic, input.asset, Date.now(), !input.maxFeeAtomic || input.maxFeeAtomic === '0') } catch { fail(400, 'unsupported_payment', 'No supported Tempo charge within the selected token, network, price and expiry limits') }
+  try { parsed = selectTempoChallenge(response.headers['www-authenticate'], chainId, input.maxAmountAtomic, input.asset, Date.now(), !input.maxFeeAtomic || input.maxFeeAtomic === '0') }
+  catch (error) { fail(400, 'unsupported_payment', error instanceof TempoChallengeError ? error.message : 'Could not select a Tempo charge: malformed offer or unsupported payment token') }
   const { challenge, request, asset, mode } = parsed
   const sponsored = request.methodDetails.feePayer === true
   if (!sponsored && (!input.maxFeeAtomic || BigInt(input.maxFeeAtomic) === 0n)) fail(400, 'fee_cap_required', 'This charge requires an agent-paid gas budget')
