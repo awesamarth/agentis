@@ -407,7 +407,7 @@ export class OperationService {
         }
         let preparationStage = 'usd_quote'
         try {
-          const executionQuote = row.usdQuote ? await this.priceQuote(row.input) : null
+          let executionQuote = row.usdQuote ? await this.priceQuote(row.input) : null
           if (executionQuote && (executionQuote.expiresAt <= Date.now() || usdCost(row.input, executionQuote) > BigInt(row.usdReservedMicros!))) {
             await tx.update(operations).set({ status: 'denied', authorizationSignature: null, error: 'USD price changed beyond the reviewed amount. Request a new payment for approval.' }).where(eq(operations.id, row.id))
             return null
@@ -421,15 +421,26 @@ export class OperationService {
           preparationStage = 'executor_prepare'
           const signed = await executor.prepare(wallet, row.input, row.authorizationRequest && row.authorizationSignature ? { request: row.authorizationRequest, signature: row.authorizationSignature } : undefined, { id: row.id, expiresAt: row.expiresAt })
           preparationStage = 'post_prepare_validation'
-          // Network preparation may outlast authorization: check again before persisting.
-          if (row.expiresAt.getTime() <= Date.now() || (executionQuote && executionQuote.expiresAt <= Date.now())) throw new Error('Authorization or USD quote expired while preparing')
+          if (row.expiresAt.getTime() <= Date.now()) fail(400, 'preparation_expired', 'Payment authorization expired during preparation. No transaction was submitted.')
+          // Signing can outlast a cached quote. Refresh once, without re-signing,
+          // and enforce the original reservation and current shared USD budgets.
+          if (executionQuote && executionQuote.expiresAt <= Date.now()) {
+            preparationStage = 'usd_quote_refresh'
+            executionQuote = await this.priceQuote(row.input)
+            if (executionQuote.expiresAt <= Date.now()) fail(503, 'preparation_expired', 'A fresh USD quote is unavailable after preparation. No transaction was submitted.')
+            if (usdCost(row.input, executionQuote) > BigInt(row.usdReservedMicros!)) fail(400, 'preparation_expired', 'Fresh USD price exceeds the approved reservation. No transaction was submitted.')
+            const refreshedBudgetReason = await this.usdBudgetReason(tx, wallet, usdCost(row.input, executionQuote), row.id)
+            if (refreshedBudgetReason) fail(400, 'preparation_expired', 'Fresh USD cost exceeds the current spending policy. No transaction was submitted.')
+          }
           if (row.grantId) await this.checkGrant(tx, row.grantId, wallet)
+          preparationStage = 'post_prepare_validation'
+          if (row.expiresAt.getTime() <= Date.now() || (executionQuote && executionQuote.expiresAt <= Date.now())) fail(400, 'preparation_expired', 'Payment authorization or USD quote expired before submission. No transaction was submitted.')
           preparationStage = 'persist_signed_proof'
           const [updated] = await tx.update(operations).set({ ...signed, usdQuote: executionQuote, status: 'submitting' }).where(eq(operations.id, row.id)).returning()
           return updated!
         } catch (error) {
           console.error('Operation preparation failed before submission', { operationId: row.id, chainId: row.input.chainId, action: row.input.action, stage: preparationStage, causes: safeErrorDetails(error) })
-          const publicError = error instanceof ApiError && error.code === 'fee_cap_exceeded' ? 'Estimated network fee exceeds this operation’s maximum fee. No transaction was submitted.' : error instanceof ApiError && error.code === 'insufficient_gas_balance' ? 'Wallet has insufficient funds for the maximum network fee. Fund the wallet before retrying. No transaction was submitted.' : 'Preparation failed before submission'
+          const publicError = error instanceof ApiError && error.code === 'preparation_expired' ? error.message : error instanceof ApiError && error.code === 'fee_cap_exceeded' ? 'Estimated network fee exceeds this operation’s maximum fee. No transaction was submitted.' : error instanceof ApiError && error.code === 'insufficient_gas_balance' ? 'Wallet has insufficient funds for the maximum network fee. Fund the wallet before retrying. No transaction was submitted.' : 'Preparation failed before submission'
           await tx.update(operations).set({ status: 'failed', error: publicError }).where(eq(operations.id, row.id))
           return null
         }

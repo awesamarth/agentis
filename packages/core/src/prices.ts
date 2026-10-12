@@ -4,6 +4,10 @@ import { SignedDataPackage } from '@redstone-finance/protocol'
 import { paymentHttp, redstoneHttp, redstoneSnapshotUrl } from './payment-http'
 
 export type Price = { value: string; expiresAt: number }
+const quoteLifetimeMs = 120_000
+const minimumRemainingMs = 100_000
+const redstoneAdmissionAgeMs = 60_000
+const redstoneMaximumAgeMs = redstoneAdmissionAgeMs + quoteLifetimeMs
 const priceSchema = z.object({ price: z.number().positive().finite(), timestamp: z.number().int().positive(), confidence: z.number().min(0.95).max(1) })
 export function parsePrice(raw: unknown, now = Date.now()): Price {
   const price = priceSchema.parse(raw)
@@ -13,7 +17,9 @@ function parseNumericPrice(value: number, timestamp: number, now = Date.now()): 
   const price = z.object({ price: z.number().positive().finite(), timestamp: z.number().int().positive() }).parse({ price: value, timestamp })
   if (price.timestamp * 1000 > now + 30_000 || price.timestamp * 1000 < now - 300_000) throw Error('Price is stale or future-dated')
   if (!/^\d+(\.\d{1,18})?$/.test(String(price.price))) throw Error('Unsupported price precision')
-  return { value: parseUnits(String(price.price), 18).toString(), expiresAt: Math.min(now + 30_000, price.timestamp * 1000 + 300_000) }
+  const expiresAt = Math.min(now + quoteLifetimeMs, price.timestamp * 1000 + 300_000)
+  if (expiresAt < now + minimumRemainingMs) throw Error('Price observation is too old for the minimum quote lifetime')
+  return { value: parseUnits(String(price.price), 18).toString(), expiresAt }
 }
 // RedStone primary production registry, pinned rather than trusted from HTTP data.
 // Source: @redstone-finance/sdk 1.0.0 getSignersForDataServiceId('redstone-primary-prod').
@@ -33,7 +39,7 @@ export function verifyRedstonePrice(raw: unknown, feed: string, now = Date.now()
   for (const item of raw) {
     try {
       const parsed = packageSchema.parse(item)
-      if (parsed.dataPackageId !== feed || parsed.dataPoints[0]!.dataFeedId !== feed || parsed.timestampMilliseconds < now - 60_000 || parsed.timestampMilliseconds > now + 5_000) continue
+      if (parsed.dataPackageId !== feed || parsed.dataPoints[0]!.dataFeedId !== feed || parsed.timestampMilliseconds < now - redstoneAdmissionAgeMs || parsed.timestampMilliseconds > now + 5_000) continue
       const signed = SignedDataPackage.fromObj(parsed)
       const signer = signed.recoverSignerAddress().toLowerCase()
       if (!allowed.has(signer) || values.has(signer)) continue
@@ -47,7 +53,9 @@ export function verifyRedstonePrice(raw: unknown, feed: string, now = Date.now()
   const quotes = [...values.values()].sort((a, b) => a.price < b.price ? -1 : a.price > b.price ? 1 : 0)
   const median = quotes[Math.floor(quotes.length / 2)]!.price
   if (quotes.some(quote => (quote.price > median ? quote.price - median : median - quote.price) * 100n > median)) throw Error('Oracle signers disagree')
-  return { value: median.toString(), expiresAt: Math.min(now + 30_000, ...quotes.map(quote => quote.timestamp + 60_000)) }
+  // Admit only observations <=60s old, then authorize them for up to120s.
+  // Observation age at expiry stays bounded to180s; never rewrite timestamps.
+  return { value: median.toString(), expiresAt: Math.min(now + quoteLifetimeMs, ...quotes.map(quote => quote.timestamp + redstoneMaximumAgeMs)) }
 }
 
 export function createPriceReader(http: typeof paymentHttp = input => input.url === redstoneSnapshotUrl ? redstoneHttp() : paymentHttp(input)) {
@@ -63,7 +71,7 @@ export function createPriceReader(http: typeof paymentHttp = input => input.url 
   }
   return async function readPrice(id: string): Promise<Price> {
     const cached = cache.get(id)
-    if (cached && cached.expiresAt > Date.now()) return cached
+    if (cached && cached.expiresAt >= Date.now() + minimumRemainingMs) return cached
     const active = pending.get(id)
     if (active) return active
     const task = (async () => {

@@ -3,7 +3,7 @@ import { Challenge, Credential } from 'mppx'
 import { Proof } from 'mppx/tempo'
 import { tempo as tempoChain } from 'viem/chains'
 import { getAddress, formatUnits, erc20Abi, parseEventLogs, decodeFunctionData, encodeFunctionData, concatHex, keccak256, stringToHex, sliceHex, type Account, type Transport, type Address, type Client, type Hex, type TransactionReceipt } from 'viem'
-import { getChainId, readContract, getLogs, getTransactionReceipt, prepareTransactionRequest, signTransaction, sendRawTransaction, waitForTransactionReceipt } from 'viem/actions'
+import { getChainId, getBlock, readContract, getLogs, getTransactionReceipt, prepareTransactionRequest, signTransaction, sendRawTransaction, waitForTransactionReceipt } from 'viem/actions'
 import { Actions, Abis } from 'viem/tempo'
 import { Transaction as TempoTransaction, TxEnvelopeTempo, SignatureEnvelope } from 'ox/tempo'
 import { Secp256k1 } from 'ox'
@@ -232,12 +232,31 @@ export async function reconcileTempoPayment(client: Client, input: TempoPayment,
   const sender = SignatureEnvelope.extractAddress({ payload: TxEnvelopeTempo.getSignPayload(expected), signature: expected.signature })
   const primaryMemo = assertTempoPaymentCalls(expected.calls, input)
   const call = expected.calls[0]!
-  let candidates: Hex[] = hash ? [hash as Hex] : []
-  if (!hash && fromBlock) {
-    const logs = await getLogs(client, { address: call.to as Address, event: Abis.tip20.find(event => event.type === 'event' && event.name === 'TransferWithMemo')!, args: { from: sender, to: input.to as Address, memo: primaryMemo }, fromBlock: BigInt(fromBlock), toBlock: 'latest' })
-    candidates = [...new Set(logs.flatMap(log => log.transactionHash ? [log.transactionHash] : []))]
+  async function* candidates(): AsyncGenerator<Hex> {
+    // A known hash goes straight to receipt verification, without any log scan.
+    if (hash) { yield hash as Hex; return }
+    if (!fromBlock) return
+    if (expected.validBefore === undefined) throw Error('Missing Tempo recovery expiry bound')
+    const latest = await getBlock(client, { blockTag: 'latest' })
+    const deadline = BigInt(expected.validBefore)
+    const seen = new Set<Hex>()
+    // Alchemy's free tier permits 10 blocks inclusive. Verify candidates as each
+    // batch arrives, rather than fetching the entire history before settling.
+    for (let start = BigInt(fromBlock); start <= latest.number; start += 10n) {
+      const end = start + 9n < latest.number ? start + 9n : latest.number
+      const logs = await getLogs(client, { address: call.to as Address, event: Abis.tip20.find(event => event.type === 'event' && event.name === 'TransferWithMemo')!, args: { from: sender, to: input.to as Address, memo: primaryMemo }, fromBlock: start, toBlock: end })
+      for (const log of logs) {
+        if (!log.transactionHash || seen.has(log.transactionHash)) continue
+        seen.add(log.transactionHash)
+        yield log.transactionHash
+      }
+      // An expired proof cannot settle in later blocks. Bound unsuccessful scans
+      // to its signing window, not an ever-growing fromBlock -> latest range.
+      // Absence is NOT proof of nonpayment: keep the reservation and never resend.
+      if (latest.timestamp > deadline && (end === latest.number || (await getBlock(client, { blockNumber: end })).timestamp > deadline)) return
+    }
   }
-  for (const candidate of candidates) {
+  for await (const candidate of candidates()) {
     const raw = await client.request({ method: 'eth_getTransactionByHash', params: [candidate] })
     if (!raw) continue
     let proof

@@ -23,7 +23,7 @@ test('oracle rejects stale/future packages, feed substitution and excessive pric
   for (const data of [packages(now - 60_001), packages(now + 5001), packages(now, undefined, 'USDC')]) expect(() => verifyRedstonePrice(data, 'pathUSD', now, trusted)).toThrow()
   expect(() => verifyRedstonePrice(packages(now, [1, 1, 1, 1, 1.1]), 'pathUSD', now, trusted)).toThrow('disagree')
   const quote = verifyRedstonePrice(packages(now - 55_000), 'pathUSD', now, trusted)
-  expect(quote.expiresAt).toBe(now + 5000)
+  expect(quote.expiresAt).toBe(now + 120_000)
 })
 
 test('oracle conversion uses signed fixed-point integers, including depegged values', () => {
