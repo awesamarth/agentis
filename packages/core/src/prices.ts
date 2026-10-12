@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { bytesToBigInt, parseUnits } from 'viem'
 import { SignedDataPackage } from '@redstone-finance/protocol'
-import { paymentHttp, redstoneHttp, redstoneSnapshotUrl } from './payment-http'
+import { paymentHttp, priceHttp, redstoneHttp, redstoneSnapshotUrl } from './payment-http'
 
 export type Price = { value: string; expiresAt: number }
 const quoteLifetimeMs = 120_000
@@ -58,7 +58,7 @@ export function verifyRedstonePrice(raw: unknown, feed: string, now = Date.now()
   return { value: median.toString(), expiresAt: Math.min(now + quoteLifetimeMs, ...quotes.map(quote => quote.timestamp + redstoneMaximumAgeMs)) }
 }
 
-export function createPriceReader(http: typeof paymentHttp = input => input.url === redstoneSnapshotUrl ? redstoneHttp() : paymentHttp(input)) {
+export function createPriceReader(http: typeof paymentHttp = input => input.url === redstoneSnapshotUrl ? redstoneHttp() : priceHttp(input)) {
   const cache = new Map<string, Price>()
   const pending = new Map<string, Promise<Price>>()
   let snapshot: Promise<Record<string, unknown>> | undefined

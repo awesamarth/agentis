@@ -89,6 +89,6 @@ if (result.httpResponse) {
 }
 ```
 
-The raw response limit is 10 MiB, with a 20-second provider request deadline. Payment settlement and provider HTTP success are separate: a confirmed payment may accompany a provider error or a missing response. Do not automatically pay again to retry delivery.
+The raw response limit is 10 MiB, with a 120-second provider request deadline. Payment settlement and provider HTTP success are separate: a confirmed payment may accompany a provider error or a missing response. Do not automatically pay again to retry delivery.
 
 Tempo charges support pull and agent-paid push; Solana charges use pull. Provider splits appear in `operation.mpp.splits`; `amountAtomic` is the total charge, including those shares. All recipients remain subject to the agent's rules.

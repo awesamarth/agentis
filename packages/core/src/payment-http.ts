@@ -19,15 +19,19 @@ export function validatePaymentHeaders(headers: Record<string, string>) {
 }
 export function paymentHttp(input: PaymentHttpRequest, paymentHeaders: Record<string, string> = {}, localOrigins: readonly string[] = [], onHeaders?: (headers: Record<string, string>) => Promise<void>): Promise<PaymentHttpResponse> {
   // Limit raw response bytes before base64 encoding for storage/API delivery.
-  return boundedHttp(input, paymentHeaders, localOrigins, onHeaders, 10 * 1_048_576)
+  return boundedHttp(input, paymentHeaders, localOrigins, onHeaders, 10 * 1_048_576, 120_000)
+}
+// Oracle reads retain their shorter deadline; they do not generate paid media.
+export function priceHttp(input: PaymentHttpRequest) {
+  return boundedHttp(input, {}, [], undefined, 10 * 1_048_576, 20_000)
 }
 // The public RedStone snapshot contains all feeds (~2 MiB). Its fixed-host,
 // credential-free reader retains a separate 4 MiB response limit.
 export const redstoneSnapshotUrl = 'https://oracle-gateway-1.a.redstone.finance/data-packages/latest/redstone-primary-prod'
 export function redstoneHttp() {
-  return boundedHttp({ url: redstoneSnapshotUrl, method: 'GET', headers: {} }, {}, [], undefined, 4_194_304)
+  return boundedHttp({ url: redstoneSnapshotUrl, method: 'GET', headers: {} }, {}, [], undefined, 4_194_304, 20_000)
 }
-async function boundedHttp(input: PaymentHttpRequest, paymentHeaders: Record<string, string>, localOrigins: readonly string[], onHeaders: ((headers: Record<string, string>) => Promise<void>) | undefined, responseLimit: number): Promise<PaymentHttpResponse> {
+async function boundedHttp(input: PaymentHttpRequest, paymentHeaders: Record<string, string>, localOrigins: readonly string[], onHeaders: ((headers: Record<string, string>) => Promise<void>) | undefined, responseLimit: number, timeoutMs: number): Promise<PaymentHttpResponse> {
   validatePaymentHeaders(input.headers)
   if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(input.method) || (input.body !== undefined && input.bodyBase64 !== undefined) || (['GET', 'HEAD'].includes(input.method) && (input.body !== undefined || input.bodyBase64 !== undefined))) throw Error('Invalid HTTP method or body')
   const url = new URL(input.url)
@@ -67,7 +71,13 @@ async function boundedHttp(input: PaymentHttpRequest, paymentHeaders: Record<str
         void headersSaved.then(() => resolve({ status: response.statusCode ?? 502, headers, bodyBase64: Buffer.concat(chunks).toString('base64') }), reject)
       })
     })
-    const deadline = setTimeout(() => request.destroy(new Error('Paid request timed out')), 20_000)
+    const deadline = setTimeout(() => {
+      const error = new Error(`HTTP response deadline exceeded (${timeoutMs / 1000} seconds); request was not retried`)
+      // Reject before destroying: Bun's custom-DNS path can report an abort as
+      // ECONNREFUSED (or omit the error event). Preserve the actual deadline error.
+      failResponse(error)
+      request.destroy(error)
+    }, timeoutMs)
     request.on('error', failResponse)
     request.end(body)
   })
