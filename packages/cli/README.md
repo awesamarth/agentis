@@ -2,7 +2,7 @@
 
 Requires [Bun](https://bun.sh) on your PATH (the CLI executable uses Bun).
 
-Install: `bun add -g @agentis-hq/cli@0.7.0` (or `npm install -g @agentis-hq/cli@0.7.0`). Then run `agentis login` and `agentis --help`.
+Install: `bun add -g @agentis-hq/cli@0.7.1` (or `npm install -g @agentis-hq/cli@0.7.1`). Then run `agentis login` and `agentis --help`.
 
 For repository development, run `bun run build:packages`, then `bun packages/cli/src/index.ts --help`. Source commands in the examples below also work as `agentis ...` after installation.
 

@@ -2,7 +2,7 @@
 
 Thin TypeScript HTTP client. Use `new AgentisClient({baseUrl, token})`; token can be an async getter for a fresh Privy JWT. Agents receive only scoped `agt_exec_` grants.
 
-Install with `bun add @agentis-hq/sdk@0.5.0`.
+Install with `bun add @agentis-hq/sdk@0.5.1`.
 
 ## Documentation
 
