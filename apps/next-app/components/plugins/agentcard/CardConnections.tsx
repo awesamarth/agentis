@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { CardSession } from '@agentis-hq/sdk'
+import { AgentisApiError, type CardSession } from '@agentis-hq/sdk'
 import { useAgentisClient } from '@/lib/agentis'
 import CardCheckouts from './CardCheckouts'
 import ConfirmationDialog from '@/components/ConfirmationDialog'
@@ -67,7 +67,11 @@ function OwnerCards({ ownerId, agentId }: { ownerId: string; agentId: string }) 
       } else closeLoadingTab(tab)
       // If popups were blocked or the tab was closed, the same session's link stays below.
     },
-    onError: (_error, tab) => { closeLoadingTab(tab); void cache.invalidateQueries({ queryKey: vaultKey }) },
+    onError: (error, tab) => {
+      closeLoadingTab(tab)
+      if (error instanceof AgentisApiError && ['card_enrollment_not_started', 'card_enrollment_rejected'].includes(error.code)) requestKey.current = null
+      void cache.invalidateQueries({ queryKey: vaultKey })
+    },
   })
   const disconnect = useMutation({
     mutationFn: () => client.cards.disconnect({ confirm: true }),
@@ -80,7 +84,7 @@ function OwnerCards({ ownerId, agentId }: { ownerId: string; agentId: string }) 
         <h4 className="font-mono text-xs uppercase tracking-wide">Your cards</h4>
         <div className="flex items-center gap-3"><span className="font-mono text-[0.65rem] uppercase tracking-wider text-ink-muted">Agentcard Vault</span>{vault.data?.connected && <button disabled={vault.isFetching} onClick={() => void vault.refetch()} className="font-mono text-xs underline disabled:opacity-40">{vault.isFetching ? 'Refreshing…' : 'Refresh cards'}</button>}</div>
       </header>
-      <p className="text-sm text-ink-muted">Agentcard opens in a new tab to add your card securely. Close that tab when you’re done—your card list refreshes when you return.</p>
+      <p className="text-sm text-ink-muted">Agentcard opens in a new tab to add your card securely. Already have a Vault? Choose “Unlock with your passkey” to reconnect it. Close that tab when you’re done—your card list refreshes when you return.</p>
       <p className="border-l-2 border-ink pl-3 text-sm">Connect your card and allow this agent to make purchases. Your spending limits and Ask/Auto settings still apply.</p>
       {vault.isPending && <p role="status" className="text-sm">Loading card connection…</p>}
       {vault.data && !vault.data.configured && <p className="text-sm text-ink-muted">Card connections are not configured on this server.</p>}
@@ -97,7 +101,7 @@ function OwnerCards({ ownerId, agentId }: { ownerId: string; agentId: string }) 
         {active ? <div className="space-y-2">
           <p role="status" className="text-sm">{current.status === 'pending' ? 'Finish adding your card in the Agentcard tab, then close it to return here. We’ll check your connection automatically.' : 'Enrollment outcome is pending or uncertain. Keep this request; do not create another link.'}</p>
           {current.enrollmentUrl && <a href={current.enrollmentUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" className="inline-block border border-ink px-4 py-2 font-mono text-xs hover:bg-beige-dark">Open secure Vault ↗</a>}
-          <p className="text-xs text-ink-muted">This private link expires {new Date(current.expiresAt).toLocaleString()}. Do not share it with an agent or another person.</p>
+          <p className="text-xs text-ink-muted">{current.enrollmentUrl ? 'This private link' : 'This enrollment request'} expires {new Date(current.expiresAt).toLocaleString()}.{current.enrollmentUrl && ' Do not share it with an agent or another person.'}</p>
           {session.error && <button onClick={() => void session.refetch()} className="font-mono text-xs underline">Check existing enrollment</button>}
         </div> : <div className="space-y-3">
           {current?.status === 'linked' && <p role="status" className="text-sm">Vault account connected.</p>}

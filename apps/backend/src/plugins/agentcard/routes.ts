@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { agents, cardSessions, cardVaults, cardCheckouts, cardCheckoutPermissions, grants, wallets } from '../../db/schema'
-import { fail } from '../../errors'
+import { ApiError, fail } from '../../errors'
 import type { Principal } from '../../operations'
 import type { AgentcardService } from './service'
 import { cardCheckoutRoutes, cardPermissionRoutes, cardPurchaseRoutes } from './checkout-routes'
@@ -85,7 +85,7 @@ export function agentcardRoutes(plugin: AgentcardService) {
     if (!claimed.create) return c.json(view(claimed.row, true))
     // Durable claim before the one provider POST. A timeout/DB failure never causes an automatic repeat.
     try {
-      const result = await api.createSession(claimed.row.expectedUserId ?? undefined)
+      const result = await api.createSession()
       const expiry = new Date(result.expires_at)
       if (expiry.getTime() <= Date.now() || expiry.getTime() > claimed.row.expiresAt.getTime()) fail(502, 'invalid_card_session', 'Unexpected enrollment lifetime')
       const encryptedUrl = api.seal(result.url, `${ownerId}:${claimed.row.id}`)
@@ -96,8 +96,10 @@ export function agentcardRoutes(plugin: AgentcardService) {
         return updated
       })
       return c.json(view(row, true), 201)
-    } catch {
-      await service.db.update(cardSessions).set({ status: 'unknown' }).where(and(scoped(ownerId), eq(cardSessions.id, claimed.row.id), eq(cardSessions.status, 'creating')))
+    } catch (error) {
+      const notCreated = error instanceof ApiError && ['card_enrollment_not_started', 'card_enrollment_rejected'].includes(error.code)
+      await service.db.update(cardSessions).set({ status: notCreated ? 'cancelled' : 'unknown' }).where(and(scoped(ownerId), eq(cardSessions.id, claimed.row.id), eq(cardSessions.status, 'creating')))
+      if (notCreated) throw error
       fail(502, 'card_session_unknown', 'Enrollment result is uncertain. Reuse the same key or inspect the existing request; do not start another enrollment before expiry.')
     }
   })
@@ -113,7 +115,7 @@ export function agentcardRoutes(plugin: AgentcardService) {
     })
     if (!claimed.poll) return c.json(view(claimed.row, true))
     const result = await api.readSession(claimed.row.providerSessionId!)
-    if (result.id !== claimed.row.providerSessionId || result.test_mode !== claimed.row.testMode || (claimed.row.expectedUserId && result.user_id !== claimed.row.expectedUserId)) fail(502, 'invalid_card_session', 'Enrollment identity or environment changed')
+    if (result.id !== claimed.row.providerSessionId || result.test_mode !== claimed.row.testMode || (claimed.row.expectedUserId && result.user_id !== null && result.user_id !== claimed.row.expectedUserId)) fail(502, 'invalid_card_session', 'Enrollment identity or environment changed')
     return c.json(await service.db.transaction(async tx => {
       await lock(tx, ownerId)
       const [row] = await tx.select().from(cardSessions).where(and(scoped(ownerId), eq(cardSessions.id, sessionId)))

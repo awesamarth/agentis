@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import { Agentcard, type BuyAskInput, type BuyConfirmInput } from '@agent-cards/sdk'
-import { fail } from '../../errors'
+import { ApiError, fail } from '../../errors'
 
 const origin = 'https://api.agentcard.sh'
 const providerId = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/)
@@ -64,7 +64,13 @@ export class AgentcardProvider {
     try {
       const response = await fetch(`${base}${path}`, { ...init, redirect: 'error', signal: AbortSignal.timeout(15_000) })
       // Never pass provider bodies, URLs, tokens, or SDK exception messages into public errors/logs.
-      if (!response.ok) { await response.body?.cancel(); fail(502, 'card_provider_unavailable', 'Card provider request failed. Do not repeat an uncertain request with a new key.') }
+      if (!response.ok) {
+        await response.body?.cancel()
+        if (path === '/api/v2/vault_sessions' && [400, 401, 403, 404, 422, 429].includes(response.status)) {
+          fail(502, 'card_enrollment_rejected', `Agentcard rejected enrollment (HTTP ${response.status}). No enrollment link was created. ${response.status === 429 ? 'Please try again later.' : 'You can start a new connection request.'}`)
+        }
+        fail(502, 'card_provider_unavailable', 'Card provider request failed. Do not repeat an uncertain request with a new key.')
+      }
       if (!response.body) throw Error()
       const reader = response.body.getReader(), chunks: Uint8Array[] = []
       let length = 0
@@ -77,7 +83,10 @@ export class AgentcardProvider {
         }
       } finally { await reader.cancel().catch(() => {}) }
       return schema.parse(JSON.parse(Buffer.concat(chunks).toString('utf8')))
-    } catch { fail(502, 'card_provider_unavailable', 'Card provider unavailable or returned an unexpected response. Existing requests are not retried automatically.') }
+    } catch (error) {
+      if (error instanceof ApiError) throw error
+      fail(502, 'card_provider_unavailable', 'Card provider unavailable or returned an unexpected response. Existing requests are not retried automatically.')
+    }
   }
   private async bearer() {
     if (this.access && this.access.expires > Date.now()) return this.access.value
@@ -93,11 +102,20 @@ export class AgentcardProvider {
   private async call<T>(path: string, schema: z.ZodType<T>, body?: unknown) {
     return this.request(path, schema, { method: body === undefined ? 'GET' : 'POST', headers: { authorization: `Bearer ${await this.bearer()}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
   }
-  async createSession(userId?: string) {
-    const result = await this.call('/api/v2/vault_sessions', sessionCreated, { ...(userId ? { user_id: providerId.parse(userId) } : {}), expires_in: 1200, approval_mode: 'customer' })
+  async createSession() {
+    let access: string
+    try { access = await this.bearer() }
+    catch { fail(502, 'card_enrollment_not_started', 'Could not authenticate with Agentcard. No enrollment was started. You can retry connecting.') }
+    // Open enrollment supports both new cards and returning-user passkey unlock.
+    // Sending user_id instead requires an OTP contact, which passkey-only Vaults
+    // need not have. Existing account identity is checked when the session links.
+    const result = await this.request('/api/v2/vault_sessions', sessionCreated, {
+      method: 'POST', headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ expires_in: 1200, approval_mode: 'customer' }),
+    })
     const url = new URL(result.url)
     if (url.origin !== 'https://vault.agentcard.sh' || url.username || url.password || url.hash) fail(502, 'invalid_card_link', 'Card provider returned an unsupported enrollment link')
-    if (result.user_id !== (userId ?? null)) fail(502, 'invalid_card_user', 'Card provider returned an unexpected account')
+    if (result.user_id !== null) fail(502, 'invalid_card_user', 'Card provider returned an unexpected account')
     return result
   }
   readSession(id: string) { return this.call(`/api/v2/vault_sessions/${providerId.parse(id)}`, sessionRead) }
