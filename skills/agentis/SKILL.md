@@ -1,32 +1,50 @@
 ---
 name: agentis
-description: Use Agentis to operate agent wallets, check balances and budgets, send tokens, pay x402/MPP APIs, swap with Uniswap, and manage ENS identity through CLI, SDK or remote MCP.
+description: Use Agentis CLI to check agent wallets and budgets, send tokens, pay x402/MPP APIs, and use Agentcard, Uniswap or ENS through hosted permissions and approvals.
 ---
 
 # Agentis
 
-## Start here
+Use the installed `agentis` CLI. Version **0.7.1+**:
+```sh
+bun add -g @agentis-hq/cli@0.7.1
+```
+Default API: `https://api.agentis.systems`. MCP: `https://api.agentis.systems/mcp`.
 
-- Prefer the CLI when shell access is available. Install with `bun add -g @agentis-hq/cli@latest` if missing; Bun must be on PATH. Run `agentis whoami`, then `agentis --help --agent <name-or-id>` to discover commands for the selected agent. Use command help rather than guessing flags.
-- The default backend is **https://api.agentis.systems**. Do not use localhost unless explicitly testing a separate development backend. If not connected, run `agentis login` and give the owner its browser URL/code to select agents and networks. A login bound to another API needs logout/login; do not rewrite credentials or expand grants yourself.
-- Start with `agentis wallet list --hosted`, `agentis wallet balance --hosted --agent <agent>` and `agentis policy show --agent <agent>`. Choose the intended wallet/network before requesting money movement. `--json` gives structured output.
+## Execute directly
 
-## Choose the action
+- Use known wallet/agent IDs. No ritual help, login, wallet, balance or policy checks.
+- Run `agentis login` only when needed. Never switch accounts, API URLs or grants without permission.
+- Use `--json` for structured results. Run `agentis --help` only when command syntax or flags are unknown.
+- Hosted custody is the default here. **Never use `--local` unless explicitly requested.**
+- Mainnet and testnet are supported; respect the selected wallet/network, consent and spending limits.
 
-- **Send:** `agentis wallet send --hosted --wallet <wallet-id> --chain <chain> --to <address-or-ENS-name> --asset <symbol> --amount <decimal> --key <unique-task-key>`. CLI amounts/fee budgets are decimal token units; low-level operations use atomic strings.
-- **Paid API:** `agentis fetch <url> --wallet <wallet-id> --max-amount-atomic <cap> --key <unique-task-key>`. Inspect help for protocol-specific fee flags. Bound the spend; use the requested seller URL, not an invented endpoint.
-- **Uniswap:** select an agent with the plugin enabled. Discover `swap`, `rebalance` and `dca` through `agentis --help --agent <agent>`. Quote before execution; pass its `minimumOutputAtomic` / `maximumInputAtomic` into execute as `--minimum-output-atomic` / `--maximum-input-atomic`. Base Sepolia ETH/USDC only. `fetch --swap-funding` opts into funding only the missing Base USDC. Schedule/plugin setup requires owner consent.
-- **ENS:** use `identity resolve|show|setup|update|delegate|revoke`. ENSv2 on Ethereum Sepolia supplies real names, per-network wallet records and endpoint/description delegation; ERC-8004 is internal to this single plugin. Setup/delegation returns owner-review links. Agents cannot change protected payment-address records or another name; record writes still require spending approval/budgets.
-- **Local custody:** use `wallet create --local` and the `--local` variants of balance, send, fetch, policy and history. Discover exact flags with help. Keys stay in plaintext, permission-protected files on the machine; local rules are software safeguards, not tamper-proof enforcement. Do not read/print mnemonics or switch custody to bypass hosted restrictions.
+```sh
+agentis wallet list --hosted --json
+agentis wallet balance --hosted --wallet <wallet-id> --json
+agentis wallet send --hosted --wallet <wallet-id> --chain <network-key> --to <address> --asset <symbol> --amount <decimal> --max-fee <decimal> --json
+agentis fetch <url> --wallet <wallet-id> --asset <symbol> --max-amount-atomic <cap> --max-fee-atomic <fee-cap> --method POST --header 'Content-Type: application/json' --data '<body>' --json
+agentis operations get <operation-id> --json
+agentis operations wait <operation-id> --json
+```
 
-## Other interfaces
+- List wallets only if the intended wallet is unknown. Check balance/policy when asked or diagnosing a relevant failure.
+- Network keys include `base`, `tempo`, `solana`; mainnet sends use recipient addresses.
+- Send amounts/fees are decimal token units. Fetch caps are atomic: Tempo USDC.e has 6 decimals; Tempo fee caps use 18 protocol decimals; Solana fee caps use lamports. Fee cap `0` requires sponsored MPP gas.
+- Paid HTTP supports exact bodies and headers, with a 120-second response deadline and 10 MiB response limit.
 
-- **Remote MCP:** connect **https://api.agentis.systems/mcp**, then browser OAuth with owner-selected agents/networks. No local MCP process or manually copied owner token. Start with `agentis_capabilities` and `agentis_list_wallets`; use balance/policy/history tools before send/fetch. Plugin tools depend on enabled plugins. MCP exposes hosted wallets only.
-- **SDK:** `new AgentisClient({ baseUrl: 'https://api.agentis.systems', token })` from `@agentis-hq/sdk`. Use a scoped executor key, never an owner credential to bypass restrictions. `client.operations`, `client.fetch`, `client.uniswap` and `client.identity` expose the common backend operations. Consult package types/current CLI help for exact inputs.
+## Request identity and outcomes
 
-## Money boundaries
+- A bare hosted payment command creates and saves a **new request ID**. `--key` is optional.
+- To explicitly retry, repeat the exact command with `--retry <saved-request-id>` (or `--retry latest`). Never combine `--retry` and `--key`. Changed terms are rejected.
+- After uncertainty, inspect the original operation first. **Never blindly repeat a bare payment command or resend a successful payment.**
+- Ask mode: return the operation’s `approvalUrl` directly to the requesting owner as a clickable link, with the amount and operation ID. Do not hide it or make the owner search the dashboard. Never approve yourself or bypass policy.
+- Payment confirmation is separate from provider success. Inspect `httpResponse`; decode `bodyBase64` for the provider result. A transaction hash is not a video/job result.
+- Display token fees using `receipt.feePayment`; do not add it to `feeAtomic`—they describe the same fee. Balance display can lag by 120 seconds.
 
-- **Network selection:** `base`, `ethereum`, `tempo` and `solana` select mainnets. Testnet keys are `base-sepolia`, `sepolia`, `arc`, `tempo-testnet` and `solana-devnet`. Match the wallet’s exact network and the user’s intent; never fall back across environments. Mainnet Tempo uses pathUSD; Tempo Testnet uses alphaUSD. x402 uses the selected network’s USDC. Mainnet and testnets have separate budget usage. No bridging or automatic cross-chain funding.
-- **Ask mode:** return the approval URL promptly and wait for the owner. Never approve yourself, change mode/limits, export keys or manufacture owner authentication. `--yes` skips CLI confirmation, not backend approval. Automatic mode still enforces policy; paused means stop.
-- Keep the **same idempotency key and exact terms** across retries. Check `operations get|wait <id>` or `swap get <plan-id>` for progress and receipts. Unknown submission or failed HTTP response does not prove no payment occurred; never blindly create a replacement payment. Report approval-required/submitted separately from confirmed settlement.
-- Hosted USD caps are per agent, shared across its networks and credentials, including fee reservations and actual settlement fees. Different agents have independent limits. Insufficient funds, missing scope or disabled plugins need owner action—not another wallet, stronger credentials or relaxed policy. Never print keys or tokens.
+## Other features
+
+- Agentcard: `agentis cards`; owner Vault connection and separate card permission required. Search/cart creation is not a completed purchase. Card accounting is USD-only. Keep secret-bearing Vault enrollment/provider links and card credentials out of agent chat; ordinary Agentis dashboard approval links may be shown to the requesting owner.
+- Uniswap and ENS: `agentis swap`, `agentis rebalance`, `agentis identity`. Existing plugin execution remains testnet-scoped.
+- SDK callers persist explicit idempotency keys. MCP keys are optional, but every omitted key creates a new request; never retry a keyless payment blindly.
+- Never expose keys, tokens, signed transactions or card credentials. Never create agents, expand grants or spend without authorization. Agentis owner-facing `approvalUrl` links are allowed and should be returned when approval is needed.
